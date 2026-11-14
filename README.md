@@ -24,22 +24,22 @@ PC (Linux) und Handy (Android, Musicolet) gleich aussehen soll:
 
 ```
 mync/
-├── app/          # Android-App (Java): Sync-Gegenstelle + Inbox auf dem Handy
-├── linux/        # (geplant) Linux-Seite in Python: mync-core, mync-sync, mync-player
-├── docs/         # Konzepte und Pläne
-└── …             # Gradle-Dateien des Android-Projekts
+├── app/          # Flutter-App (Dart) für Linux und Android
+│   └── rust/     # Bridge-Crate zwischen Flutter und dem Rust-Kern
+├── core/         # Rust-Kern: Audio-Hash, Tags, Manifest, Diff-Engine, CLI `mync`
+└── docs/         # Konzepte und Pläne
 ```
 
 ## Grundsatzentscheidungen (Kurzfassung)
 
-- **Handy:** die Android-App in `app/` (Java, minSdk 29) – sie ist *kein*
-  Player, sondern nur Sync-Gegenstelle mit Inbox. Abgespielt wird weiter mit
-  Musicolet.
-- **PC:** Python 3.12+, GTK 4 + libadwaita, GStreamer, mutagen, SQLite.
-- **Gemeinsam ist das Protokoll, nicht der Code:** Beide Seiten implementieren
-  dasselbe, sprachneutral spezifizierte Sync-Protokoll (HTTPS + JSON) und
-  dieselbe Hash-Berechnung. Gemeinsame Testdateien stellen sicher, dass Java
-  und Python identische Hashes liefern.
+- **Eine App für beide Geräte:** Flutter (Dart) für die Oberfläche auf
+  Linux und Android, darunter ein Rust-Kern (`core/`), angebunden über
+  flutter_rust_bridge.
+- **Handy:** Sync-Gegenstelle + Inbox. Abgespielt wird weiter mit Musicolet.
+- **PC:** Player (media_kit/libmpv) + Sync + Inbox.
+- **Identischer Kern auf beiden Seiten:** Scanner, Hashes, Tags (lofty),
+  Diff-Engine und Sync-Protokoll sind derselbe Rust-Code – beide Geräte
+  rechnen garantiert gleich.
 - **Kein Cloud-Dienst:** Synchronisation direkt im Heim-WLAN (optional USB/adb).
 - **Musicolet bleibt der Player auf dem Handy.** mync-sync arbeitet nur auf den
   Dateien; Musicolet erkennt Änderungen über seinen normalen Rescan.
@@ -49,4 +49,20 @@ mync/
 
 ## Status
 
-Planungsphase – es gibt noch keinen Code.
+- ✅ Rust-Kern `core/` (Meilenstein M0) mit Tests
+- ✅ Flutter-App-Gerüst `app/` mit Bibliotheksansicht
+- ⏳ Sync-Protokoll und Inbox (M1), danach der Player (M3)
+
+## Entwickeln
+
+```bash
+# Rust-Kern testen (für die Formattests wird ffmpeg benötigt)
+cd core && cargo test
+
+# Bibliothek einlesen und anzeigen
+cargo run --bin mync -- scan ~/Musik
+cargo run --bin mync -- status ~/Musik
+
+# App starten (Linux)
+cd app && flutter run -d linux
+```

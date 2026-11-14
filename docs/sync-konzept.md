@@ -62,7 +62,7 @@ Pro Datei werden **zwei Hashes** gespeichert:
 
 | Feld | Berechnung | Ändert sich bei |
 |---|---|---|
-| `audio_hash` | SHA-256 über die **reinen Audiodaten** (ohne ID3v2/ID3v1/APE-Tags bei MP3, ohne Metadaten-Blöcke bei FLAC/OGG/M4A) | nur bei neuem Encoding / anderer Aufnahme |
+| `audio_hash` | SHA-256 über die **reinen Audiodaten**: MP3 ohne ID3v2/APEv2/ID3v1, FLAC ohne Metadaten-Blöcke, Ogg ohne Header-Pakete, M4A nur `mdat`, WAV nur `data` (implementiert in `core/src/audiohash.rs`) | nur bei neuem Encoding / anderer Aufnahme |
 | `tag_hash` | Hash über die normalisierten Tags (sortierte Schlüssel/Werte) + Cover-Hash | jeder Tag-/Cover-Änderung |
 | `path` | relativer Pfad zur Musikwurzel | Umbenennen/Verschieben |
 
@@ -149,7 +149,7 @@ Regeln:
 |---|---|
 | Hinzufügen | Datei als `.mync-part` herunterladen → Hash prüfen → atomar umbenennen (`rename`). |
 | Umbenennen | Lokales `rename` – **keine Übertragung** nötig. Leere Ordner werden aufgeräumt. |
-| Tags | Nur die Tag-Daten (JSON + ggf. Cover) werden übertragen und lokal mit mutagen in die Datei geschrieben. Danach muss `audio_hash` unverändert sein, sonst Rollback. |
+| Tags | Nur die Tag-Daten (JSON + ggf. Cover) werden übertragen und lokal mit lofty (Rust) in die Datei geschrieben. Danach muss `audio_hash` unverändert sein, sonst Rollback. |
 | Inhalt ersetzt | wie Hinzufügen, alte Version in den Papierkorb. |
 | Löschen | Datei in `.mync-trash/<datum>/…` verschieben (Aufbewahrung konfigurierbar, Standard 30 Tage). |
 
@@ -178,58 +178,44 @@ Byte-Gleichheit.
 - **Fallback USB:** `adb forward` auf denselben Port – gleiches Protokoll, nur
   schneller für den ersten großen Abgleich.
 
-## 9. Wo läuft was? – Umsetzung auf dem Handy
+## 9. Wo läuft was? – eine App für beide Geräte
 
 Die Freigabe muss auch **auf dem Handy** erfolgen, also braucht das Handy eine
-eigene Komponente. Das Repo enthält dafür bereits das Android-Projekt `app/`
-(Java, `com.github.mrkleeblatt.mync`, minSdk 29 / targetSdk 34).
+eigene Komponente. mync ist dafür **eine Flutter-App** (`app/`) für Android
+und Linux mit einem gemeinsamen **Rust-Kern** (`core/`):
 
-| Seite | Komponente | Aufgaben |
-|---|---|---|
-| **Handy** | Android-App `app/` (Java) | Musikordner scannen, Manifest führen, HTTPS-Gegenstelle, **Inbox nativ**, Benachrichtigung „12 neue Änderungen vom PC“, Änderungen anwenden, MediaScanner anstoßen |
-| **PC** | `linux/mync_sync` (Python) | dasselbe auf dem PC; Inbox als Web-UI und später im Player |
+| Gerät | Rolle der App |
+|---|---|
+| **Handy** (Android) | Sync-Gegenstelle + Inbox + Benachrichtigung „12 neue Änderungen vom PC“. Abgespielt wird weiter mit Musicolet. |
+| **PC** (Linux) | Player + Sync + Inbox |
+
+Weil Scanner, Hash-Berechnung, Diff-Engine und Protokoll in **demselben
+Rust-Code** laufen, rechnen beide Geräte garantiert identisch – eine
+doppelte Implementierung (und die Gefahr abweichender Hashes) entfällt.
 
 Wer startet den Sync? Der **PC** ist Client und verbindet sich mit dem Handy
 (das Handy läuft während des Syncs als Server in einem Foreground-Service).
 So muss das Handy nicht dauerhaft im Hintergrund lauschen; gestartet wird
-per Knopf in der App, beim Laden im WLAN (WorkManager) oder vom PC aus.
+per Knopf in der App, beim Laden im Heim-WLAN (`workmanager`) oder vom PC aus.
 
-Android-Details:
-- **Speicherzugriff:** Für Umbenennen/Löschen/Tag-Schreiben beliebiger
-  Audiodateien ist `MANAGE_EXTERNAL_STORAGE` („Zugriff auf alle Dateien“) am
-  einfachsten – unproblematisch, da die App nicht über den Play Store
-  verteilt werden muss (Sideload/F-Droid). Alternative: Storage Access
-  Framework (`ACTION_OPEN_DOCUMENT_TREE`) auf den Musikordner – sauberer,
-  aber deutlich langsamer beim Scannen großer Sammlungen.
-- **Tags lesen/schreiben in Java:** Bibliothek *jaudiotagger* (MP3/ID3,
-  FLAC, Ogg, M4A). Die Audio-Hash-Berechnung (Tag-Bereiche überspringen)
-  wird selbst implementiert und mit den Python-Ergebnissen gegengetestet.
-- **HTTPS-Server:** z. B. NanoHTTPD oder Ktor/Netty-frei mit `javax.net.ssl`;
-  mDNS über Androids `NsdManager`.
-- **Datenbank:** Room/SQLite mit demselben Schema wie in Abschnitt 12.
-- **Nach dem Anwenden:** `MediaScannerConnection.scanFile(...)` für alle
-  geänderten Pfade, damit Musicolet die Änderungen sieht. In Musicolet ggf.
-  „Bibliothek neu scannen“.
-- **Java-Version:** Das Projekt steht derzeit auf Java 8
-  (`sourceCompatibility`); für Records, `var` und moderne APIs auf Java 17
-  anheben.
+Technik:
+- **HTTPS-Server/Client:** Rust (`axum` + `rustls`, Client `reqwest`),
+  selbstsignierte Zertifikate mit Fingerprint-Pinning.
+- **Geräteerkennung:** mDNS mit dem Rust-Crate `mdns-sd`.
+- **Android-Speicherzugriff:** Für Umbenennen/Löschen/Tag-Schreiben beliebiger
+  Audiodateien ist `MANAGE_EXTERNAL_STORAGE` („Zugriff auf alle Dateien“,
+  über `permission_handler`) am einfachsten – unproblematisch, da die App
+  nicht über den Play Store verteilt werden muss (Sideload/F-Droid). Dann
+  kann der Rust-Kern direkt mit normalen Dateipfaden arbeiten.
+- **Foreground-Service** während des Syncs: `flutter_foreground_task`.
+- **Nach dem Anwenden:** Android-MediaScanner für alle geänderten Pfade
+  anstoßen (kleiner Platform-Channel zu `MediaScannerConnection.scanFile`),
+  damit Musicolet die Änderungen sieht. In Musicolet ggf. „Bibliothek neu
+  scannen“.
 
-Für schnelle Tests ohne fertige App kann der Python-Kern übergangsweise auch
-in **Termux** auf dem Handy laufen (Inbox dann im Handy-Browser) – optional.
-
-Verworfene Alternative: „Posteingang“-Variante mit Syncthing als Transport in
-einen Staging-Ordner – doppelter Speicherplatz und schlechtere Erkennung von
-Umbenennungen.
-
-### Protokoll-Konformität Java ⇄ Python
-
-Weil zwei Implementierungen dasselbe berechnen müssen, wird festgelegt:
-- exakte Hash-Definition pro Format (welche Bytes zählen zum Audio-Stream),
-  Algorithmus **SHA-256** (in Java ohne Zusatzbibliothek verfügbar),
-- Normalisierung der Tags für `tag_hash` (Feldnamen auf gemeinsame Namen
-  abbilden, Unicode NFC, Leerzeichen trimmen, Mehrfachwerte sortiert),
-- ein Ordner `docs/testvektoren/` mit kleinen Beispieldateien und den
-  erwarteten Hashes, den die Tests **beider** Seiten benutzen.
+Verworfene Alternativen: Sync-Kern in Termux (umständlich für den Alltag);
+„Posteingang“-Variante mit Syncthing als Transport in einen Staging-Ordner
+(doppelter Speicherplatz, schlechtere Erkennung von Umbenennungen).
 
 ## 10. Was mit Musicolet-eigenen Daten?
 

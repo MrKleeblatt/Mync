@@ -1,4 +1,4 @@
-# Plan: mync-player – ein Musicolet-artiger Player für Linux
+# Plan: mync-Player – ein Musicolet-artiger Player für Linux
 
 ## 1. Ziel
 
@@ -32,14 +32,14 @@ Priorität: **P1** = MVP, **P2** = Version 1.0, **P3** = später.
 |---|---|---|
 | **Mehrere Warteschlangen** (Musicolet: bis zu 20, jede merkt sich Position) | Tabs/Seitenleiste mit beliebig vielen Queues; jede speichert Titel, aktuellen Index und Position in Sekunden | P1 |
 | Titel „als Nächstes spielen“ / „ans Ende“ / „in neue Warteschlange“ | Kontextmenü + Tastenkürzel | P1 |
-| Warteschlange umsortieren (Drag & Drop), Einträge entfernen | GTK ListView mit DnD | P1 |
+| Warteschlange umsortieren (Drag & Drop), Einträge entfernen | `ReorderableListView` | P1 |
 | Wiedergabe fortsetzen, wo man aufgehört hat (auch nach Neustart) | Zustand in SQLite, regelmäßig gesichert | P1 |
 | Wiederholen (aus/alle/eins), Zufallswiedergabe | Pro Warteschlange | P1 |
-| Lückenlose Wiedergabe (Gapless) | GStreamer `playbin3` mit `about-to-finish` | P1 |
+| Lückenlose Wiedergabe (Gapless) | media_kit/mpv `gapless-audio` | P1 |
 | Überblenden (Crossfade) | zwei Pipelines + Lautstärkerampe | P3 |
-| Wiedergabegeschwindigkeit / Tonhöhe | GStreamer `scaletempo` / `pitch` | P2 |
+| Wiedergabegeschwindigkeit / Tonhöhe | mpv `speed` + `scaletempo2`, Tonhöhe per `rubberband`-Filter | P2 |
 | Lesezeichen / Position merken bei langen Dateien (Hörbücher) | Position pro Datei speichern ab konfigurierbarer Länge | P2 |
-| ReplayGain | GStreamer `rgvolume` (Track/Album-Modus) | P2 |
+| ReplayGain | mpv `replaygain=track|album` | P2 |
 
 ### Tags, Lyrics, Cover
 | Funktion | Umsetzung | Prio |
@@ -61,7 +61,7 @@ Priorität: **P1** = MVP, **P2** = Version 1.0, **P3** = später.
 ### Klang & Steuerung
 | Funktion | Umsetzung | Prio |
 |---|---|---|
-| Equalizer (Bänder + Presets), Bass-Boost | GStreamer `equalizer-10bands`; Presets in Config | P2 |
+| Equalizer (Bänder + Presets), Bass-Boost | mpv-Audiofilter `superequalizer`; Presets in Config | P2 |
 | Balance | `audiopanorama` | P3 |
 | Sleeptimer (nach Zeit oder nach Titel/Warteschlangen-Ende) | Timer mit sanftem Ausblenden | P2 |
 | Headset-/Medientasten | über **MPRIS** (Desktop leitet Medientasten weiter) | P1 |
@@ -74,39 +74,47 @@ Priorität: **P1** = MVP, **P2** = Version 1.0, **P3** = später.
 | Funktion | Umsetzung | Prio |
 |---|---|---|
 | Offline, keine Werbung, kein Konto | Grundprinzip | P1 |
-| Hell/Dunkel-Design, Akzentfarbe | libadwaita folgt dem Systemdesign | P1 |
+| Hell/Dunkel-Design, Akzentfarbe | Material 3, folgt dem Systemdesign (hell/dunkel) | P1 |
 | Backup & Wiederherstellen (Einstellungen, Queues, Statistik) | Export als ZIP | P2 |
 | Wiedergabestatistik | Zähler, zuletzt gespielt; optional in Tag `PCNT`/`FMPS_PLAYCOUNT` schreiben | P2 |
 | **Sync-Inbox integriert** | eigener Bereich „Sync“ mit Inbox aus mync-sync | P2 |
 
 ## 3. Technische Architektur
 
+Eine **Flutter-App** (Dart) für Linux und Android, darunter ein **Rust-Kern**
+(`core/`), angebunden über *flutter_rust_bridge*. Auf dem PC ist die App
+Player + Sync + Inbox; auf dem Handy zunächst nur Sync + Inbox (Musicolet
+bleibt der Player) – der Player-Teil wäre dort aber ohne Mehraufwand
+ebenfalls lauffähig.
+
 ```
-┌───────────────────────── mync-player (GTK 4 / libadwaita) ─────────────────────────┐
-│  UI-Schicht: Ordner | Alben | Künstler | … | Warteschlangen | Wiedergabe | Sync     │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│  Player-Service        Queue-Manager        Library-Service       Sync-Inbox (UI)   │
-│  (GStreamer playbin3,  (n Warteschlangen,   (Scanner, Index,      ↔ mync-sync-Kern  │
-│   EQ, ReplayGain,       Zustand persistent)  Suche, Tag-Editor)                     │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│  MPRIS2 (D-Bus)    │  SQLite (library.db, state.db)   │  mutagen (Tags)  │ inotify  │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────── Flutter-App (Dart) ─────────────────────────────┐
+│ Ordner | Alben | Künstler | … | Warteschlangen | Wiedergabe | Sync-Inbox    │
+│ Zustand: Riverpod   ·   Wiedergabe: media_kit (libmpv)                      │
+├──────────────────────── flutter_rust_bridge (FFI) ──────────────────────────┤
+│ Rust-Kern `core/`                                                           │
+│ audiohash · tags (lofty) · manifest/Index (rusqlite, FTS5) · diff/Inbox     │
+│ sync-Server/Client (axum + rustls) · mDNS (mdns-sd) · notify (Dateiwächter) │
+│ MPRIS2 (mpris-server/zbus, nur Linux)                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Stack
 | Bereich | Wahl | Begründung |
 |---|---|---|
-| Sprache | Python 3.12+ | schnelle Entwicklung, gleicher Code wie mync-sync auf dem PC |
-| UI | GTK 4 + libadwaita (PyGObject) | modernes Linux-Desktop-Look, gute Listen-Performance (`Gtk.ListView`) |
-| Audio | GStreamer 1.x (`playbin3`) | alle gängigen Formate, Gapless, EQ, ReplayGain, Tempo |
-| Tags | mutagen | ID3v2.3/2.4, FLAC, Ogg/Opus, MP4, APE – liest/schreibt alles, was Musicolet nutzt |
-| Datenbank | SQLite (+ FTS5 für Suche) | schnell, eine Datei, kein Server |
-| Dateiüberwachung | inotify (über `Gio.FileMonitor`) | Bibliothek aktualisiert sich bei Änderungen sofort |
-| Desktop-Integration | MPRIS2 via D-Bus | Medientasten, GNOME/KDE-Mediensteuerung, KDE Connect |
-| Paketierung | **Flatpak** (Flathub) + `pipx`/PyPI | läuft auf jeder Distribution |
+| Oberfläche | **Flutter** (Dart), Material 3, adaptives Layout | eine UI-Codebasis für Linux-Desktop und Android |
+| Kernlogik | **Rust** (`core/`) | schnell, sicher; Scanner, Hashes, Sync und Tags laufen auf beiden Geräten mit *exakt demselben Code* |
+| Brücke | flutter_rust_bridge 2 | generiert typsichere Dart-Bindings, Streams für Fortschritt |
+| Audio | **media_kit** (libmpv) | alle Formate, Gapless (`gapless-audio`), ReplayGain, Tempo, EQ über mpv-Audiofilter (`lavfi`-`equalizer`/`superequalizer`) |
+| Tags | **lofty** (Rust) | liest/schreibt ID3v2/v1, Vorbis Comments, MP4, APE, FLAC-Pictures |
+| Datenbank | SQLite über rusqlite (+ FTS5 für Suche) | eine Datei, kein Server, identisch auf beiden Geräten |
+| Dateiüberwachung | `notify` (inotify) | Bibliothek aktualisiert sich bei Änderungen sofort |
+| Desktop-Integration | MPRIS2 via Rust-Crate `mpris-server` | Medientasten, GNOME/KDE-Mediensteuerung, KDE Connect |
+| Android-Integration | `audio_service` (falls Player auf dem Handy), MediaScanner per Platform-Channel | Benachrichtigung, Sperrbildschirm |
+| Paketierung | **Flatpak** + AppImage (Linux), APK (Android, Sideload/F-Droid) | läuft auf jeder Distribution |
 
-Präzedenzfälle für diesen Stack: Lollypop, Quod Libet (beide Python + GTK +
-GStreamer) – bewährt auch bei großen Sammlungen.
+Präzedenzfall: *Harmonoid* ist ein Flutter-Musikplayer auf Basis von
+media_kit für Linux/Windows/Android – der Ansatz ist also erprobt.
 
 ### Warum nicht einen bestehenden Player nehmen?
 Strawberry, Quod Libet, Lollypop, Rhythmbox, Amberol decken Teile ab, aber
@@ -119,8 +127,7 @@ aber das UI-Konzept stark ein – daher eigener Player.
 - **library.db** – Index (abgeleitet, jederzeit neu aufbaubar):
   `track(id, path, mtime, size, duration, title, artist, album, albumartist,
   composer, genre, year, track_no, disc_no, has_lyrics, has_lrc, cover_id)`,
-  FTS5-Tabelle für Suche. Kann denselben Scanner wie mync-sync nutzen
-  (gemeinsames Paket `mync-core`).
+  FTS5-Tabelle für Suche. Nutzt denselben Scanner wie der Sync (Rust-Kern `core/`).
 - **state.db** – Nutzerzustand (sichern!):
   `queue(id, name, position_index, position_ms, repeat, shuffle)`,
   `queue_item(queue_id, ord, track_path)`, `stats(path, play_count, last_played)`,
@@ -149,22 +156,26 @@ Journal), damit Queues und Statistik auf den neuen Pfad umgeschrieben werden.
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 🎚 = Equalizer, 🕒 = Sleeptimer, ♪ = Lyrics-Ansicht (mitlaufend bei LRC).
-Auf schmalen Fenstern (adaptive libadwaita-Layouts) klappen Seitenleiste und
+Auf schmalen Fenstern (adaptives Flutter-Layout) klappen Seitenleiste und
 Queue-Spalte ein – nützlich auch für Linux-Tablets.
 
-## 5. Projektstruktur (geplant)
+## 5. Projektstruktur
 
 ```
 mync/
-├── app/                  # Android-App (Java) – Sync-Gegenstelle + Inbox auf dem Handy
-├── linux/
-│   ├── pyproject.toml
-│   ├── mync_core/        # Scanner, Hashes, Tags (mutagen), Pfad-Utils
-│   ├── mync_sync/        # Sync-Protokoll, Diff-Engine, Inbox, HTTPS, Web-UI
-│   ├── mync_player/      # GTK-App: ui/, player/, queues/, library/, mpris/
-│   ├── tests/
-│   └── flatpak/          # Flatpak-Manifest
-├── docs/
-│   └── testvektoren/     # gemeinsame Testdateien + erwartete Hashes (Java & Python)
-└── build.gradle.kts, settings.gradle.kts, gradle/ …   # Android-Build (bleibt im Root)
+├── app/                      # Flutter-App (Linux + Android)
+│   ├── lib/
+│   │   ├── main.dart
+│   │   ├── screens/          # library, queues, now_playing, sync_inbox, settings
+│   │   ├── player/           # media_kit-Anbindung, Queue-Manager
+│   │   └── src/rust/         # generierte Bindings (flutter_rust_bridge)
+│   ├── rust/                 # Bridge-Crate: dünne API-Schicht über `core`
+│   ├── rust_builder/         # Cargokit: baut Rust automatisch beim `flutter build`
+│   ├── linux/  android/
+│   └── pubspec.yaml
+├── core/                     # Rust-Kern (reine Logik, ohne Flutter testbar)
+│   ├── src/{audiohash,tags,manifest,diff}.rs
+│   ├── src/bin/mync.rs       # CLI zum Testen: mync scan|status|hash
+│   └── tests/                # Formattests mit echten Dateien (ffmpeg)
+└── docs/
 ```
