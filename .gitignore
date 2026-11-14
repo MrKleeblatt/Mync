@@ -1,6 +1,6 @@
-# Rust
-/core/target/
-/app/rust/target/
+# Zig
+.zig-cache/
+zig-out/
 
 # Editoren / Betriebssystem
 .idea/

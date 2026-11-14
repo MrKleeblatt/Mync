@@ -81,21 +81,21 @@ Priorität: **P1** = MVP, **P2** = Version 1.0, **P3** = später.
 
 ## 3. Technische Architektur
 
-Eine **Flutter-App** (Dart) für Linux und Android, darunter ein **Rust-Kern**
-(`core/`), angebunden über *flutter_rust_bridge*. Auf dem PC ist die App
-Player + Sync + Inbox; auf dem Handy zunächst nur Sync + Inbox (Musicolet
-bleibt der Player) – der Player-Teil wäre dort aber ohne Mehraufwand
-ebenfalls lauffähig.
+Eine **Flutter-App** (Dart) für Linux und Android, darunter ein Kern in
+**Zig 0.17.1** (`core/`), als gemeinsame Bibliothek `libmync_core.so` über
+`dart:ffi` angebunden. Auf dem PC ist die App Player + Sync + Inbox; auf dem
+Handy zunächst nur Sync + Inbox (Musicolet bleibt der Player) – der
+Player-Teil wäre dort aber ohne Mehraufwand ebenfalls lauffähig.
 
 ```
 ┌──────────────────────────── Flutter-App (Dart) ─────────────────────────────┐
 │ Ordner | Alben | Künstler | … | Warteschlangen | Wiedergabe | Sync-Inbox    │
-│ Zustand: Riverpod   ·   Wiedergabe: media_kit (libmpv)                      │
-├──────────────────────── flutter_rust_bridge (FFI) ──────────────────────────┤
-│ Rust-Kern `core/`                                                           │
-│ audiohash · tags (lofty) · manifest/Index (rusqlite, FTS5) · diff/Inbox     │
-│ sync-Server/Client (axum + rustls) · mDNS (mdns-sd) · notify (Dateiwächter) │
-│ MPRIS2 (mpris-server/zbus, nur Linux)                                       │
+│ Wiedergabe: media_kit (libmpv)  ·  MPRIS: package:dbus (nur Linux)          │
+├─────────────────── dart:ffi  (C-ABI, JSON-Ergebnisse) ──────────────────────┤
+│ Zig-Kern `core/` → libmync_core.so                                          │
+│ audiohash · tags (eigene Leser/Schreiber) · manifest (SQLite, FTS5)         │
+│ diff/Inbox · Sync-Protokoll (std.http über Noise-verschlüsselten Kanal)     │
+│ mDNS (std.Io.net, UDP-Multicast) · Dateiwächter (inotify)                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,15 +103,22 @@ ebenfalls lauffähig.
 | Bereich | Wahl | Begründung |
 |---|---|---|
 | Oberfläche | **Flutter** (Dart), Material 3, adaptives Layout | eine UI-Codebasis für Linux-Desktop und Android |
-| Kernlogik | **Rust** (`core/`) | schnell, sicher; Scanner, Hashes, Sync und Tags laufen auf beiden Geräten mit *exakt demselben Code* |
-| Brücke | flutter_rust_bridge 2 | generiert typsichere Dart-Bindings, Streams für Fortschritt |
+| Kernlogik | **Zig 0.17.1** (`core/`) | kleine, schnelle native Bibliothek ohne Laufzeit; Scanner, Hashes, Tags und Sync laufen auf beiden Geräten mit *exakt demselben Code*; Cross-Kompilierung für alle Android-ABIs eingebaut |
+| Brücke | `dart:ffi` + C-ABI (`mync_*`-Funktionen, JSON) | keine Code-Generierung nötig; lange Aufrufe laufen in `Isolate.run` |
 | Audio | **media_kit** (libmpv) | alle Formate, Gapless (`gapless-audio`), ReplayGain, Tempo, EQ über mpv-Audiofilter (`lavfi`-`equalizer`/`superequalizer`) |
-| Tags | **lofty** (Rust) | liest/schreibt ID3v2/v1, Vorbis Comments, MP4, APE, FLAC-Pictures |
-| Datenbank | SQLite über rusqlite (+ FTS5 für Suche) | eine Datei, kein Server, identisch auf beiden Geräten |
-| Dateiüberwachung | `notify` (inotify) | Bibliothek aktualisiert sich bei Änderungen sofort |
-| Desktop-Integration | MPRIS2 via Rust-Crate `mpris-server` | Medientasten, GNOME/KDE-Mediensteuerung, KDE Connect |
+| Tags | **eigene Zig-Implementierung** | Lesen: ID3v2.2–2.4, ID3v1, Vorbis Comments (FLAC/Ogg), MP4 `ilst`, WAV – fertig. Schreiben folgt in M1 (wird gegen mutagen getestet) |
+| Datenbank | **SQLite** (Amalgamation in `core/vendor`, + FTS5 für Suche) | eine Datei, kein Server, identisch auf beiden Geräten |
+| Kryptografie | `std.crypto` (X25519, ChaCha20-Poly1305, SHA-256) | Verschlüsselung des Sync-Kanals ohne Fremdbibliothek |
+| Dateiüberwachung | inotify (Linux/Android) | Bibliothek aktualisiert sich bei Änderungen sofort |
+| Desktop-Integration | MPRIS2 mit `package:dbus` | Medientasten, GNOME/KDE-Mediensteuerung, KDE Connect |
 | Android-Integration | `audio_service` (falls Player auf dem Handy), MediaScanner per Platform-Channel | Benachrichtigung, Sperrbildschirm |
 | Paketierung | **Flatpak** + AppImage (Linux), APK (Android, Sideload/F-Droid) | läuft auf jeder Distribution |
+
+**Build:** Unter Linux ruft CMake (`app/linux/CMakeLists.txt`) `zig build`
+auf und legt die Bibliothek ins Bundle. Für Android baut ein Gradle-Task
+(`app/android/app/build.gradle.kts`) den Kern für arm64-v8a, armeabi-v7a
+und x86_64 gegen die libc des NDK (`-Dandroid-ndk=…`) und legt ihn als
+`jniLibs` ab.
 
 Präzedenzfall: *Harmonoid* ist ein Flutter-Musikplayer auf Basis von
 media_kit für Linux/Windows/Android – der Ansatz ist also erprobt.
@@ -127,7 +134,7 @@ aber das UI-Konzept stark ein – daher eigener Player.
 - **library.db** – Index (abgeleitet, jederzeit neu aufbaubar):
   `track(id, path, mtime, size, duration, title, artist, album, albumartist,
   composer, genre, year, track_no, disc_no, has_lyrics, has_lrc, cover_id)`,
-  FTS5-Tabelle für Suche. Nutzt denselben Scanner wie der Sync (Rust-Kern `core/`).
+  FTS5-Tabelle für Suche. Nutzt denselben Scanner wie der Sync (Zig-Kern `core/`).
 - **state.db** – Nutzerzustand (sichern!):
   `queue(id, name, position_index, position_ms, repeat, shuffle)`,
   `queue_item(queue_id, ord, track_path)`, `stats(path, play_count, last_played)`,
@@ -166,16 +173,22 @@ mync/
 ├── app/                      # Flutter-App (Linux + Android)
 │   ├── lib/
 │   │   ├── main.dart
+│   │   ├── core/mync_core.dart   # dart:ffi-Anbindung an libmync_core.so
 │   │   ├── screens/          # library, queues, now_playing, sync_inbox, settings
-│   │   ├── player/           # media_kit-Anbindung, Queue-Manager
-│   │   └── src/rust/         # generierte Bindings (flutter_rust_bridge)
-│   ├── rust/                 # Bridge-Crate: dünne API-Schicht über `core`
-│   ├── rust_builder/         # Cargokit: baut Rust automatisch beim `flutter build`
-│   ├── linux/  android/
-│   └── pubspec.yaml
-├── core/                     # Rust-Kern (reine Logik, ohne Flutter testbar)
-│   ├── src/{audiohash,tags,manifest,diff}.rs
-│   ├── src/bin/mync.rs       # CLI zum Testen: mync scan|status|hash
-│   └── tests/                # Formattests mit echten Dateien (ffmpeg)
+│   │   └── player/           # media_kit-Anbindung, Queue-Manager
+│   ├── linux/CMakeLists.txt  # baut den Zig-Kern mit
+│   ├── android/app/build.gradle.kts  # baut den Zig-Kern je ABI mit
+│   └── test/                 # Widget- und FFI-Tests
+├── core/                     # Zig-Kern (reine Logik, ohne Flutter testbar)
+│   ├── build.zig
+│   ├── src/
+│   │   ├── audiohash.zig  tags.zig  ogg.zig  diff.zig
+│   │   ├── manifest.zig  sqlite.zig  source.zig
+│   │   ├── ffi.zig           # C-ABI für dart:ffi
+│   │   ├── main.zig          # CLI: mync scan|status|hash
+│   │   └── testdata_test.zig # Tests mit echten Dateien
+│   ├── testdata/             # Testdateien (ffmpeg + mutagen) + expected.json
+│   ├── tools/make_testdata.py
+│   └── vendor/sqlite/        # SQLite-Amalgamation
 └── docs/
 ```

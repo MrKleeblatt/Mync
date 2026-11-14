@@ -149,7 +149,7 @@ Regeln:
 |---|---|
 | Hinzufügen | Datei als `.mync-part` herunterladen → Hash prüfen → atomar umbenennen (`rename`). |
 | Umbenennen | Lokales `rename` – **keine Übertragung** nötig. Leere Ordner werden aufgeräumt. |
-| Tags | Nur die Tag-Daten (JSON + ggf. Cover) werden übertragen und lokal mit lofty (Rust) in die Datei geschrieben. Danach muss `audio_hash` unverändert sein, sonst Rollback. |
+| Tags | Nur die Tag-Daten (JSON + ggf. Cover) werden übertragen und lokal vom Zig-Kern in die Datei geschrieben. Danach muss `audio_hash` unverändert sein, sonst Rollback. |
 | Inhalt ersetzt | wie Hinzufügen, alte Version in den Papierkorb. |
 | Löschen | Datei in `.mync-trash/<datum>/…` verschieben (Aufbewahrung konfigurierbar, Standard 30 Tage). |
 
@@ -182,7 +182,7 @@ Byte-Gleichheit.
 
 Die Freigabe muss auch **auf dem Handy** erfolgen, also braucht das Handy eine
 eigene Komponente. mync ist dafür **eine Flutter-App** (`app/`) für Android
-und Linux mit einem gemeinsamen **Rust-Kern** (`core/`):
+und Linux mit einem gemeinsamen **Kern in Zig** (`core/`):
 
 | Gerät | Rolle der App |
 |---|---|
@@ -190,7 +190,7 @@ und Linux mit einem gemeinsamen **Rust-Kern** (`core/`):
 | **PC** (Linux) | Player + Sync + Inbox |
 
 Weil Scanner, Hash-Berechnung, Diff-Engine und Protokoll in **demselben
-Rust-Code** laufen, rechnen beide Geräte garantiert identisch – eine
+Zig-Code** laufen, rechnen beide Geräte garantiert identisch – eine
 doppelte Implementierung (und die Gefahr abweichender Hashes) entfällt.
 
 Wer startet den Sync? Der **PC** ist Client und verbindet sich mit dem Handy
@@ -199,14 +199,18 @@ So muss das Handy nicht dauerhaft im Hintergrund lauschen; gestartet wird
 per Knopf in der App, beim Laden im Heim-WLAN (`workmanager`) oder vom PC aus.
 
 Technik:
-- **HTTPS-Server/Client:** Rust (`axum` + `rustls`, Client `reqwest`),
-  selbstsignierte Zertifikate mit Fingerprint-Pinning.
-- **Geräteerkennung:** mDNS mit dem Rust-Crate `mdns-sd`.
+- **Verschlüsselter Kanal:** Die Zig-Standardbibliothek bringt TLS nur als
+  Client mit. Da sich die Geräte ohnehin beim Koppeln kennenlernen, nutzt
+  mync stattdessen ein **Noise_XX-Handshake** (X25519, ChaCha20-Poly1305,
+  SHA-256 – alles in `std.crypto`) mit beim Koppeln gepinnten statischen
+  Schlüsseln. Darin läuft gewöhnliches HTTP/1.1 (`std.http`).
+- **Geräteerkennung:** mDNS (`_mync._tcp`), schlanke eigene Implementierung
+  über UDP-Multicast (`std.Io.net`).
 - **Android-Speicherzugriff:** Für Umbenennen/Löschen/Tag-Schreiben beliebiger
   Audiodateien ist `MANAGE_EXTERNAL_STORAGE` („Zugriff auf alle Dateien“,
   über `permission_handler`) am einfachsten – unproblematisch, da die App
   nicht über den Play Store verteilt werden muss (Sideload/F-Droid). Dann
-  kann der Rust-Kern direkt mit normalen Dateipfaden arbeiten.
+  kann der Zig-Kern direkt mit normalen Dateipfaden arbeiten.
 - **Foreground-Service** während des Syncs: `flutter_foreground_task`.
 - **Nach dem Anwenden:** Android-MediaScanner für alle geänderten Pfade
   anstoßen (kleiner Platform-Channel zu `MediaScannerConnection.scanFile`),

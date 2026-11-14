@@ -3,20 +3,25 @@
 Reihenfolge so gewählt, dass möglichst früh etwas **Nützliches** entsteht:
 zuerst der Sync (das eigentliche Problem), dann der Player.
 
-## M0 – Rust-Kern ✅ (erledigt)
-- `core/`: `audio_hash` (MP3, FLAC, Ogg Vorbis/Opus, M4A, WAV), normalisierte
-  Tags + `tag_hash` (lofty), inkrementeller Manifest-Scan (SQLite) mit
-  Umbenennungserkennung, Diff-Engine (add/delete/rename/tags/replace) und
-  Inbox-Vorschläge inkl. Konflikten.
-- Tests mit echten, per ffmpeg erzeugten Dateien; CLI `mync scan|status|hash`.
-- Flutter-App-Gerüst (`app/`) für Linux + Android mit Bibliotheksansicht
-  über flutter_rust_bridge.
+## M0 – Kern ✅ (erledigt, in Zig 0.17.1)
+- `core/`: `audio_hash` (MP3, FLAC, Ogg Vorbis/Opus/FLAC, M4A, WAV),
+  eigene Tag-Leser (ID3v2.2–2.4, ID3v1, Vorbis Comments, MP4, WAV) mit
+  normalisierten Feldern + `tag_hash`, inkrementeller Manifest-Scan (SQLite)
+  mit Umbenennungserkennung, Diff-Engine (add/delete/rename/tags/replace)
+  und Inbox-Vorschläge inkl. Konflikten.
+- C-ABI (`mync_scan`, `mync_list_tracks`, …) für `dart:ffi`; CLI `mync scan|status|hash`.
+- Tests mit eingecheckten Testdateien aller Formate (erzeugt mit ffmpeg,
+  getaggt mit mutagen als unabhängiger Referenz), FFI-Test in Flutter.
+- Build für Linux und Android (arm64-v8a, armeabi-v7a, x86_64 über das NDK).
+- Flutter-App-Gerüst (`app/`) mit Bibliotheksansicht.
 
-## M1 – Sync MVP (≈ 3–4 Wochen)
+## M1 – Sync MVP (≈ 4–5 Wochen)
 - Basis-Tabelle je Partnergerät, Erst-Sync (Paarung über `audio_hash`).
-- HTTPS-Server/Client in Rust, Kopplung per Code, Fingerprint-Pinning.
+- Tag-**Schreiben** im Zig-Kern (ID3v2.4, Vorbis Comments inkl. Ogg-Neuumbruch,
+  FLAC-Blöcke mit Padding, MP4 `ilst` inkl. `stco`-Korrektur) – Tests gegen mutagen.
+- Noise_XX-verschlüsselter Kanal + HTTP, Kopplung per Code, Schlüssel-Pinning.
 - Inbox-Bildschirm in Flutter (annehmen/ablehnen/später).
-- Anwenden mit `.mync-part`, Papierkorb, Journal/Undo; Tags per lofty schreiben.
+- Anwenden mit `.mync-part`, Papierkorb, Journal/Undo.
 - Android: „Zugriff auf alle Dateien“, Foreground-Service, MediaScanner.
 
 ## M2 – Inbox-Komfort (≈ 2–3 Wochen)

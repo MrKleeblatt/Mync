@@ -47,3 +47,45 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// ─── mync-Kern (Zig) ────────────────────────────────────────────────────────
+// Baut core/ für alle Android-ABIs mit `zig build` gegen die libc des NDK und
+// legt libmync_core.so als jniLib ab. Voraussetzung: `zig` im PATH.
+val myncCoreDir = file("../../../core")
+val myncJniLibs = layout.buildDirectory.dir("mync_core/jniLibs")
+val myncAbis = mapOf(
+    "arm64-v8a" to "aarch64-linux-android",
+    "armeabi-v7a" to "arm-linux-androideabi",
+    "x86_64" to "x86_64-linux-android",
+)
+val myncMinApi = 24
+
+val buildMyncCore by tasks.registering {
+    group = "build"
+    description = "Baut den mync-Kern (Zig) für alle Android-ABIs"
+    inputs.dir(myncCoreDir.resolve("src"))
+    inputs.file(myncCoreDir.resolve("build.zig"))
+    outputs.dir(myncJniLibs)
+    doLast {
+        val ndk = android.ndkDirectory.absolutePath
+        myncAbis.forEach { (abi, triple) ->
+            val prefix = layout.buildDirectory.dir("mync_core/$abi").get().asFile
+            providers.exec {
+                workingDir = myncCoreDir
+                commandLine(
+                    "zig", "build",
+                    "-Dtarget=$triple.$myncMinApi",
+                    "-Doptimize=ReleaseSafe",
+                    "-Dandroid-ndk=$ndk",
+                    "--prefix", prefix.absolutePath,
+                )
+            }.result.get()
+            val target = myncJniLibs.get().dir(abi).file("libmync_core.so").asFile
+            target.parentFile.mkdirs()
+            prefix.resolve("lib/libmync_core.so").copyTo(target, overwrite = true)
+        }
+    }
+}
+
+android.sourceSets.getByName("main").jniLibs.srcDir(myncJniLibs)
+tasks.named("preBuild") { dependsOn(buildMyncCore) }

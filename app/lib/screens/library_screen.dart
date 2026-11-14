@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../settings.dart';
-import '../src/rust/api/library.dart';
+import '../core/mync_core.dart';
 
 /// Bibliothek: Musikordner wählen, scannen (Rust-Kern) und Titel anzeigen.
 class LibraryScreen extends StatefulWidget {

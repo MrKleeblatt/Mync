@@ -3,11 +3,9 @@ import 'package:flutter/material.dart';
 import 'screens/library_screen.dart';
 import 'screens/placeholder_screen.dart';
 import 'settings.dart';
-import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RustLib.init();
   final settings = await AppSettings.load();
   runApp(MyncApp(settings: settings));
 }

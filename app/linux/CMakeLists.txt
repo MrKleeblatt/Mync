@@ -74,6 +74,23 @@ set_target_properties(${BINARY_NAME}
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# === mync-Kern (Zig) ===
+# Baut core/ mit `zig build` und legt libmync_core.so ins Bundle (lib/).
+find_program(ZIG_EXECUTABLE zig REQUIRED)
+set(MYNC_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../core")
+set(MYNC_CORE_PREFIX "${CMAKE_BINARY_DIR}/mync_core")
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+  set(MYNC_CORE_OPTIMIZE "Debug")
+else()
+  set(MYNC_CORE_OPTIMIZE "ReleaseSafe")
+endif()
+add_custom_target(mync_core ALL
+  COMMAND "${ZIG_EXECUTABLE}" build -Doptimize=${MYNC_CORE_OPTIMIZE} --prefix "${MYNC_CORE_PREFIX}"
+  WORKING_DIRECTORY "${MYNC_CORE_DIR}"
+  COMMENT "Baue mync-Kern (Zig)"
+  VERBATIM)
+add_dependencies(${BINARY_NAME} mync_core)
+
 
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
@@ -99,6 +116,9 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
+
+install(FILES "${MYNC_CORE_PREFIX}/lib/libmync_core.so"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
   install(FILES "${bundled_library}"
