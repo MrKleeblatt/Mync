@@ -208,7 +208,7 @@ Technik:
   über UDP-Multicast (`std.Io.net`).
 - **Android-Speicherzugriff:** Für Umbenennen/Löschen/Tag-Schreiben beliebiger
   Audiodateien ist `MANAGE_EXTERNAL_STORAGE` („Zugriff auf alle Dateien“,
-  über `permission_handler`) am einfachsten – unproblematisch, da die App
+  über einen kleinen Platform-Channel in `MainActivity.kt`) am einfachsten – unproblematisch, da die App
   nicht über den Play Store verteilt werden muss (Sideload/F-Droid). Dann
   kann der Zig-Kern direkt mit normalen Dateipfaden arbeiten.
 - **Foreground-Service** während des Syncs: `flutter_foreground_task`.

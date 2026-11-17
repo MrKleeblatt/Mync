@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../settings.dart';
 import '../core/mync_core.dart';
+import '../core/storage_access.dart';
 
 /// Bibliothek: Musikordner wählen, scannen (Rust-Kern) und Titel anzeigen.
 class LibraryScreen extends StatefulWidget {
@@ -41,11 +41,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Future<bool> _ensurePermission() async {
-    if (!Platform.isAndroid) return true;
     // Umbenennen, Löschen und Tag-Schreiben brauchen „Zugriff auf alle Dateien“.
-    if (await Permission.manageExternalStorage.isGranted) return true;
-    final status = await Permission.manageExternalStorage.request();
-    return status.isGranted;
+    if (await StorageAccess.granted()) return true;
+    await StorageAccess.request();
+    return false; // Nutzer erteilt den Zugriff in den Einstellungen, dann erneut scannen
   }
 
   Future<void> _pickFolder() async {
@@ -95,7 +94,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _scan() async {
     if (!await _ensurePermission()) {
-      setState(() => _message = 'Ohne Dateizugriff kann nicht gescannt werden.');
+      setState(() => _message = 'Bitte „Zugriff auf alle Dateien“ erlauben und dann erneut scannen.');
       return;
     }
     setState(() {

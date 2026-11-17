@@ -87,5 +87,5 @@ val buildMyncCore by tasks.registering {
     }
 }
 
-android.sourceSets.getByName("main").jniLibs.srcDir(myncJniLibs)
+android.sourceSets.getByName("main").jniLibs.srcDir(myncJniLibs.get().asFile)
 tasks.named("preBuild") { dependsOn(buildMyncCore) }
