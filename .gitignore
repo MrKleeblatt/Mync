@@ -7,3 +7,6 @@ zig-out/
 .vscode/
 *.iml
 .DS_Store
+
+# Android-Build-Ausgaben
+app/android/build/
