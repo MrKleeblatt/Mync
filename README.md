@@ -1,21 +1,37 @@
 # mync
 
-**mync** = *music sync*. Zwei Bausteine für eine lokale Musiksammlung, die auf
-PC (Linux) und Handy (Android, Musicolet) gleich aussehen soll:
+**mync** = *music sync*. Ein Offline-Musikplayer für Linux im Stil von
+Musicolet – plus (in Arbeit) Synchronisation mit dem Handy, bei der jede
+Änderung auf dem Empfängergerät bestätigt werden muss.
 
-1. **mync-sync** – synchronisiert Audiodateien zwischen Handy und PC.
-   Jede Änderung (neue Datei, Löschung, Umbenennung, Tag-Änderung) wird dem
-   **Empfängergerät als Vorschlag** angezeigt und erst nach Bestätigung durch
-   den Nutzer angewendet.
-2. **mync-player** – ein Musikplayer für Linux, der den Funktionsumfang von
-   Musicolet abbildet (mehrere Warteschlangen, Ordner-Ansicht, Tag-Editor,
-   synchronisierte Lyrics, Equalizer, Sleeptimer …) – offline, ohne Konto,
-   ohne Werbung.
+![Bibliothek mit Warteschlange](docs/screenshots/bibliothek.png)
+
+**Was der Player kann:** Ordner-, Alben-, Künstler- und Genre-Ansichten,
+**mehrere Warteschlangen**, die sich ihre Position merken, lückenlose
+Wiedergabe, Tag-Editor (MP3/FLAC), synchronisierte Lyrics (LRC), Playlists
+als `.m3u8`, Favoriten, Equalizer, ReplayGain, Sleeptimer, Geschwindigkeit,
+Medientasten über MPRIS und Tastenkürzel – ohne Konto, ohne Werbung.
+Den genauen Stand zeigt [docs/funktionen.md](docs/funktionen.md).
+
+## Installation unter Arch Linux
+
+```bash
+# Build-Abhängigkeiten: Zig 0.17.1 (extra/zig oder AUR) und Flutter (AUR: flutter-bin)
+git clone -b docs/konzept https://github.com/mrkleeblatt/mync.git
+cd mync/packaging/arch
+makepkg -si
+```
+
+Danach startet `mync` aus dem Anwendungsmenü oder im Terminal. Beim ersten
+Start den Musikordner wählen (Ordner-Symbol oben). Laufzeit-Abhängigkeiten:
+`mpv` (libmpv), `gtk3`, `mimalloc`. Zusätzlich wird das Kommandozeilenwerkzeug
+`mync-core` installiert (`mync-core scan|status|hash|tag`).
 
 ## Dokumente
 
 | Dokument | Inhalt |
 |---|---|
+| [docs/funktionen.md](docs/funktionen.md) | Funktionsstand des Players, Tastenkürzel |
 | [docs/sync-konzept.md](docs/sync-konzept.md) | Konzept für die Synchronisation mit Bestätigung auf dem Empfängergerät |
 | [docs/player-plan.md](docs/player-plan.md) | Funktions- und Architekturplan für den Linux-Player |
 | [docs/roadmap.md](docs/roadmap.md) | Umsetzungsreihenfolge, Meilensteine, offene Fragen |
@@ -25,10 +41,12 @@ PC (Linux) und Handy (Android, Musicolet) gleich aussehen soll:
 ```
 mync/
 ├── app/          # Flutter-App (Dart) für Linux und Android, Kern über dart:ffi
-├── core/         # Kern in Zig 0.17.1: Audio-Hash, Tags, Manifest, Diff-Engine, CLI `mync`
+├── core/         # Kern in Zig 0.17.1: Audio-Hash, Tags lesen/schreiben, Dauer,
+│   │             #   Manifest, Diff-Engine, CLI `mync`
 │   ├── testdata/ # kleine Testdateien aller Formate + erwartete Tags
 │   └── vendor/   # SQLite-Amalgamation (C)
-└── docs/         # Konzepte und Pläne
+├── packaging/    # Arch-PKGBUILD, Desktop-Eintrag, Icon
+└── docs/         # Konzepte, Pläne, Funktionsstand, Screenshots
 ```
 
 ## Grundsatzentscheidungen (Kurzfassung)
@@ -36,8 +54,9 @@ mync/
 - **Eine App für beide Geräte:** Flutter (Dart) für die Oberfläche auf
   Linux und Android, darunter ein Kern in **Zig 0.17.1** (`core/`), als
   gemeinsame Bibliothek `libmync_core.so` über `dart:ffi` angebunden.
-- **Handy:** Sync-Gegenstelle + Inbox. Abgespielt wird weiter mit Musicolet.
 - **PC:** Player (media_kit/libmpv) + Sync + Inbox.
+- **Handy:** Sync-Gegenstelle + Inbox. Abgespielt wird weiter mit Musicolet
+  (der mync-Player läuft dort aber ebenfalls).
 - **Identischer Kern auf beiden Seiten:** Scanner, Hashes, Tag-Leser,
   Diff-Engine und Sync-Protokoll sind derselbe Zig-Code – beide Geräte
   rechnen garantiert gleich. Abhängigkeiten: nur die Zig-Standardbibliothek
@@ -51,9 +70,10 @@ mync/
 
 ## Status
 
-- ✅ Zig-Kern `core/` (Meilenstein M0) mit Tests
-- ✅ Flutter-App-Gerüst `app/` mit Bibliotheksansicht
-- ⏳ Sync-Protokoll und Inbox (M1), danach der Player (M3)
+- ✅ Zig-Kern `core/` mit Tests (Hashes, Tags lesen und schreiben, Dauer, Manifest, Diff-Engine)
+- ✅ Player für Linux (Meilensteine M3 und großteils M4), siehe [docs/funktionen.md](docs/funktionen.md)
+- ✅ Arch-PKGBUILD
+- ⏳ Sync-Protokoll und Inbox (M1/M2)
 
 ## Entwickeln
 
@@ -67,8 +87,11 @@ cd core && zig build test
 zig build run -- scan ~/Musik
 zig build run -- status ~/Musik
 
-# App starten (Linux) – CMake baut den Zig-Kern automatisch mit
+# App starten (Linux) – CMake baut den Zig-Kern automatisch mit; libmpv nötig
 cd app && flutter run -d linux
+
+# Fehlersuche: mpv-Fehler und aktive Audiofilter ausgeben
+MYNC_DEBUG=1 flutter run -d linux
 
 # FFI-Tests der App gegen den gebauten Kern
 cd app && LD_LIBRARY_PATH=../core/zig-out/lib flutter test

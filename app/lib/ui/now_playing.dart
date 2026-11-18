@@ -13,6 +13,39 @@ import 'scope.dart';
 import 'sound_sheets.dart';
 import 'track_actions.dart';
 
+/// Öffnet den großen Wiedergabebildschirm (von unten eingeschoben).
+void openNowPlaying(BuildContext context) {
+  final s = MyncScope.of(context);
+  Navigator.of(context).push(
+    PageRouteBuilder<void>(
+      pageBuilder: (_, _, _) => MyncScope(
+        settings: s.settings,
+        library: s.library,
+        player: s.player,
+        child: const NowPlayingPage(),
+      ),
+      transitionsBuilder: (_, anim, _, child) => SlideTransition(
+        position: Tween(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(anim),
+        child: child,
+      ),
+    ),
+  );
+}
+
+/// Wiedergabeleiste für Unterseiten (Album, Künstler, Playlist).
+class PageMiniPlayer extends StatelessWidget {
+  const PageMiniPlayer({super.key});
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    top: false,
+    child: MiniPlayer(onOpen: () => openNowPlaying(context)),
+  );
+}
+
 /// Schmale Wiedergabeleiste am unteren Rand.
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key, required this.onOpen});

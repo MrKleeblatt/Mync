@@ -31,22 +31,25 @@ zuerst der Sync (das eigentliche Problem), dann der Player.
 - M3U-Playlists und `.lrc` als synchronisierte Dateitypen.
 - Automatischer Sync beim Laden im Heim-WLAN.
 
-## M3 – Player MVP (≈ 4–6 Wochen)
-- Ordner/Alben/Künstler/Titel, Suche (FTS5), Wiedergabe mit media_kit, Gapless.
+## M3 – Player MVP ✅ (erledigt)
+- Ordner/Alben/Künstler/Genres/Titel, Suche, Wiedergabe mit media_kit, lückenlos.
 - Mehrere Warteschlangen mit gespeicherter Position, Zustand über Neustarts.
-- Tag-Editor (einzeln + mehrfach), Cover, Playlists (M3U).
+- Tag-Editor (einzeln + mehrfach) für MP3/FLAC, Cover-Anzeige, Playlists (M3U8).
 - MPRIS, Tastenkürzel, Hell/Dunkel.
 
-## M4 – Player 1.0 (≈ 4 Wochen)
-- Lyrics (eingebettet + LRC synchron), Equalizer, Sleeptimer, ReplayGain,
-  Geschwindigkeit, Statistik/Favoriten, Backup.
-- Pfad-Updates für Queues nach Umbenennung durch den Sync.
-- Flatpak/AppImage, signierte APK.
+## M4 – Player 1.0 (größtenteils erledigt)
+- ✅ Lyrics (eingebettet + LRC synchron), Equalizer, Sleeptimer, ReplayGain,
+  Geschwindigkeit, Statistik, Favoriten.
+- ✅ Pfad-Updates für Warteschlangen nach Umbenennungen (Scan erkennt sie über die file_id).
+- ✅ Arch-PKGBUILD; ⏳ Flatpak/AppImage, signierte APK.
+- ⏳ Tag-Schreiben für Ogg Vorbis/Opus, M4A, WAV.
+- ⏳ Cover im Tag-Editor ändern/entfernen, Komponisten-Tab, mehrere Musikordner,
+  Backup/Wiederherstellen.
 
 ## M5 – Komfort (offen)
 - Selektiver Sync (nur ausgewählte Ordner aufs Handy).
-- Crossfade, LRC-Editor, Umbenennen nach Tag-Muster, Mini-Player.
-- Optional: Wiedergabezähler/Favoriten mit Musicolet abgleichen.
+- Crossfade, LRC-Editor, Umbenennen nach Tag-Muster, Mini-Player-Fenster,
+  Lesezeichen für Hörbücher.
 
 ## Offene Fragen an den Nutzer
 1. Wie groß ist die Sammlung (Anzahl Dateien, GB)? Passt alles aufs Handy,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../library/playlists.dart';
 import '../library/track.dart';
+import 'now_playing.dart';
 import 'scope.dart';
 import 'track_actions.dart';
 import 'track_list.dart';
@@ -180,6 +181,7 @@ class _PlaylistPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const PageMiniPlayer(),
       appBar: AppBar(title: Text(title)),
       body: ListenableBuilder(
         listenable: context.library,

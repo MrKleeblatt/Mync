@@ -5,6 +5,7 @@ import '../core/storage_access.dart';
 import '../library/library.dart';
 import '../library/track.dart';
 import 'cover_art.dart';
+import 'now_playing.dart';
 import 'scope.dart';
 import 'track_actions.dart';
 import 'track_list.dart';
@@ -505,6 +506,7 @@ class AlbumPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final year = album.year;
     return Scaffold(
+      bottomNavigationBar: const PageMiniPlayer(),
       appBar: AppBar(title: Text(album.name)),
       body: TrackListView(
         tracks: album.tracks,
@@ -573,6 +575,7 @@ class GroupPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final albums = context.library.albumsOf(group);
     return Scaffold(
+      bottomNavigationBar: const PageMiniPlayer(),
       appBar: AppBar(title: Text(group.name)),
       body: TrackListView(
         tracks: group.tracks,

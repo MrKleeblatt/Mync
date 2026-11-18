@@ -49,26 +49,7 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   final _libraryKey = GlobalKey<LibraryPageState>();
 
-  void _openNowPlaying() {
-    final s = MyncScope.of(context);
-    Navigator.of(context).push(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, _, _) => MyncScope(
-          settings: s.settings,
-          library: s.library,
-          player: s.player,
-          child: const NowPlayingPage(),
-        ),
-        transitionsBuilder: (_, anim, _, child) => SlideTransition(
-          position: Tween(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(anim),
-          child: child,
-        ),
-      ),
-    );
-  }
+  void _openNowPlaying() => openNowPlaying(context);
 
   Widget _page(bool sidePanel) => switch (_index) {
     0 => LibraryPage(key: _libraryKey),
