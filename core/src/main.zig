@@ -3,7 +3,7 @@
 //!   mync scan   <musikordner> [db]   Bibliothek ins Manifest einlesen
 //!   mync status <musikordner> [db]   Manifest auflisten
 //!   mync hash   <datei>...           Hashes und Tags einzelner Dateien zeigen
-//!   mync tag    <datei> feld=wert…   Tags setzen (feld= entfernt; MP3, FLAC)
+//!   mync tag    <datei> feld=wert…   Tags setzen (feld= entfernt; cover=bild.jpg, cover= entfernt)
 //!   mync keygen <schlüsseldatei>     Update-Signaturschlüssel erzeugen
 //!   mync sign   <schlüsseldatei> <datei>   Datei signieren (→ <datei>.sig)
 //!   mync verify <öffentlich-hex> <datei>   Signatur <datei>.sig prüfen
@@ -20,7 +20,8 @@ const usage =
     \\  mync sign <schlüsseldatei> <datei>
     \\  mync verify <öffentlicher-schlüssel-hex> <datei>
     \\  mync tag <datei> feld=wert...   (Felder: title artist album albumartist composer
-    \\                                   genre date track tracktotal disc disctotal comment lyrics)
+    \\                                   genre date track tracktotal disc disctotal comment lyrics description;
+    \\                                   cover=bild.jpg setzt das Cover, cover= entfernt es)
     \\
 ;
 
@@ -95,6 +96,7 @@ pub fn main(init: std.process.Init) !u8 {
         const p = args[2];
         const old = try core.tags.readFile(a, io, Io.Dir.cwd(), p);
         var map: std.StringArrayHashMapUnmanaged([]const []const u8) = .empty;
+        var cover: core.writer.Cover = .keep;
         for (old.fields) |f| try map.put(a, f.name, f.values);
         for (args[3..]) |kv| {
             const eq = std.mem.indexOfScalar(u8, kv, '=') orelse {
@@ -102,6 +104,13 @@ pub fn main(init: std.process.Init) !u8 {
                 return 2;
             };
             const name = kv[0..eq];
+            if (std.mem.eql(u8, name, "cover")) {
+                cover = if (eq + 1 == kv.len) .remove else .{ .set = Io.Dir.cwd().readFileAlloc(io, kv[eq + 1 ..], a, .limited(32 << 20)) catch |err| {
+                    try w.print("Bild nicht lesbar: {t}\n", .{err});
+                    return 1;
+                } };
+                continue;
+            }
             if (core.tags.fieldIndex(name) == null) {
                 try w.print("Unbekanntes Feld: {s}\n", .{name});
                 return 2;
@@ -116,7 +125,7 @@ pub fn main(init: std.process.Init) !u8 {
         }
         var fields: std.ArrayList(core.tags.Field) = .empty;
         for (map.keys(), map.values()) |k, v| try fields.append(a, .{ .name = k, .values = v });
-        core.writer.writeFile(a, io, Io.Dir.cwd(), p, fields.items) catch |err| {
+        core.writer.writeFile(a, io, Io.Dir.cwd(), p, fields.items, cover) catch |err| {
             try w.print("Fehler: {t}\n", .{err});
             return 1;
         };

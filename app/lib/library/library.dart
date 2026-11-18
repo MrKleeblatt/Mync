@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 
 import '../core/mync_core.dart';
 import '../settings.dart';
@@ -223,6 +224,9 @@ class Library extends ChangeNotifier {
   // ─── Cover ─────────────────────────────────────────────────────────────
 
   final Map<String, Future<String?>> _coverCache = {};
+
+  /// Wird bei jeder Cover-Änderung erhöht (Widgets laden dann neu).
+  int coverVersion = 0;
   static const _folderCovers = [
     'cover',
     'folder',
@@ -238,9 +242,7 @@ class Library extends ChangeNotifier {
 
   Future<String?> _findCover(Track t) async {
     // 1. Eingebettetes Cover (in den Cache extrahiert)
-    final id = base64Url.encode(utf8.encode(t.path)).replaceAll('=', '');
-    final short = id.length > 100 ? id.substring(id.length - 100) : id;
-    final out = '${settings.cacheDir}/covers/$short.img';
+    final out = _coverCachePath(t);
     if (File(out).existsSync()) return out;
     try {
       if (await extractCover(abs(t.path), out)) return out;
@@ -264,7 +266,25 @@ class Library extends ChangeNotifier {
   }
 
   /// Nach dem Bearbeiten von Tags: Cover-Cache für die Datei verwerfen.
-  void invalidateCover(Track t) => _coverCache.remove(t.albumKey + t.folder);
+  /// Nach dem Ändern eines Covers: Cache-Datei und Bild-Cache verwerfen.
+  void invalidateCover(Track t) {
+    coverVersion++;
+    _coverCache.remove(t.albumKey + t.folder);
+    final f = File(_coverCachePath(t));
+    try {
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
+    // auch verkleinerte Varianten (cacheWidth) verwerfen
+    PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
+  }
+
+  String _coverCachePath(Track t) {
+    final id = base64Url.encode(utf8.encode(t.path)).replaceAll('=', '');
+    final short = id.length > 100 ? id.substring(id.length - 100) : id;
+    return '${settings.cacheDir}/covers/$short.img';
+  }
 
   @override
   void dispose() {

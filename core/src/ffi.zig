@@ -148,12 +148,11 @@ fn readTags(a: std.mem.Allocator, io: Io, path: []const u8) !FileTags {
     const t = try core.tags.readFile(a, io, Io.Dir.cwd(), path);
     var f: Fields = .{};
     for (t.fields) |x| try f.map.put(a, x.name, x.values);
-    const fmt = core.audiohash.Format.fromPath(path);
     const ch = try a.alloc(ChapterJson, t.chapters.len);
     for (t.chapters, ch) |c, *o| o.* = .{ .start_ms = c.start_ms, .end_ms = c.end_ms, .title = c.title };
     const ph = try a.alloc([]const u8, t.pictures.len);
     for (t.pictures, ph) |p, *o| o.* = try a.dupe(u8, &p);
-    return .{ .fields = f, .pictures = t.pictures.len, .picture_hashes = ph, .chapters = ch, .writable = fmt == .mp3 or fmt == .flac };
+    return .{ .fields = f, .pictures = t.pictures.len, .picture_hashes = ph, .chapters = ch, .writable = core.writer.canWrite(path) };
 }
 
 /// Liest alle Tags einer Datei (inkl. Lyrics).
@@ -161,7 +160,7 @@ export fn mync_read_tags(path: [*:0]const u8) ?[*:0]u8 {
     return call(readTags, .{std.mem.span(path)});
 }
 
-fn writeTags(a: std.mem.Allocator, io: Io, path: []const u8, fields_json: []const u8) !FileTags {
+fn writeTags(a: std.mem.Allocator, io: Io, path: []const u8, fields_json: []const u8, cover_arg: []const u8) !FileTags {
     const parsed = try std.json.parseFromSliceLeaky(Fields, a, fields_json, .{});
     var fields: std.ArrayList(core.tags.Field) = .empty;
     var it = parsed.map.iterator();
@@ -169,14 +168,21 @@ fn writeTags(a: std.mem.Allocator, io: Io, path: []const u8, fields_json: []cons
         if (core.tags.fieldIndex(kv.key_ptr.*) == null) return error.UnknownField;
         try fields.append(a, .{ .name = kv.key_ptr.*, .values = kv.value_ptr.* });
     }
-    try core.writer.writeFile(a, io, Io.Dir.cwd(), path, fields.items);
+    const cover: core.writer.Cover = if (cover_arg.len == 0)
+        .keep
+    else if (std.mem.eql(u8, cover_arg, "-"))
+        .remove
+    else
+        .{ .set = try Io.Dir.cwd().readFileAlloc(io, cover_arg, a, .limited(32 << 20)) };
+    try core.writer.writeFile(a, io, Io.Dir.cwd(), path, fields.items, cover);
     return readTags(a, io, path);
 }
 
 /// Ersetzt die Tags einer Datei. `fields_json`: {"title":["…"],"artist":["…","…"],…}
-/// Nicht enthaltene Felder werden entfernt. Liefert die neu gelesenen Tags.
-export fn mync_write_tags(path: [*:0]const u8, fields_json: [*:0]const u8) ?[*:0]u8 {
-    return call(writeTags, .{ std.mem.span(path), std.mem.span(fields_json) });
+/// Nicht enthaltene Felder werden entfernt. `cover`: "" = Bilder behalten,
+/// "-" = entfernen, sonst Pfad zu einem JPEG/PNG. Liefert die neu gelesenen Tags.
+export fn mync_write_tags(path: [*:0]const u8, fields_json: [*:0]const u8, cover: [*:0]const u8) ?[*:0]u8 {
+    return call(writeTags, .{ std.mem.span(path), std.mem.span(fields_json), std.mem.span(cover) });
 }
 
 fn extractCover(a: std.mem.Allocator, io: Io, path: []const u8, out_path: []const u8) !bool {

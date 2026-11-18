@@ -25,11 +25,14 @@ class CoverArt extends StatefulWidget {
 class _CoverArtState extends State<CoverArt> {
   Future<String?>? _future;
   String? _forPath;
+  int _version = -1;
 
   void _resolve() {
     final t = widget.track;
-    if (t?.path == _forPath && _future != null) return;
+    final version = context.library.coverVersion;
+    if (t?.path == _forPath && _future != null && version == _version) return;
     _forPath = t?.path;
+    _version = version;
     _future = t == null ? Future.value(null) : context.library.coverFor(t);
   }
 

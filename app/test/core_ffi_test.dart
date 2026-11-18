@@ -67,9 +67,26 @@ void main() {
     expect(written.pictures, 1);
     expect(await extractCover(abs, '${tmp.path}/cover.img'), isTrue);
     expect(File('${tmp.path}/cover.img').lengthSync(), greaterThan(0));
+    // Cover entfernen und als Datei wieder setzen
+    final noCover = await writeTags(abs, written.fields, removeCover: true);
+    expect(noCover.pictures, 0);
+    final withCover = await writeTags(
+      abs,
+      written.fields,
+      coverFile: '${tmp.path}/cover.img',
+    );
+    expect(withCover.pictures, 1);
+    expect(withCover.fields['title'], ['Neu']);
+    File('${tmp.path}/kein-bild.txt').writeAsStringSync('kein Bild');
     await expectLater(
-      writeTags('$root/Björk/Post/ohne-tags.opus', {}),
-      throwsA(isA<MyncCoreException>()),
+      writeTags(abs, {}, coverFile: '${tmp.path}/kein-bild.txt'),
+      throwsA(
+        isA<MyncCoreException>().having(
+          (e) => e.userMessage,
+          'userMessage',
+          contains('JPEG'),
+        ),
+      ),
     );
 
     // Nur die geänderte Datei wird neu eingelesen, die Umbenennung bleibt erkannt

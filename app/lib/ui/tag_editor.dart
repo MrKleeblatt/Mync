@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/mync_core.dart';
 import '../library/track.dart';
+import 'cover_art.dart';
 import 'scope.dart';
 
 /// Felder des Editors: (Schlüssel, Beschriftung, mehrwertig mit „;“).
@@ -50,6 +54,10 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
   List<FileTags>? _loaded;
   String? _error;
   bool _saving = false;
+
+  /// Neues Cover (Bilddatei) bzw. Cover entfernen; beides aus = unverändert.
+  String? _coverFile;
+  bool _removeCover = false;
   int _done = 0;
 
   bool get _multi => widget.tracks.length > 1;
@@ -57,7 +65,11 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
   @override
   void initState() {
     super.initState();
-    for (final f in [..._editorFields.map((e) => e.$1), 'lyrics']) {
+    for (final f in [
+      ..._editorFields.map((e) => e.$1),
+      'description',
+      'lyrics',
+    ]) {
       _ctrl[f] = TextEditingController()..addListener(() => _dirty.add(f));
     }
     _load();
@@ -118,7 +130,12 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
             fields[f] = values;
           }
         }
-        await writeTags(path, fields);
+        await writeTags(
+          path,
+          fields,
+          coverFile: _coverFile,
+          removeCover: _removeCover,
+        );
         lib.invalidateCover(widget.tracks[i]);
         setState(() => _done = i + 1);
       }
@@ -130,6 +147,109 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         _error = e is MyncCoreException ? e.userMessage : '$e';
       });
     }
+  }
+
+  Future<void> _pickCover() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Bilder',
+          extensions: ['jpg', 'jpeg', 'png'],
+          mimeTypes: ['image/jpeg', 'image/png'],
+        ),
+      ],
+    );
+    if (file == null) return;
+    setState(() {
+      _coverFile = file.path;
+      _removeCover = false;
+    });
+  }
+
+  Widget _coverSection(ThemeData theme) {
+    const size = 96.0;
+    final loaded = _loaded!;
+    final counts = loaded.map((t) => t.pictureHashes.join(',')).toSet();
+    final Widget preview;
+    if (_coverFile != null) {
+      preview = ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(
+          File(_coverFile!),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+        ),
+      );
+    } else if (_removeCover) {
+      preview = CoverArt(track: null, size: size, radius: 8);
+    } else {
+      preview = CoverArt(track: widget.tracks.first, size: size, radius: 8);
+    }
+    final String status;
+    if (_coverFile != null) {
+      status = 'Neues Cover: ${_coverFile!.split(Platform.pathSeparator).last}';
+    } else if (_removeCover) {
+      status = 'Eingebettete Bilder werden entfernt.';
+    } else if (counts.length > 1) {
+      status = 'Verschiedene Cover – bleiben unverändert.';
+    } else {
+      final n = loaded.first.pictures;
+      status = n == 0
+          ? 'Kein eingebettetes Cover.'
+          : n == 1
+          ? 'Eingebettetes Cover.'
+          : '$n eingebettete Bilder.';
+    }
+    final hasAny = loaded.any((t) => t.pictures > 0);
+    final enabled = !_saving && _writable;
+    return Row(
+      children: [
+        preview,
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(status, style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: enabled ? _pickCover : null,
+                    icon: const Icon(Icons.image_outlined),
+                    label: const Text('Bild wählen …'),
+                  ),
+                  if (hasAny && !_removeCover)
+                    OutlinedButton.icon(
+                      onPressed: enabled
+                          ? () => setState(() {
+                              _removeCover = true;
+                              _coverFile = null;
+                            })
+                          : null,
+                      icon: const Icon(Icons.hide_image_outlined),
+                      label: const Text('Entfernen'),
+                    ),
+                  if (_coverFile != null || _removeCover)
+                    TextButton(
+                      onPressed: enabled
+                          ? () => setState(() {
+                              _removeCover = false;
+                              _coverFile = null;
+                            })
+                          : null,
+                      child: const Text('Rückgängig'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -182,8 +302,9 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  'Tags von ${widget.tracks.first.extension.toUpperCase()}-Dateien können noch nicht geschrieben '
-                  'werden (bisher: MP3, FLAC). Die Werte werden nur angezeigt.',
+                  'Tags dieses Formats können nicht geschrieben werden '
+                  '(möglich: MP3, FLAC, Ogg Vorbis, Opus, M4A, WAV). '
+                  'Die Werte werden nur angezeigt.',
                   style: TextStyle(color: theme.colorScheme.error),
                 ),
               ),
@@ -196,6 +317,8 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                 ),
               ),
             const SizedBox(height: 8),
+            if (_loaded != null) _coverSection(theme),
+            const SizedBox(height: 16),
             Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -216,6 +339,12 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                         : 270,
                   ),
               ],
+            ),
+            const SizedBox(height: 12),
+            _field(
+              'description',
+              'Beschreibung (Kapitel als „00:00 Titel“ je Zeile möglich)',
+              maxLines: 6,
             ),
             const SizedBox(height: 12),
             if (!_multi)

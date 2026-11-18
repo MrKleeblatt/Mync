@@ -94,7 +94,8 @@ class MyncCoreException implements Exception {
 
   /// Verständliche Meldung für die Oberfläche.
   String get userMessage => switch (message) {
-    'UnsupportedFormat' => 'Tags dieses Formats können noch nicht geschrieben werden (bisher: MP3, FLAC).',
+    'UnsupportedFormat' => 'Tags dieses Formats können nicht geschrieben werden (möglich: MP3, FLAC, Ogg Vorbis, Opus, M4A, WAV).',
+    'UnsupportedImage' => 'Als Cover gehen nur JPEG- und PNG-Bilder.',
     'FileNotFound' => 'Datei oder Ordner nicht gefunden.',
     'AccessDenied' || 'PermissionDenied' => 'Keine Berechtigung.',
     'AudioChanged' =>
@@ -111,7 +112,7 @@ class _Lib {
     : scan = lib.lookupFunction<_TwoStr, _TwoStr>('mync_scan'),
       listTracks = lib.lookupFunction<_TwoStr, _TwoStr>('mync_list_tracks'),
       readTags = lib.lookupFunction<_OneStr, _OneStr>('mync_read_tags'),
-      writeTags = lib.lookupFunction<_TwoStr, _TwoStr>('mync_write_tags'),
+      writeTags = lib.lookupFunction<_ThreeStr, _ThreeStr>('mync_write_tags'),
       extractCover = lib.lookupFunction<_TwoStr, _TwoStr>('mync_extract_cover'),
       verifyEd25519 = lib.lookupFunction<_ThreeStr, _ThreeStr>(
         'mync_verify_ed25519',
@@ -135,7 +136,7 @@ class _Lib {
   final _TwoStr scan;
   final _TwoStr listTracks;
   final _OneStr readTags;
-  final _TwoStr writeTags;
+  final _ThreeStr writeTags;
   final _TwoStr extractCover;
   final _ThreeStr verifyEd25519;
   final _OneStr sha256File;
@@ -312,11 +313,20 @@ Future<FileTags> readTags(String absPath) => Isolate.run(() {
 
 /// Ersetzt die Tags der Datei [absPath] durch [fields] (fehlende Felder
 /// werden entfernt). Nur MP3 und FLAC.
-Future<FileTags> writeTags(String absPath, TagFields fields) => Isolate.run(() {
+///
+/// Cover: [coverFile] (JPEG/PNG) ersetzt alle eingebetteten Bilder,
+/// [removeCover] entfernt sie; sonst bleiben sie unverändert.
+Future<FileTags> writeTags(
+  String absPath,
+  TagFields fields, {
+  String? coverFile,
+  bool removeCover = false,
+}) => Isolate.run(() {
   final lib = _Lib.instance;
   final json = jsonEncode(fields);
+  final cover = coverFile ?? (removeCover ? '-' : '');
   return FileTags.fromJson(
-    lib.call2(lib.writeTags, absPath, json) as Map<String, dynamic>,
+    lib.call3(lib.writeTags, absPath, json, cover) as Map<String, dynamic>,
   );
 });
 
