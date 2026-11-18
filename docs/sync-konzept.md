@@ -166,6 +166,16 @@ Byte-Gleichheit.
 
 ## 8. Transport und Gerätekopplung
 
+> **Umsetzung (Stand jetzt):** Statt HTTPS/mDNS nutzt mync einen eigenen,
+> schlanken Kanal: TCP (Port 47788) mit längenpräfixierten Frames,
+> Schlüsseltausch aus statischen und flüchtigen X25519-Schlüsseln
+> (`HKDF(DH(eI,eR)‖DH(sI,eR)‖DH(eI,sR))` über das Transkript), danach
+> ChaCha20-Poly1305 mit Zähler-Nonces und Schlüsselbestätigung. Kopplung:
+> 6-stelliger Code aus beiden Schlüsseln und Zufallswerten, mit Commitment,
+> damit ein Angreifer im Netz den Code nicht passend erzeugen kann.
+> Geräte finden sich per UDP-Broadcast (Port 47789). Anfragen: `manifest`,
+> `tags`, `file` (in Blöcken). Code: `app/lib/sync/`, Krypto im Zig-Kern.
+
 - **Verbindung:** HTTPS (TLS mit selbstsignierten Zertifikaten) im lokalen Netz.
   Geräte finden sich per **mDNS/Zeroconf** (`_mync._tcp`), alternativ IP manuell.
 - **Kopplung:** einmalig per **QR-Code** bzw. 6-stelligem Code. Dabei werden die

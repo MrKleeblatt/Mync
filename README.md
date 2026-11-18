@@ -1,8 +1,8 @@
 # mync
 
 **mync** = *music sync*. Ein Offline-Musikplayer für Linux im Stil von
-Musicolet – plus (in Arbeit) Synchronisation mit dem Handy, bei der jede
-Änderung auf dem Empfängergerät bestätigt werden muss.
+Musicolet – plus Synchronisation mit dem Handy, bei der jede Änderung auf
+dem Empfängergerät bestätigt werden muss.
 
 ![Ordner mit Warteschlange](docs/screenshots/bibliothek.png)
 
@@ -14,9 +14,12 @@ Musicolet – plus (in Arbeit) Synchronisation mit dem Handy, bei der jede
 sich ihre Position merken, Zufall, Spulen mit einstellbarer Schrittweite,
 **Kapitel** (aus den Tags oder wie bei YouTube aus dem Beschreibungstext) zum
 Springen, **Hörstatistik** („diesen Monat am meisten gehört“, Hörzeit nach
-Tageszeit) mit **Vorschlägen**, Tag-Editor (MP3/FLAC), synchronisierte Lyrics,
-Equalizer, ReplayGain, Sleeptimer, Medientasten (MPRIS) – und **Teil-Updates**
-direkt aus den GitHub-Releases. Ohne Konto, ohne Werbung.
+Tageszeit) mit **Vorschlägen**, Hörbuch-Positionen je Datei, Überblenden,
+Tag-Editor für MP3/FLAC/Ogg/Opus/M4A/WAV inkl. Cover, Umbenennen nach Tags,
+synchronisierte Lyrics mit LRC-Editor, Equalizer, Tonhöhe, Balance, ReplayGain,
+Sleeptimer, Mini-Player, mehrere Musikordner, Sicherung, Medientasten (MPRIS),
+**Sync mit dem Handy** (verschlüsselt, jede Änderung bestätigen) – und
+**Teil-Updates** direkt aus den GitHub-Releases. Ohne Konto, ohne Werbung.
 Details: [docs/funktionen.md](docs/funktionen.md), Updates: [docs/updates.md](docs/updates.md).
 
 ## Installation unter Arch Linux
@@ -81,9 +84,9 @@ mync/
 ## Status
 
 - ✅ Zig-Kern `core/` mit Tests (Hashes, Tags lesen und schreiben, Dauer, Manifest, Diff-Engine)
-- ✅ Player für Linux (Meilensteine M3 und großteils M4), siehe [docs/funktionen.md](docs/funktionen.md)
+- ✅ Player für Linux und Android (M3, M4, M5), siehe [docs/funktionen.md](docs/funktionen.md)
 - ✅ Arch-PKGBUILD
-- ⏳ Sync-Protokoll und Inbox (M1/M2)
+- ✅ Sync mit dem Handy: Kopplung, verschlüsselter Kanal, Inbox, Anwenden (M1, Teile von M2)
 
 ## Entwickeln
 

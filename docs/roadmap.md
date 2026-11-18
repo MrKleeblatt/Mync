@@ -15,19 +15,20 @@ zuerst der Sync (das eigentliche Problem), dann der Player.
 - Build für Linux und Android (arm64-v8a, armeabi-v7a, x86_64 über das NDK).
 - Flutter-App-Gerüst (`app/`) mit Bibliotheksansicht.
 
-## M1 – Sync MVP (≈ 4–5 Wochen)
+## M1 – Sync MVP ✅ (erledigt)
 - Basis-Tabelle je Partnergerät, Erst-Sync (Paarung über `audio_hash`).
 - Tag-**Schreiben** im Zig-Kern (ID3v2.4, Vorbis Comments inkl. Ogg-Neuumbruch,
   FLAC-Blöcke mit Padding, MP4 `ilst` inkl. `stco`-Korrektur) – Tests gegen mutagen.
-- Noise_XX-verschlüsselter Kanal + HTTP, Kopplung per Code, Schlüssel-Pinning.
+- Verschlüsselter Kanal (X25519 statisch + flüchtig, ChaCha20-Poly1305) über
+  TCP, Kopplung per 6-stelligem Code mit Commitment, Schlüssel-Pinning.
 - Inbox-Bildschirm in Flutter (annehmen/ablehnen/später).
-- Anwenden mit `.mync-part`, Papierkorb, Journal/Undo.
-- Android: „Zugriff auf alle Dateien“, Foreground-Service, MediaScanner.
+- Anwenden mit Prüfsummen, Papierkorb (30 Tage); ⏳ Journal/Undo.
+- Android: „Zugriff auf alle Dateien“, MediaScanner; ⏳ Foreground-Service.
 
-## M2 – Inbox-Komfort (≈ 2–3 Wochen)
-- Gruppen, Tag-Diff, Vorhören (Streaming vom Partner), „Immer ignorieren“,
-  Benachrichtigung auf dem Handy.
-- mDNS-Erkennung, QR-Code-Kopplung.
+## M2 – Inbox-Komfort (teilweise)
+- ✅ Tag-Diff, „Immer ignorieren“, Geräte finden (UDP-Broadcast).
+- ⏳ Gruppen, Vorhören (Streaming vom Partner), Benachrichtigung auf dem
+  Handy, QR-Code-Kopplung.
 - M3U-Playlists und `.lrc` als synchronisierte Dateitypen.
 - Automatischer Sync beim Laden im Heim-WLAN.
 
@@ -42,14 +43,15 @@ zuerst der Sync (das eigentliche Problem), dann der Player.
   Geschwindigkeit, Statistik, Favoriten.
 - ✅ Pfad-Updates für Warteschlangen nach Umbenennungen (Scan erkennt sie über die file_id).
 - ✅ Arch-PKGBUILD; ⏳ Flatpak/AppImage, signierte APK.
-- ⏳ Tag-Schreiben für Ogg Vorbis/Opus, M4A, WAV.
-- ⏳ Cover im Tag-Editor ändern/entfernen, Komponisten-Tab, mehrere Musikordner,
-  Backup/Wiederherstellen.
+- ✅ Tag-Schreiben für Ogg Vorbis/Opus, M4A, WAV; Cover ändern/entfernen.
+- ✅ Mehrere Musikordner mit Ausschlüssen, Sicherung/Wiederherstellen.
+- – Komponisten-Tab (Ansichten nach Künstler/Album/Komponist bewusst entfernt).
 
-## M5 – Komfort (offen)
-- Selektiver Sync (nur ausgewählte Ordner aufs Handy).
-- Crossfade, LRC-Editor, Umbenennen nach Tag-Muster, Mini-Player-Fenster,
-  Lesezeichen für Hörbücher.
+## M5 – Komfort
+- ✅ Überblenden, LRC-Editor, Umbenennen nach Tag-Muster, Mini-Player-Fenster,
+  Position je Datei (Hörbücher), Tonhöhe, Balance.
+- ⏳ Selektiver Sync (nur ausgewählte Ordner aufs Handy).
+- ⏳ Teil-Updates auf Android (Android installiert nur ganze, signierte APKs).
 
 ## Offene Fragen an den Nutzer
 1. Wie groß ist die Sammlung (Anzahl Dateien, GB)? Passt alles aufs Handy,
