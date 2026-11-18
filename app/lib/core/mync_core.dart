@@ -109,7 +109,7 @@ class MyncCoreException implements Exception {
 
 class _Lib {
   _Lib._(DynamicLibrary lib)
-    : scan = lib.lookupFunction<_TwoStr, _TwoStr>('mync_scan'),
+    : scan = lib.lookupFunction<_ThreeStr, _ThreeStr>('mync_scan'),
       listTracks = lib.lookupFunction<_TwoStr, _TwoStr>('mync_list_tracks'),
       readTags = lib.lookupFunction<_OneStr, _OneStr>('mync_read_tags'),
       writeTags = lib.lookupFunction<_ThreeStr, _ThreeStr>('mync_write_tags'),
@@ -133,7 +133,7 @@ class _Lib {
       free = lib.lookupFunction<_FreeC, _FreeDart>('mync_free'),
       version = lib.lookupFunction<_VersionC, _VersionC>('mync_version');
 
-  final _TwoStr scan;
+  final _ThreeStr scan;
   final _TwoStr listTracks;
   final _OneStr readTags;
   final _ThreeStr writeTags;
@@ -211,6 +211,14 @@ class _Lib {
 
 /// Ergebnis eines Bibliotheks-Scans.
 class ScanSummary {
+  const ScanSummary({
+    required this.total,
+    required this.hashed,
+    required this.added,
+    required this.removed,
+    this.errors = const [],
+  });
+
   ScanSummary.fromJson(Map<String, dynamic> j)
     : total = j['total'] as int,
       hashed = j['hashed'] as int,
@@ -285,13 +293,17 @@ class FileTags {
 String coreVersion() => _Lib.instance.version().toDartString();
 
 /// Durchsucht den Musikordner [root] und aktualisiert das Manifest [db].
-Future<ScanSummary> scanLibrary({required String root, required String db}) =>
-    Isolate.run(() {
-      final lib = _Lib.instance;
-      return ScanSummary.fromJson(
-        lib.call2(lib.scan, root, db) as Map<String, dynamic>,
-      );
-    });
+/// [excludes]: Ausschlussmuster (`*.wav`, `Hörproben`, `Podcasts/**/*.mp3`).
+Future<ScanSummary> scanLibrary({
+  required String root,
+  required String db,
+  List<String> excludes = const [],
+}) => Isolate.run(() {
+  final lib = _Lib.instance;
+  return ScanSummary.fromJson(
+    lib.call3(lib.scan, root, db, jsonEncode(excludes)) as Map<String, dynamic>,
+  );
+});
 
 /// Liefert alle Audiodateien aus dem Manifest, sortiert nach Pfad.
 Future<List<TrackInfo>> listTracks({

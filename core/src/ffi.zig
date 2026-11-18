@@ -68,10 +68,11 @@ const ScanSummary = struct {
     errors: []const []const u8,
 };
 
-fn scan(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const u8) !ScanSummary {
+fn scan(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const u8, excludes_json: []const u8) !ScanSummary {
     if (std.fs.path.dirname(db)) |d| try Io.Dir.cwd().createDirPath(io, d);
-    const m = try core.manifest.Manifest.open(io, db, root);
+    var m = try core.manifest.Manifest.open(io, db, root);
     defer m.close();
+    if (excludes_json.len > 0) m.excludes = try std.json.parseFromSliceLeaky([]const []const u8, a, excludes_json, .{});
     const r = try m.scan(a);
     const errs = try a.alloc([]const u8, r.errors.len);
     for (r.errors, errs) |e, *o| o.* = try std.fmt.allocPrint(a, "{s}: {s}", .{ e.path, e.message });
@@ -79,8 +80,9 @@ fn scan(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const u8) !ScanS
 }
 
 /// Durchsucht den Musikordner `root` und aktualisiert das Manifest `db`.
-export fn mync_scan(root: [*:0]const u8, db: [*:0]const u8) ?[*:0]u8 {
-    return call(scan, .{ std.mem.span(root), std.mem.span(db) });
+/// `excludes_json`: Ausschlussmuster als JSON-Liste (oder leer).
+export fn mync_scan(root: [*:0]const u8, db: [*:0]const u8, excludes_json: [*:0]const u8) ?[*:0]u8 {
+    return call(scan, .{ std.mem.span(root), std.mem.span(db), std.mem.span(excludes_json) });
 }
 
 const Fields = std.json.ArrayHashMap([]const []const u8);
@@ -220,7 +222,7 @@ export fn mync_sha256_file(path: [*:0]const u8) ?[*:0]u8 {
 }
 
 test "Fehler werden als JSON gemeldet" {
-    const r = mync_scan("/gibt/es/nicht", "/tmp/mync-ffi-test/manifest.db").?;
+    const r = mync_scan("/gibt/es/nicht", "/tmp/mync-ffi-test/manifest.db", "").?;
     defer mync_free(r);
     try std.testing.expectEqualStrings("{\"error\":\"FileNotFound\"}", std.mem.span(r));
 }

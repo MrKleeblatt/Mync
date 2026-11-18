@@ -69,6 +69,8 @@ pub const Manifest = struct {
     db: sqlite.Db,
     io: Io,
     root: []const u8,
+    /// Ausschlussmuster (siehe `isExcluded`), vor `scan` setzen.
+    excludes: []const []const u8 = &.{},
 
     pub fn open(io: Io, db_path: [:0]const u8, root: []const u8) !Manifest {
         const db = try sqlite.Db.open(db_path);
@@ -165,6 +167,7 @@ pub const Manifest = struct {
             switch (ent.kind) {
                 .directory => {
                     if (ent.basename.len > 0 and ent.basename[0] == '.') continue; // .mync, .trash …
+                    if (isExcluded(m.excludes, try relPath(gpa, ent.path), ent.basename)) continue;
                     walker.enter(io, ent) catch |err| {
                         try errors.append(gpa, .{ .path = try gpa.dupe(u8, ent.path), .message = @errorName(err) });
                     };
@@ -175,6 +178,7 @@ pub const Manifest = struct {
             }
             if (!hasKnownExt(ent.basename)) continue;
             const rel = try relPath(gpa, ent.path);
+            if (isExcluded(m.excludes, rel, ent.basename)) continue;
             const st = ent.dir.statFile(io, ent.basename, .{}) catch |err| {
                 try errors.append(gpa, .{ .path = rel, .message = @errorName(err) });
                 continue;
@@ -246,6 +250,59 @@ pub const Manifest = struct {
         return report;
     }
 };
+
+/// Ausschlussmuster: `*` (ohne `/`), `**` (beliebig), `?`; Groß-/Klein-
+/// schreibung egal. Ein Muster ohne `/` gilt für jeden Datei- oder
+/// Ordnernamen (z. B. `*.wav`, `Hörproben`), mit `/` für den Pfad ab dem
+/// Musikordner (z. B. `Hörbücher/Alt`, `Podcasts/**/*.mp3`).
+pub fn isExcluded(excludes: []const []const u8, rel: []const u8, basename: []const u8) bool {
+    for (excludes) |raw| {
+        var pat = std.mem.trim(u8, raw, " \t\r\n");
+        while (pat.len > 0 and pat[0] == '/') pat = pat[1..];
+        while (pat.len > 0 and pat[pat.len - 1] == '/') pat = pat[0 .. pat.len - 1];
+        if (pat.len == 0) continue;
+        const target = if (std.mem.indexOfScalar(u8, pat, '/') == null) basename else rel;
+        if (globMatch(pat, target)) return true;
+    }
+    return false;
+}
+
+pub fn globMatch(pat: []const u8, s: []const u8) bool {
+    if (pat.len == 0) return s.len == 0;
+    if (pat[0] == '*') {
+        const deep = pat.len > 1 and pat[1] == '*';
+        const rest = pat[if (deep) 2 else 1..];
+        // „**/“ darf auch null Ordner bedeuten
+        if (deep and rest.len > 0 and rest[0] == '/' and globMatch(rest[1..], s)) return true;
+        var i: usize = 0;
+        while (i <= s.len) : (i += 1) {
+            if (globMatch(rest, s[i..])) return true;
+            if (i < s.len and !deep and s[i] == '/') return false;
+        }
+        return false;
+    }
+    if (s.len == 0) return false;
+    if (pat[0] == '?') return s[0] != '/' and globMatch(pat[1..], s[1..]);
+    if (std.ascii.toLower(pat[0]) != std.ascii.toLower(s[0])) return false;
+    return globMatch(pat[1..], s[1..]);
+}
+
+test "Ausschlussmuster" {
+    const t = std.testing;
+    const ex = [_][]const u8{ "*.wav", "Hörproben", "Hörbücher/Alt", "Podcasts/**/*.mp3", " /Temp/ " };
+    try t.expect(isExcluded(&ex, "a/b/x.WAV", "x.WAV"));
+    try t.expect(isExcluded(&ex, "a/Hörproben", "Hörproben"));
+    try t.expect(isExcluded(&ex, "Hörbücher/Alt", "Alt"));
+    try t.expect(!isExcluded(&ex, "Rock/Alt", "Alt"));
+    try t.expect(isExcluded(&ex, "Podcasts/x.mp3", "x.mp3"));
+    try t.expect(isExcluded(&ex, "Podcasts/2024/03/x.mp3", "x.mp3"));
+    try t.expect(!isExcluded(&ex, "Podcasts/2024/x.opus", "x.opus"));
+    try t.expect(isExcluded(&ex, "Temp", "Temp"));
+    try t.expect(!isExcluded(&ex, "Rock/a.flac", "a.flac"));
+    try t.expect(globMatch("a*c", "abbc"));
+    try t.expect(!globMatch("a*c", "ab/c"));
+    try t.expect(globMatch("a?c", "abc"));
+}
 
 fn hasKnownExt(name: []const u8) bool {
     const ext = std.fs.path.extension(name);

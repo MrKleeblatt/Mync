@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -15,6 +16,11 @@ class AppSettings extends ChangeNotifier {
 
   /// Verzeichnis für Cover-Cache.
   final String cacheDir;
+
+  /// Für Tests: Einstellungen mit eigenen Verzeichnissen.
+  @visibleForTesting
+  static Future<AppSettings> forTest(String dataDir, String cacheDir) async =>
+      AppSettings._(await SharedPreferences.getInstance(), dataDir, cacheDir);
 
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -38,7 +44,36 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Weitere Musikordner (erscheinen als eigene Ordner in der Bibliothek).
+  List<String> get extraMusicDirs =>
+      _prefs.getStringList('extraMusicDirs') ?? const [];
+  Future<void> setExtraMusicDirs(List<String> dirs) async {
+    await _prefs.setStringList('extraMusicDirs', dirs);
+    notifyListeners();
+  }
+
+  /// Ausschlussmuster beim Einlesen (z. B. `*.wav`, `Hörproben`, `Podcasts/Alt`).
+  List<String> get excludes => _prefs.getStringList('excludes') ?? const [];
+  Future<void> setExcludes(List<String> patterns) async {
+    await _prefs.setStringList(
+      'excludes',
+      patterns.map((p) => p.trim()).where((p) => p.isNotEmpty).toList(),
+    );
+    notifyListeners();
+  }
+
   String get manifestDb => '$dataDir${Platform.pathSeparator}manifest.db';
+
+  /// Manifest eines weiteren Musikordners (Name aus einem Hash des Pfads).
+  String manifestDbFor(String dir) {
+    var h = 0xcbf29ce484222325;
+    for (final b in utf8.encode(dir)) {
+      h = (h ^ b) * 0x100000001b3;
+    }
+    final id = h.toUnsigned(64).toRadixString(16).padLeft(16, '0');
+    return '$dataDir${Platform.pathSeparator}manifest-$id.db';
+  }
+
   String get stateFile => '$dataDir${Platform.pathSeparator}state.json';
 
   ThemeMode get themeMode =>

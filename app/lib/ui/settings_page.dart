@@ -26,7 +26,10 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.folder),
             title: const Text('Musikordner'),
-            subtitle: Text(s.musicDir),
+            subtitle: Text(
+              '${s.musicDir}\nHauptordner, wird mit dem Handy abgeglichen',
+            ),
+            isThreeLine: true,
             onTap: () async {
               final p = await getDirectoryPath(
                 initialDirectory: s.musicDir,
@@ -34,6 +37,45 @@ class SettingsPage extends StatelessWidget {
               );
               if (p != null && p.isNotEmpty) await s.setMusicDir(p);
             },
+          ),
+          for (final d in s.extraMusicDirs)
+            ListTile(
+              leading: const Icon(Icons.folder_outlined),
+              title: Text(
+                d.split('/').where((x) => x.isNotEmpty).lastOrNull ?? d,
+              ),
+              subtitle: Text(
+                '$d\nWeiterer Ordner, erscheint in der Bibliothek als eigener Ordner',
+              ),
+              isThreeLine: true,
+              trailing: IconButton(
+                tooltip: 'Ordner entfernen (Dateien bleiben erhalten)',
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: () =>
+                    s.setExtraMusicDirs([...s.extraMusicDirs]..remove(d)),
+              ),
+            ),
+          ListTile(
+            leading: const Icon(Icons.create_new_folder_outlined),
+            title: const Text('Weiteren Musikordner hinzufügen …'),
+            onTap: () async {
+              final p = await getDirectoryPath(confirmButtonText: 'Hinzufügen');
+              if (p == null || p.isEmpty) return;
+              if (p == s.musicDir || s.extraMusicDirs.contains(p)) return;
+              await s.setExtraMusicDirs([...s.extraMusicDirs, p]);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.block),
+            title: const Text('Ausschlüsse'),
+            subtitle: Text(
+              s.excludes.isEmpty
+                  ? 'Keine – alle Audiodateien werden eingelesen'
+                  : s.excludes.join(' · '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onTap: () => _editExcludes(context),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.autorenew),
@@ -184,4 +226,54 @@ class _Shortcuts extends StatelessWidget {
       ],
     ),
   );
+}
+
+Future<void> _editExcludes(BuildContext context) async {
+  final s = context.settings;
+  final ctrl = TextEditingController(text: s.excludes.join('\n'));
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Ausschlüsse'),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Ein Muster pro Zeile. Ohne „/“ gilt es für jeden Datei- oder '
+              'Ordnernamen, mit „/“ für den Pfad ab dem Musikordner. '
+              '„*“ steht für beliebige Zeichen, „**“ auch über Ordner hinweg.',
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Beispiele: *.wav · Hörproben · Podcasts/Alt · Hörbücher/**/*.m4b',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              minLines: 5,
+              maxLines: 10,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Übernehmen'),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) await s.setExcludes(ctrl.text.split('\n'));
+  ctrl.dispose();
 }

@@ -2,11 +2,14 @@ import '../core/mync_core.dart';
 
 /// Ein Titel der Bibliothek mit bequemen Zugriffen auf die Tags.
 class Track {
-  Track(this.info);
+  /// [prefix]: Ordnername eines weiteren Musikordners (siehe [Library]).
+  Track(this.info, {String prefix = ''})
+    : path = prefix.isEmpty ? info.path : '$prefix/${info.path}';
 
   final TrackInfo info;
 
-  String get path => info.path;
+  /// Pfad in der Bibliothek (relativ zum Hauptordner bzw. mit Präfix).
+  final String path;
   String get fileId => info.fileId;
   TagFields get fields => info.fields;
 
