@@ -12,6 +12,7 @@ pub const manifest = @import("manifest.zig");
 pub const sqlite = @import("sqlite.zig");
 pub const duration = @import("duration.zig");
 pub const writer = @import("writer.zig");
+pub const sign = @import("sign.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

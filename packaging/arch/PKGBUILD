@@ -46,8 +46,8 @@ package() {
   bundle=$(find app/build/linux -path '*/release/bundle' -type d | head -1)
   install -d "$pkgdir/opt/mync"
   cp -r "$bundle"/. "$pkgdir/opt/mync/"
-  install -d "$pkgdir/usr/bin"
-  ln -s /opt/mync/mync "$pkgdir/usr/bin/mync"
+  # Startskript: nimmt die neueste Version (Paket oder Teil-Update in ~/.local/share/mync)
+  install -Dm755 packaging/linux/mync-launcher.sh "$pkgdir/usr/bin/mync"
   install -Dm644 packaging/linux/mync.desktop "$pkgdir/usr/share/applications/mync.desktop"
   install -Dm644 packaging/linux/mync.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/mync.svg"
   # Kommandozeilenwerkzeug des Kerns (scan, status, hash, tag)

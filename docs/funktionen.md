@@ -6,14 +6,28 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 ## Bibliothek & Navigation
 | Funktion | Stand | Anmerkung |
 |---|---|---|
-| Ordner-Ansicht mit Brotkrumen | ✅ | Kontextmenü auch für ganze Ordner |
-| Alben (Raster mit Covern), Künstler, Album-Künstler, Genres | ✅ | Mehrere Künstler (Mehrfachwerte oder „;“) werden getrennt |
-| Komponisten-Ansicht | ⏳ | Daten sind da (`Library.composers`), Tab fehlt noch |
+| Ordner-Ansicht mit Brotkrumen | ✅ | Hauptansicht; Kontextmenü auch für ganze Ordner (abspielen, mischen, als Nächstes …) |
 | Alle Titel, sortierbar (Titel, Künstler, Album, Jahr, Dauer, hinzugefügt, Datei) | ✅ | |
-| Suche über Titel, Künstler, Album, Genre, Komponist, Pfad | ✅ | Strg+F; zeigt Künstler, Alben und Titel |
+| Suche über Titel, Künstler, Album, Pfad – findet auch Ordner | ✅ | Strg+F |
 | Kurze Titel ausblenden | ✅ | Einstellungen |
-| Mehrere Bibliotheksordner, Ordner ausschließen | ⏳ | Ein Musikordner; Ordner mit „.“ am Anfang werden übersprungen |
-| Favoriten, zuletzt hinzugefügt, meistgespielt, zuletzt gespielt | ✅ | Favoriten = `Playlists/Favoriten.m3u8` |
+| Ansichten nach Album, Künstler, Genre, Komponist | – | bewusst entfernt (nicht benötigt) |
+| Playlists, Favoriten | – | bewusst entfernt; dafür Statistik-Listen |
+
+## Statistik & Vorschläge
+| Funktion | Stand | Anmerkung |
+|---|---|---|
+| Hörprotokoll | ✅ | `history.jsonl`: was, wann, wie lange (Spulen zählt nicht), übersprungen |
+| „Am meisten gehört“ – dieser/letzter Monat, Jahr, gesamt | ✅ | abspielen, mischen, als neue Warteschlange |
+| Hörzeit nach Tageszeit und Wochentag | ✅ | Diagramme mit Tooltip, auch als Tabelle |
+| Meistgehörte Ordner | ✅ | |
+| Vorschläge | ✅ | lange nicht gehört, Unbekanntes aus Lieblingsordnern, mehr vom Künstler, passend zur Tageszeit, neu hinzugefügt; oft Übersprungenes bleibt außen vor |
+
+## Kapitel
+| Funktion | Stand | Anmerkung |
+|---|---|---|
+| Kapitel aus Tags | ✅ | MP3 (ID3 CHAP), FLAC/Ogg/Opus (CHAPTERxxx), M4A/M4B (chpl) |
+| Kapitel aus Text wie bei YouTube | ✅ | aus Beschreibung/Kommentar oder `<name>.description` (yt-dlp), `<name>.chapters.txt` |
+| Springen | ✅ | Kapitelliste, vor/zurück, Bild ↑/↓, Marken auf dem Fortschrittsbalken |
 
 ## Wiedergabe & Warteschlangen
 | Funktion | Stand | Anmerkung |
@@ -24,6 +38,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Fortsetzen nach Neustart | ✅ | Zustand in `state.json` (atomar gespeichert) |
 | Wiederholen aus / Warteschlange / Titel | ✅ | je Warteschlange |
 | Lückenlose Wiedergabe | ✅ | mpv `gapless-audio` |
+| Spulen | ✅ | Knöpfe und ←/→, Schrittweite 5–60 s einstellbar, Umschalt+←/→ = 1 min |
 | Geschwindigkeit | ✅ | 0,5–2× |
 | ReplayGain (Titel/Album) | ✅ | |
 | Überblenden (Crossfade) | ⏳ | |
@@ -40,13 +55,6 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Synchronisierte Lyrics (`.lrc` daneben oder eingebettet) | ✅ | mitlaufend, Zeile antippen springt dorthin |
 | LRC-Editor, Umbenennen nach Tag-Muster | ⏳ | |
 
-## Playlists
-| Funktion | Stand | Anmerkung |
-|---|---|---|
-| Playlists anlegen, umbenennen, löschen, Titel hinzufügen | ✅ | `.m3u8` in `Playlists/` des Musikordners → synchronisierbar |
-| Fremde M3U lesen (absolut, relativ, Windows-Pfade) | ✅ | |
-| Warteschlange als Playlist speichern | ✅ | |
-
 ## Klang, Steuerung, System
 | Funktion | Stand | Anmerkung |
 |---|---|---|
@@ -57,6 +65,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Hell/Dunkel | ✅ | |
 | Backup & Wiederherstellen | ⏳ | Daten liegen in `~/.local/share/com.github.mrkleeblatt.mync/` |
 | Mini-Player-Fenster | ⏳ | |
+| Teil-Updates über GitHub-Releases | ✅ | siehe [updates.md](updates.md); auf Wunsch automatisch |
 | Sync mit dem Handy | ⏳ | Meilenstein M1 (Kern-Diff-Engine ist fertig) |
 
 ## Tastenkürzel
@@ -64,7 +73,9 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 |---|---|
 | Leertaste | Abspielen / Pause |
 | Strg + → / ← | Nächster / vorheriger Titel |
-| → / ← | 10 s vor / zurück |
+| → / ← | Spulen (Schrittweite einstellbar) |
+| Umschalt + → / ← | 1 min vor / zurück |
+| Bild ↑ / Bild ↓ | Vorheriges / nächstes Kapitel |
 | Strg + ↑ / ↓ | Lauter / leiser |
 | Strg + R | Wiederholen umschalten |
 | Strg + S | Warteschlange mischen |

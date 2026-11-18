@@ -1,0 +1,88 @@
+# Baut mync für Linux und veröffentlicht ein Release mit Teil-Updates.
+#
+# Auslöser: Tag „v*“ pushen (Version muss zu app/pubspec.yaml passen), z. B.
+#   git tag v0.4.1 && git push origin v0.4.1
+#
+# Optional (empfohlen): Signatur der Updates
+#   1. mync-core keygen update-key.txt
+#   2. Inhalt von update-key.txt als Repository-Secret MYNC_UPDATE_KEY anlegen
+#   3. Ausgegebenen öffentlichen Schlüssel als Repository-Variable
+#      MYNC_UPDATE_PUBKEY anlegen (wird in die App eingebaut)
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    env:
+      PLATFORM: linux-x86_64
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Abhängigkeiten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libmpv-dev ninja-build clang cmake pkg-config ffmpeg
+          pip install ziglang==0.17.1
+          mkdir -p "$HOME/bin" && ln -s "$(python3 -c 'import ziglang,os;print(os.path.dirname(ziglang.__file__))')/zig" "$HOME/bin/zig"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+
+      - name: Version prüfen
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          app=$(sed -n 's/^version: \([0-9.]*\).*/\1/p' app/pubspec.yaml)
+          test "$tag" = "$app" || { echo "Tag $tag passt nicht zu pubspec.yaml ($app)"; exit 1; }
+          echo "VERSION=$tag" >> "$GITHUB_ENV"
+
+      - name: Kern testen und bauen
+        working-directory: core
+        run: |
+          zig build test
+          zig build -Doptimize=ReleaseSafe
+
+      - name: App bauen
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build linux --release --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
+
+      - name: Manifest des vorigen Releases holen
+        run: |
+          mkdir -p prev
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern "update-$PLATFORM.json" --dir prev || true
+
+      - name: Teil-Update erzeugen
+        env:
+          MYNC_UPDATE_KEY: ${{ secrets.MYNC_UPDATE_KEY }}
+        run: |
+          sign=()
+          if [ -n "$MYNC_UPDATE_KEY" ]; then
+            printf '%s' "$MYNC_UPDATE_KEY" > "$RUNNER_TEMP/key"
+            sign=(--sign-key "$RUNNER_TEMP/key" --signer core/zig-out/bin/mync)
+          fi
+          python3 tools/release/make_update.py \
+            --bundle app/build/linux/x64/release/bundle \
+            --version "$VERSION" --platform "$PLATFORM" \
+            --repo "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" \
+            --previous "prev/update-$PLATFORM.json" \
+            --notes "$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")" \
+            "${sign[@]}" --out dist
+          rm -f "$RUNNER_TEMP/key"
+
+      - name: Release veröffentlichen
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "mync $VERSION" --notes-from-tag || true
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber dist/*

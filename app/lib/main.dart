@@ -11,6 +11,9 @@ import 'settings.dart';
 import 'ui/global_shortcuts.dart';
 import 'ui/home_shell.dart';
 import 'ui/scope.dart';
+import 'update/update_service.dart';
+
+bool? _lastUpdateCheck;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +26,19 @@ Future<void> main() async {
   final mpris = Mpris(player);
   unawaited(mpris.start());
   if (settings.scanOnStart) unawaited(library.refresh());
+
+  // Teil-Updates über GitHub-Releases (nur Linux)
+  final updates = UpdateService(settings, beforeRestart: player.endListening);
+  UpdateService.instance = updates;
+  updates.start();
+  settings.addListener(() {
+    // Einstellung „Nach Updates suchen“ geändert → Zeitplan neu
+    if (settings.updateCheck != _lastUpdateCheck) {
+      _lastUpdateCheck = settings.updateCheck;
+      updates.start();
+    }
+  });
+  _lastUpdateCheck = settings.updateCheck;
 
   // Zustand beim Beenden sichern
   AppLifecycleListener(

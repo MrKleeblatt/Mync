@@ -73,6 +73,20 @@ class AppSettings extends ChangeNotifier {
   double get volume => _prefs.getDouble('volume') ?? 100;
   Future<void> setVolume(double v) => _prefs.setDouble('volume', v);
 
+  /// Regelmäßig nach Updates suchen (beim Start und alle 6 Stunden).
+  bool get updateCheck => _prefs.getBool('updateCheck') ?? true;
+  Future<void> setUpdateCheck(bool v) async {
+    await _prefs.setBool('updateCheck', v);
+    notifyListeners();
+  }
+
+  /// Updates automatisch herunterladen und installieren.
+  bool get autoUpdate => _prefs.getBool('autoUpdate') ?? false;
+  Future<void> setAutoUpdate(bool v) async {
+    await _prefs.setBool('autoUpdate', v);
+    notifyListeners();
+  }
+
   /// Schrittweite beim Spulen in Sekunden.
   int get seekStep => _prefs.getInt('seekStep') ?? 10;
   Future<void> setSeekStep(int s) async {

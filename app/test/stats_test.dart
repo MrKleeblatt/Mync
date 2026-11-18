@@ -161,7 +161,10 @@ void main() {
         'Länger nicht gehört',
         reason: 'gerade erst gehört: nur als Auffüller',
       );
-      expect(s.indexWhere((x) => x.track.path == 'Rock/frisch.mp3'), greaterThan(2));
+      expect(
+        s.indexWhere((x) => x.track.path == 'Rock/frisch.mp3'),
+        greaterThan(2),
+      );
       expect(
         byPath.containsKey('Jazz/nervt.mp3'),
         isFalse,

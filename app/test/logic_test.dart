@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mync/library/lrc.dart';
 import 'package:mync/player/queue.dart';
+import 'package:mync/update/update_service.dart';
 
 PlayQueue q(List<String> items, {int index = 0}) =>
     PlayQueue(id: 'q', name: 'Q', items: [...items], index: index);
@@ -93,5 +94,13 @@ void main() {
       expect(l.plain, 'Zeile 1\nZeile 2');
       expect(Lyrics.parse('  '), isNull);
     });
+  });
+
+  test('Versionsvergleich für Updates', () {
+    expect(compareVersions('0.4.1', '0.4.0'), greaterThan(0));
+    expect(compareVersions('0.10.0', '0.9.9'), greaterThan(0));
+    expect(compareVersions('1.0.0', '1.0.0+7'), 0);
+    expect(compareVersions('0.4', '0.4.0'), 0);
+    expect(compareVersions('0.3.9', '0.4.0'), lessThan(0));
   });
 }

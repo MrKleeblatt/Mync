@@ -5,6 +5,7 @@ import 'library_page.dart';
 import 'now_playing.dart';
 import 'placeholder_screen.dart';
 import 'stats_page.dart';
+import 'update_widgets.dart';
 import 'queues_page.dart';
 import 'scope.dart';
 import 'settings_page.dart';
@@ -91,6 +92,7 @@ class _HomeShellState extends State<HomeShell> {
         ? Scaffold(
             body: Column(
               children: [
+                const UpdateBanner(),
                 Expanded(
                   child: Row(
                     children: [
@@ -118,7 +120,14 @@ class _HomeShellState extends State<HomeShell> {
             ),
           )
         : Scaffold(
-            body: SafeArea(child: body),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  const UpdateBanner(),
+                  Expanded(child: body),
+                ],
+              ),
+            ),
             bottomNavigationBar: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

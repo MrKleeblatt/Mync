@@ -4,6 +4,9 @@
 //!   mync status <musikordner> [db]   Manifest auflisten
 //!   mync hash   <datei>...           Hashes und Tags einzelner Dateien zeigen
 //!   mync tag    <datei> feld=wert…   Tags setzen (feld= entfernt; MP3, FLAC)
+//!   mync keygen <schlüsseldatei>     Update-Signaturschlüssel erzeugen
+//!   mync sign   <schlüsseldatei> <datei>   Datei signieren (→ <datei>.sig)
+//!   mync verify <öffentlich-hex> <datei>   Signatur <datei>.sig prüfen
 
 const std = @import("std");
 const Io = std.Io;
@@ -13,6 +16,9 @@ const usage =
     \\Aufruf:
     \\  mync scan|status <musikordner> [db]
     \\  mync hash <datei>...
+    \\  mync keygen <schlüsseldatei>
+    \\  mync sign <schlüsseldatei> <datei>
+    \\  mync verify <öffentlicher-schlüssel-hex> <datei>
     \\  mync tag <datei> feld=wert...   (Felder: title artist album albumartist composer
     \\                                   genre date track tracktotal disc disctotal comment lyrics)
     \\
@@ -67,6 +73,24 @@ pub fn main(init: std.process.Init) !u8 {
             if (t.pictures.len > 0) try w.print("  Bilder: {d}\n", .{t.pictures.len});
             for (t.chapters) |c| try w.print("  Kapitel {d}:{d:0>2}.{d:0>3} {s}\n", .{ c.start_ms / 60000, c.start_ms / 1000 % 60, c.start_ms % 1000, c.title });
         }
+    } else if (std.mem.eql(u8, cmd, "keygen")) {
+        const k = core.sign.generate(io);
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = args[2], .data = &k.seed });
+        try w.print("Geheimer Schlüssel: {s} (geheim halten, z. B. als GitHub-Secret MYNC_UPDATE_KEY)\n", .{args[2]});
+        try w.print("Öffentlicher Schlüssel: {s}\n", .{&k.public});
+    } else if (std.mem.eql(u8, cmd, "sign") and args.len >= 4) {
+        const seed = try Io.Dir.cwd().readFileAlloc(io, args[2], a, .limited(1024));
+        const msg = try Io.Dir.cwd().readFileAlloc(io, args[3], a, .unlimited);
+        const sig = try core.sign.sign(seed, msg);
+        const out = try std.fmt.allocPrint(a, "{s}.sig", .{args[3]});
+        try Io.Dir.cwd().writeFile(io, .{ .sub_path = out, .data = &sig });
+        try w.print("Signatur: {s}\n", .{out});
+    } else if (std.mem.eql(u8, cmd, "verify") and args.len >= 4) {
+        const msg = try Io.Dir.cwd().readFileAlloc(io, args[3], a, .unlimited);
+        const sig = try Io.Dir.cwd().readFileAlloc(io, try std.fmt.allocPrint(a, "{s}.sig", .{args[3]}), a, .limited(1024));
+        const ok = core.sign.verify(args[2], msg, sig);
+        try w.print("{s}\n", .{if (ok) "Signatur gültig" else "Signatur UNGÜLTIG"});
+        return if (ok) 0 else 1;
     } else if (std.mem.eql(u8, cmd, "tag")) {
         const p = args[2];
         const old = try core.tags.readFile(a, io, Io.Dir.cwd(), p);

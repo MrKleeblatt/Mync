@@ -188,6 +188,27 @@ export fn mync_extract_cover(path: [*:0]const u8, out_path: [*:0]const u8) ?[*:0
     return call(extractCover, .{ std.mem.span(path), std.mem.span(out_path) });
 }
 
+// ───────────────────────────── Updates ─────────────────────────────────────
+
+fn verifySig(_: std.mem.Allocator, _: Io, public_hex: []const u8, msg: []const u8, sig_hex: []const u8) error{InvalidInput}!bool {
+    return core.sign.verify(public_hex, msg, sig_hex);
+}
+
+/// Prüft eine Ed25519-Signatur (Schlüssel und Signatur hex): {"ok":true|false}
+export fn mync_verify_ed25519(public_hex: [*:0]const u8, msg: [*:0]const u8, sig_hex: [*:0]const u8) ?[*:0]u8 {
+    return call(verifySig, .{ std.mem.span(public_hex), std.mem.span(msg), std.mem.span(sig_hex) });
+}
+
+fn sha256(a: std.mem.Allocator, io: Io, path: []const u8) ![]const u8 {
+    const h = try core.sign.sha256File(io, Io.Dir.cwd(), path);
+    return a.dupe(u8, &h);
+}
+
+/// SHA-256 einer Datei (hex).
+export fn mync_sha256_file(path: [*:0]const u8) ?[*:0]u8 {
+    return call(sha256, .{std.mem.span(path)});
+}
+
 test "Fehler werden als JSON gemeldet" {
     const r = mync_scan("/gibt/es/nicht", "/tmp/mync-ffi-test/manifest.db").?;
     defer mync_free(r);

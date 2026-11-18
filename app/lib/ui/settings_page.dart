@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../core/mync_core.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
+import 'update_widgets.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -106,6 +107,8 @@ class SettingsPage extends StatelessWidget {
           ),
           const _Section('Tastenkürzel'),
           const _Shortcuts(),
+          const _Section('Updates'),
+          const UpdateSettings(),
           const _Section('Info'),
           ListTile(
             leading: const Icon(Icons.info_outline),

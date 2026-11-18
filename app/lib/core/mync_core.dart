@@ -16,6 +16,11 @@ import '../library/chapters.dart';
 
 typedef _OneStr = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _TwoStr = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _ThreeStr = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+);
 typedef _FreeC = Void Function(Pointer<Utf8>);
 typedef _FreeDart = void Function(Pointer<Utf8>);
 typedef _VersionC = Pointer<Utf8> Function();
@@ -45,6 +50,10 @@ class _Lib {
       readTags = lib.lookupFunction<_OneStr, _OneStr>('mync_read_tags'),
       writeTags = lib.lookupFunction<_TwoStr, _TwoStr>('mync_write_tags'),
       extractCover = lib.lookupFunction<_TwoStr, _TwoStr>('mync_extract_cover'),
+      verifyEd25519 = lib.lookupFunction<_ThreeStr, _ThreeStr>(
+        'mync_verify_ed25519',
+      ),
+      sha256File = lib.lookupFunction<_OneStr, _OneStr>('mync_sha256_file'),
       free = lib.lookupFunction<_FreeC, _FreeDart>('mync_free'),
       version = lib.lookupFunction<_VersionC, _VersionC>('mync_version');
 
@@ -53,6 +62,8 @@ class _Lib {
   final _OneStr readTags;
   final _TwoStr writeTags;
   final _TwoStr extractCover;
+  final _ThreeStr verifyEd25519;
+  final _OneStr sha256File;
   final _FreeDart free;
   final _VersionC version;
 
@@ -86,6 +97,19 @@ class _Lib {
       return _result(f(pa));
     } finally {
       malloc.free(pa);
+    }
+  }
+
+  Object? call3(_ThreeStr f, String a, String b, String c) {
+    final pa = a.toNativeUtf8();
+    final pb = b.toNativeUtf8();
+    final pc = c.toNativeUtf8();
+    try {
+      return _result(f(pa, pb, pc));
+    } finally {
+      malloc.free(pa);
+      malloc.free(pb);
+      malloc.free(pc);
     }
   }
 
@@ -216,4 +240,21 @@ Future<FileTags> writeTags(String absPath, TagFields fields) => Isolate.run(() {
 Future<bool> extractCover(String absPath, String outPath) => Isolate.run(() {
   final lib = _Lib.instance;
   return lib.call2(lib.extractCover, absPath, outPath) as bool;
+});
+
+/// Prüft eine Ed25519-Signatur (Schlüssel und Signatur hexadezimal).
+Future<bool> verifyEd25519(
+  String publicKeyHex,
+  String message,
+  String signatureHex,
+) => Isolate.run(() {
+  final lib = _Lib.instance;
+  return lib.call3(lib.verifyEd25519, publicKeyHex, message, signatureHex)
+      as bool;
+});
+
+/// SHA-256 einer Datei (hex).
+Future<String> sha256File(String path) => Isolate.run(() {
+  final lib = _Lib.instance;
+  return lib.call1(lib.sha256File, path) as String;
 });

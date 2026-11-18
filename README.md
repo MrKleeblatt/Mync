@@ -4,14 +4,20 @@
 Musicolet – plus (in Arbeit) Synchronisation mit dem Handy, bei der jede
 Änderung auf dem Empfängergerät bestätigt werden muss.
 
-![Bibliothek mit Warteschlange](docs/screenshots/bibliothek.png)
+![Ordner mit Warteschlange](docs/screenshots/bibliothek.png)
 
-**Was der Player kann:** Ordner-, Alben-, Künstler- und Genre-Ansichten,
-**mehrere Warteschlangen**, die sich ihre Position merken, lückenlose
-Wiedergabe, Tag-Editor (MP3/FLAC), synchronisierte Lyrics (LRC), Playlists
-als `.m3u8`, Favoriten, Equalizer, ReplayGain, Sleeptimer, Geschwindigkeit,
-Medientasten über MPRIS und Tastenkürzel – ohne Konto, ohne Werbung.
-Den genauen Stand zeigt [docs/funktionen.md](docs/funktionen.md).
+| Statistik | Kapitel |
+|---|---|
+| ![Statistik](docs/screenshots/statistik-diagramme.png) | ![Kapitel](docs/screenshots/kapitel.png) |
+
+**Was der Player kann:** Abspielen aus Ordnern, **mehrere Warteschlangen**, die
+sich ihre Position merken, Zufall, Spulen mit einstellbarer Schrittweite,
+**Kapitel** (aus den Tags oder wie bei YouTube aus dem Beschreibungstext) zum
+Springen, **Hörstatistik** („diesen Monat am meisten gehört“, Hörzeit nach
+Tageszeit) mit **Vorschlägen**, Tag-Editor (MP3/FLAC), synchronisierte Lyrics,
+Equalizer, ReplayGain, Sleeptimer, Medientasten (MPRIS) – und **Teil-Updates**
+direkt aus den GitHub-Releases. Ohne Konto, ohne Werbung.
+Details: [docs/funktionen.md](docs/funktionen.md), Updates: [docs/updates.md](docs/updates.md).
 
 ## Installation unter Arch Linux
 
@@ -25,13 +31,15 @@ makepkg -si
 Danach startet `mync` aus dem Anwendungsmenü oder im Terminal. Beim ersten
 Start den Musikordner wählen (Ordner-Symbol oben). Laufzeit-Abhängigkeiten:
 `mpv` (libmpv), `gtk3`, `mimalloc`. Zusätzlich wird das Kommandozeilenwerkzeug
-`mync-core` installiert (`mync-core scan|status|hash|tag`).
+`mync-core` installiert (`mync-core scan|status|hash|tag|keygen|sign|verify`).
+Danach hält sich mync über die Teil-Updates selbst aktuell (abschaltbar).
 
 ## Dokumente
 
 | Dokument | Inhalt |
 |---|---|
 | [docs/funktionen.md](docs/funktionen.md) | Funktionsstand des Players, Tastenkürzel |
+| [docs/updates.md](docs/updates.md) | Teil-Updates: Ablauf, Release veröffentlichen, Signatur |
 | [docs/sync-konzept.md](docs/sync-konzept.md) | Konzept für die Synchronisation mit Bestätigung auf dem Empfängergerät |
 | [docs/player-plan.md](docs/player-plan.md) | Funktions- und Architekturplan für den Linux-Player |
 | [docs/roadmap.md](docs/roadmap.md) | Umsetzungsreihenfolge, Meilensteine, offene Fragen |
@@ -45,7 +53,9 @@ mync/
 │   │             #   Manifest, Diff-Engine, CLI `mync`
 │   ├── testdata/ # kleine Testdateien aller Formate + erwartete Tags
 │   └── vendor/   # SQLite-Amalgamation (C)
-├── packaging/    # Arch-PKGBUILD, Desktop-Eintrag, Icon
+├── packaging/    # Arch-PKGBUILD, Startskript, Desktop-Eintrag, Icon
+├── tools/release/# Erzeugt Teil-Updates für GitHub-Releases
+├── .github/      # Release-Workflow
 └── docs/         # Konzepte, Pläne, Funktionsstand, Screenshots
 ```
 
