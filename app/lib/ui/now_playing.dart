@@ -13,6 +13,40 @@ import 'scope.dart';
 import 'sound_sheets.dart';
 import 'track_actions.dart';
 
+/// Spul-Knopf passend zur eingestellten Schrittweite.
+class SeekButton extends StatelessWidget {
+  const SeekButton({super.key, required this.forward, this.size});
+  final bool forward;
+  final double? size;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.player;
+    final step = context.settings.seekStep;
+    final icon = forward
+        ? switch (step) {
+            5 => Icons.forward_5,
+            10 => Icons.forward_10,
+            30 => Icons.forward_30,
+            _ => Icons.fast_forward,
+          }
+        : switch (step) {
+            5 => Icons.replay_5,
+            10 => Icons.replay_10,
+            30 => Icons.replay_30,
+            _ => Icons.fast_rewind,
+          };
+    return IconButton(
+      iconSize: size,
+      tooltip: forward
+          ? '$step s vor (→, Umschalt+→: 1 min)'
+          : '$step s zurück (←, Umschalt+←: 1 min)',
+      onPressed: p.queue.isEmpty ? null : () => p.skipBy(forward ? 1 : -1),
+      icon: Icon(icon),
+    );
+  }
+}
+
 /// Öffnet den großen Wiedergabebildschirm (von unten eingeschoben).
 void openNowPlaying(BuildContext context) {
   final s = MyncScope.of(context);
@@ -108,6 +142,7 @@ class MiniPlayer extends StatelessWidget {
                         onPressed: player.previous,
                         icon: const Icon(Icons.skip_previous),
                       ),
+                      if (wide) const SeekButton(forward: false),
                       IconButton.filled(
                         tooltip: 'Abspielen/Pause (Leertaste)',
                         onPressed: player.queue.isEmpty
@@ -117,6 +152,7 @@ class MiniPlayer extends StatelessWidget {
                           player.playing ? Icons.pause : Icons.play_arrow,
                         ),
                       ),
+                      if (wide) const SeekButton(forward: true),
                       IconButton(
                         tooltip: 'Nächster (Strg+→)',
                         onPressed: player.next,
@@ -332,18 +368,22 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                 const SizedBox(width: 8),
                 IconButton(
                   iconSize: 36,
+                  tooltip: 'Vorheriger Titel',
                   onPressed: player.previous,
                   icon: const Icon(Icons.skip_previous),
                 ),
-                const SizedBox(width: 8),
+                const SeekButton(forward: false, size: 30),
+                const SizedBox(width: 4),
                 IconButton.filled(
                   iconSize: 48,
                   onPressed: player.queue.isEmpty ? null : player.playPause,
                   icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
+                const SeekButton(forward: true, size: 30),
                 IconButton(
                   iconSize: 36,
+                  tooltip: 'Nächster Titel',
                   onPressed: player.next,
                   icon: const Icon(Icons.skip_next),
                 ),
@@ -363,16 +403,6 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                   icon: const Icon(Icons.lyrics_outlined),
                   selectedIcon: const Icon(Icons.lyrics),
                 ),
-                if (t != null)
-                  IconButton(
-                    tooltip: 'Favorit',
-                    onPressed: () => context.library.toggleFavorite(t.path),
-                    icon: Icon(
-                      context.library.isFavorite(t.path)
-                          ? Icons.favorite
-                          : Icons.favorite_border,
-                    ),
-                  ),
                 IconButton(
                   tooltip: 'Equalizer',
                   onPressed: () => showEqualizer(context),

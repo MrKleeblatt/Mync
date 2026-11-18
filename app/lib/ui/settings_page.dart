@@ -70,6 +70,21 @@ class SettingsPage extends StatelessWidget {
             onTap: () => showEqualizer(context),
           ),
           ListTile(
+            leading: const Icon(Icons.fast_forward),
+            title: const Text('Spulen'),
+            subtitle: Text(
+              '${s.seekStep} s pro Schritt (Umschalt+Pfeil: 1 min)',
+            ),
+            trailing: DropdownButton<int>(
+              value: s.seekStep,
+              onChanged: (v) => s.setSeekStep(v ?? 10),
+              items: [
+                for (final v in [5, 10, 15, 30, 60])
+                  DropdownMenuItem(value: v, child: Text('$v s')),
+              ],
+            ),
+          ),
+          ListTile(
             leading: const Icon(Icons.speed),
             title: const Text('Geschwindigkeit'),
             subtitle: Text('${s.speed.toStringAsFixed(2)}×'),
@@ -131,7 +146,8 @@ class _Shortcuts extends StatelessWidget {
   static const rows = [
     ('Leertaste', 'Abspielen / Pause'),
     ('Strg + → / ←', 'Nächster / vorheriger Titel'),
-    ('→ / ←', '10 s vor / zurück'),
+    ('→ / ←', 'Spulen (Schrittweite einstellbar)'),
+    ('Umschalt + → / ←', '1 min vor / zurück'),
     ('Strg + ↑ / ↓', 'Lauter / leiser'),
     ('Strg + F', 'Suche'),
     ('Strg + R', 'Wiederholen umschalten'),

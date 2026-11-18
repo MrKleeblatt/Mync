@@ -6,13 +6,14 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../library/library.dart';
-import '../library/playlists.dart';
 import '../library/track.dart';
 import '../settings.dart';
+import '../stats/history.dart';
+import '../stats/stats.dart';
 import 'queue.dart';
 import 'state_store.dart';
 
-/// Wiedergabestatistik eines Titels.
+/// Zähler aus Versionen vor dem Hörprotokoll (werden nur noch gelesen).
 class PlayStat {
   PlayStat({this.plays = 0, this.lastPlayedMs = 0});
   int plays;
@@ -31,7 +32,8 @@ class PlayStat {
 /// Warteschlange unterbrechen den laufenden Titel nicht.
 class PlayerController extends ChangeNotifier {
   PlayerController(this.settings, this.library)
-    : _store = StateStore(settings.stateFile);
+    : _store = StateStore(settings.stateFile),
+      history = ListeningHistory(File('${settings.dataDir}/history.jsonl'));
 
   final AppSettings settings;
   final Library library;
@@ -53,7 +55,19 @@ class PlayerController extends ChangeNotifier {
   bool _opening = false;
   final _subs = <StreamSubscription<Object?>>[];
 
+  /// Alte Zähler (vor dem Hörprotokoll).
   final Map<String, PlayStat> stats = {};
+
+  /// Hörprotokoll: Grundlage für Statistik und Vorschläge.
+  final ListeningHistory history;
+
+  /// Wird bei jedem neuen Eintrag im Hörprotokoll erhöht.
+  int historyVersion = 0;
+
+  ListeningSession? _session;
+
+  /// Der nächste Titelwechsel wurde vom Nutzer ausgelöst (→ ggf. „übersprungen“).
+  bool _userSkip = false;
 
   Track? get currentTrack {
     final p = queue.current;
@@ -103,13 +117,18 @@ class PlayerController extends ChangeNotifier {
       );
     }
 
+    await history.load();
+
     _subs.addAll([
       player.stream.playing.listen((v) {
         playing = v;
+        _session?.resetAnchor();
+        _trackSession();
         notifyListeners();
       }),
       player.stream.position.listen((p) {
         position = p;
+        _trackSession();
         if (_loaded && !_opening) {
           queue.positionMs = p.inMilliseconds;
           _save(delay: const Duration(seconds: 5));
@@ -117,6 +136,10 @@ class PlayerController extends ChangeNotifier {
       }),
       player.stream.duration.listen((d) {
         duration = d;
+        final s = _session;
+        if (s != null && d > Duration.zero && s.path == queue.current) {
+          s.durationMs = d.inMilliseconds;
+        }
         notifyListeners();
       }),
       player.stream.playlist.listen(_onPlaylist),
@@ -169,7 +192,6 @@ class PlayerController extends ChangeNotifier {
       }
       _loaded = true;
       if (play) {
-        if (q.positionMs == 0) _countPlay(q.current);
         await player.play();
       }
     } finally {
@@ -186,7 +208,6 @@ class PlayerController extends ChangeNotifier {
     }
     q.index = pl.index;
     q.positionMs = 0;
-    _countPlay(q.current);
     if (sleepAfterTrack) {
       sleepAfterTrack = false;
       unawaited(player.pause());
@@ -200,6 +221,7 @@ class PlayerController extends ChangeNotifier {
     if (!done || !_loaded) return;
     final q = queue;
     if (q.repeat == QueueRepeat.off && q.index >= q.items.length - 1) {
+      _endSession(byUser: false, completed: true);
       // Ende der Warteschlange: zurück an den Anfang, angehalten
       q.index = 0;
       q.positionMs = 0;
@@ -216,12 +238,62 @@ class PlayerController extends ChangeNotifier {
     QueueRepeat.one => PlaylistMode.single,
   });
 
-  void _countPlay(String? rel) {
-    if (rel == null) return;
-    final s = stats.putIfAbsent(rel, PlayStat.new);
-    s.plays++;
-    s.lastPlayedMs = DateTime.now().millisecondsSinceEpoch;
+  // ─── Hörprotokoll ──────────────────────────────────────────────────────
+
+  /// Hält die laufende Messung mit dem aktuellen Titel synchron.
+  void _trackSession() {
+    if (_opening) return;
+    final path = _loaded ? queue.current : null;
+    final cur = _session;
+    if (cur != null && cur.path != path) _endSession(byUser: _userSkip);
+    if (path != null && _session == null && playing) {
+      final t = library.byPath(path);
+      _session = ListeningSession(
+        path: path,
+        fileId: t?.fileId ?? '',
+        durationMs: duration > Duration.zero
+            ? duration.inMilliseconds
+            : (t?.info.durationMs ?? 0),
+      );
+      _userSkip = false;
+    }
+    _session?.onPosition(position, playing: playing, rate: speed);
   }
+
+  void _endSession({required bool byUser, bool completed = false}) {
+    final s = _session;
+    if (s == null) return;
+    _session = null;
+    _userSkip = false;
+    if (s.listenedMs < 3000) return; // nur kurz angespielt
+    final done =
+        completed || (s.durationMs > 0 && s.listenedMs >= s.durationMs * 0.9);
+    unawaited(
+      history.append(s.finish(byUser: byUser && !done, completed: done)),
+    );
+    historyVersion++;
+    notifyListeners();
+  }
+
+  /// Beim Beenden der App: laufende Messung abschließen.
+  Future<void> endListening() async {
+    _endSession(byUser: false);
+    await saveNow();
+  }
+
+  /// Wie oft gespielt und wann zuletzt (Hörprotokoll + alte Zähler).
+  (int plays, DateTime? last) playsFor(Track t) {
+    final (p, last) = playsOf(history.events, t.fileId, t.path);
+    final legacy = stats[t.path];
+    final lastMs = [last ?? 0, legacy?.lastPlayedMs ?? 0].reduce(max);
+    return (
+      p + (legacy?.plays ?? 0),
+      lastMs == 0 ? null : DateTime.fromMillisecondsSinceEpoch(lastMs),
+    );
+  }
+
+  /// Markiert den nächsten Titelwechsel als Nutzeraktion.
+  void _markUserSkip() => _userSkip = true;
 
   void _save({Duration delay = const Duration(seconds: 1)}) =>
       _store.scheduleSave(_snapshot, delay: delay);
@@ -243,6 +315,7 @@ class PlayerController extends ChangeNotifier {
   /// Spielt [paths] in der aktuellen Warteschlange ab [start] (ersetzt ihren Inhalt).
   Future<void> playTracks(List<String> paths, {int start = 0}) async {
     if (paths.isEmpty) return;
+    _markUserSkip();
     queue.replace(paths, start: start);
     await _openQueue(play: true);
     _save();
@@ -259,6 +332,7 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> next() async {
     if (!_loaded) return;
+    _markUserSkip();
     final n = queue.nextIndex(manual: true);
     if (n == null) return;
     if (n == 0 && queue.index == queue.items.length - 1) {
@@ -276,6 +350,7 @@ class PlayerController extends ChangeNotifier {
       return;
     }
     final p = queue.previousIndex();
+    _markUserSkip();
     if (p == queue.index) {
       await player.seek(Duration.zero);
     } else {
@@ -293,6 +368,10 @@ class PlayerController extends ChangeNotifier {
     await player.seek(d);
   }
 
+  /// Spult um die eingestellte Schrittweite (× [times], negativ = zurück).
+  Future<void> skipBy(int times) =>
+      seekRelative(Duration(seconds: settings.seekStep * times));
+
   Future<void> seekRelative(Duration delta) async {
     final target = position + delta;
     await seek(target < Duration.zero ? Duration.zero : target);
@@ -300,6 +379,7 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> jumpTo(int index) async {
     if (index < 0 || index >= queue.items.length) return;
+    _markUserSkip();
     if (!_loaded) {
       queue.index = index;
       queue.positionMs = 0;
@@ -365,6 +445,7 @@ class PlayerController extends ChangeNotifier {
   Future<void> removeAt(int i) async {
     if (i < 0 || i >= queue.items.length) return;
     final wasCurrent = i == queue.index;
+    if (wasCurrent) _markUserSkip();
     final wasPlaying = playing;
     queue.removeAt(i);
     if (wasCurrent) {
@@ -407,6 +488,7 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> switchQueue(int i) async {
     if (i == _current || i < 0 || i >= queues.length) return;
+    _markUserSkip();
     final wasPlaying = playing;
     if (_loaded) queue.positionMs = position.inMilliseconds;
     _current = i;
@@ -442,6 +524,7 @@ class PlayerController extends ChangeNotifier {
       return;
     }
     if (_loaded) queue.positionMs = position.inMilliseconds;
+    _markUserSkip();
     _current = queues.length - 1;
     _loaded = false;
     await _openQueue(play: play);
@@ -473,11 +556,6 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveQueueAsPlaylist(String name) async {
-    await library.playlists.write(name, queue.items);
-    library.playlistsChanged();
-  }
-
   /// Nach einem Scan: umbenannte Dateien in allen Warteschlangen nachziehen.
   void renamePaths(Map<String, String> renames) {
     var currentChanged = false;
@@ -490,6 +568,7 @@ class PlayerController extends ChangeNotifier {
         currentChanged = true;
       }
     }
+    history.renamePaths(renames);
     for (final e in renames.entries) {
       final s = stats.remove(e.key);
       if (s != null) stats[e.value] = s;
@@ -597,28 +676,6 @@ class PlayerController extends ChangeNotifier {
 
   // ─── Statistik ─────────────────────────────────────────────────────────
 
-  List<String> mostPlayed({int limit = 100}) {
-    final list =
-        stats.entries
-            .where((e) => e.value.plays > 0 && library.byPath(e.key) != null)
-            .toList()
-          ..sort((a, b) => b.value.plays.compareTo(a.value.plays));
-    return list.take(limit).map((e) => e.key).toList();
-  }
-
-  List<String> recentlyPlayed({int limit = 100}) {
-    final list =
-        stats.entries
-            .where(
-              (e) => e.value.lastPlayedMs > 0 && library.byPath(e.key) != null,
-            )
-            .toList()
-          ..sort(
-            (a, b) => b.value.lastPlayedMs.compareTo(a.value.lastPlayedMs),
-          );
-    return list.take(limit).map((e) => e.key).toList();
-  }
-
   @override
   Future<void> dispose() async {
     _sleepTimer?.cancel();
@@ -630,9 +687,3 @@ class PlayerController extends ChangeNotifier {
     super.dispose();
   }
 }
-
-/// Playlist-Namen für das Kontextmenü (ohne Favoriten).
-Future<List<String>> userPlaylists(Library lib) async =>
-    (await lib.playlists.names())
-        .where((n) => n != PlaylistStore.favoritesName)
-        .toList();

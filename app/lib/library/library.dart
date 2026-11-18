@@ -6,45 +6,20 @@ import 'package:flutter/foundation.dart';
 
 import '../core/mync_core.dart';
 import '../settings.dart';
-import 'playlists.dart';
 import 'track.dart';
 
-/// Ein Album: gleicher Albumname und gleicher Album-Künstler.
-class Album {
-  Album(this.key, this.name, this.artist, this.tracks);
-  final String key;
-  final String name;
-  final String artist;
-  final List<Track> tracks;
-
-  int? get year => tracks
-      .map((t) => t.year)
-      .whereType<int>()
-      .fold<int?>(null, (a, b) => a == null || b < a ? b : a);
-  Duration get duration => tracks.fold(Duration.zero, (a, t) => a + t.duration);
-  Track get first => tracks.first;
-}
-
-/// Künstler, Genre, Komponist …: Name + Titel.
-class Group {
-  Group(this.name, this.tracks);
-  final String name;
-  final List<Track> tracks;
-}
-
-/// Die Musikbibliothek: liest das Manifest über den Zig-Kern, baut die
-/// Ansichten (Ordner, Alben, Künstler, Genres) und verwaltet Cover,
-/// Favoriten und Wiedergabestatistik.
+/// Die Musikbibliothek: liest das Manifest über den Zig-Kern, liefert
+/// Ordner- und Titelansichten, Suche und Cover.
 class Library extends ChangeNotifier {
-  Library(this.settings) : playlists = PlaylistStore(settings.musicDir) {
+  Library(this.settings) {
     settings.addListener(_onSettings);
   }
 
   final AppSettings settings;
-  PlaylistStore playlists;
 
   List<Track> _all = const [];
   Map<String, Track> _byPath = const {};
+  Map<String, Track> _byId = const {};
   bool scanning = false;
   bool loaded = false;
   String? message;
@@ -66,7 +41,6 @@ class Library extends ChangeNotifier {
     }
     if (settings.musicDir != _root) {
       _root = settings.musicDir;
-      playlists = PlaylistStore(_root);
       _coverCache.clear();
       unawaited(refresh());
     }
@@ -76,12 +50,7 @@ class Library extends ChangeNotifier {
   List<Track> get tracks => _visible;
   List<Track> _visible = const [];
   Track? byPath(String rel) => _byPath[rel];
-
-  List<Album> albums = const [];
-  List<Group> artists = const [];
-  List<Group> albumArtists = const [];
-  List<Group> genres = const [];
-  List<Group> composers = const [];
+  Track? byFileId(String id) => id.isEmpty ? null : _byId[id];
 
   /// Lädt das Manifest (ohne Scan).
   Future<void> load() async {
@@ -93,7 +62,6 @@ class Library extends ChangeNotifier {
     } catch (e) {
       message = 'Fehler beim Laden: $e';
     }
-    await _loadFavorites();
     loaded = true;
     notifyListeners();
   }
@@ -120,7 +88,6 @@ class Library extends ChangeNotifier {
         if (old != null && old != t.path) renames[old] = t.path;
       }
       _set(tracks);
-      await _loadFavorites();
       if (renames.isNotEmpty) onRenamed?.call(renames);
       message =
           '${r.total} Dateien · ${r.added} neu · ${r.removed} entfernt'
@@ -139,6 +106,7 @@ class Library extends ChangeNotifier {
   void _set(List<Track> all) {
     _all = all;
     _byPath = {for (final t in all) t.path: t};
+    _byId = {for (final t in all) t.fileId: t};
     _rebuild();
   }
 
@@ -149,57 +117,11 @@ class Library extends ChangeNotifier {
         : _all
               .where((t) => t.info.durationMs < 0 || t.info.durationMs >= minMs)
               .toList();
-
-    final byAlbum = <String, List<Track>>{};
-    for (final t in _visible) {
-      byAlbum.putIfAbsent(t.albumKey, () => []).add(t);
-    }
-    albums = [
-      for (final e in byAlbum.entries)
-        Album(
-          e.key,
-          e.value.first.albumOrUnknown,
-          e.value.first.albumArtist,
-          e.value..sort(compareAlbumOrder),
-        ),
-    ]..sort((a, b) => compareText(a.name, b.name));
-
-    artists = _group((t) => t.artists, unknown: 'Unbekannter Künstler');
-    albumArtists = _group((t) => [t.albumArtist]);
-    genres = _group((t) => t.genres, unknown: 'Ohne Genre');
-    composers = _group((t) => t.composers);
-  }
-
-  List<Group> _group(List<String> Function(Track) keys, {String? unknown}) {
-    final map = <String, List<Track>>{};
-    final names = <String, String>{};
-    for (final t in _visible) {
-      var ks = keys(t);
-      if (ks.isEmpty) {
-        if (unknown == null) continue;
-        ks = [unknown];
-      }
-      for (final k in ks) {
-        final lk = k.toLowerCase();
-        names.putIfAbsent(lk, () => k);
-        map.putIfAbsent(lk, () => []).add(t);
-      }
-    }
-    return [
-      for (final e in map.entries)
-        Group(names[e.key]!, e.value..sort(_byAlbumThenOrder)),
-    ]..sort((a, b) => compareText(a.name, b.name));
   }
 
   static int _byAlbumThenOrder(Track a, Track b) {
     final c = compareText(a.albumOrUnknown, b.albumOrUnknown);
     return c != 0 ? c : compareAlbumOrder(a, b);
-  }
-
-  /// Alben eines Künstlers.
-  List<Album> albumsOf(Group artist) {
-    final keys = artist.tracks.map((t) => t.albumKey).toSet();
-    return albums.where((a) => keys.contains(a.key)).toList();
   }
 
   // ─── Ordner ────────────────────────────────────────────────────────────
@@ -245,6 +167,33 @@ class Library extends ChangeNotifier {
       ..sort((a, b) => compareText(a.title, b.title));
   }
 
+  /// Ordner, deren Pfad alle Suchwörter enthält (kürzeste zuerst).
+  List<String> searchFolders(String query) {
+    final words = query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return const [];
+    final folders = <String>{};
+    for (final t in _visible) {
+      var f = t.folder;
+      while (f.isNotEmpty && folders.add(f)) {
+        final i = f.lastIndexOf('/');
+        f = i < 0 ? '' : f.substring(0, i);
+      }
+    }
+    final hits = folders.where((f) {
+      final l = f.toLowerCase();
+      return words.every(l.contains);
+    }).toList();
+    hits.sort((a, b) {
+      final c = a.length.compareTo(b.length);
+      return c != 0 ? c : compareText(a, b);
+    });
+    return hits;
+  }
+
   // ─── Sortierte Titelliste ─────────────────────────────────────────────
 
   List<Track> sortedTracks(String sort) {
@@ -270,33 +219,6 @@ class Library extends ChangeNotifier {
     }
     return list;
   }
-
-  // ─── Favoriten ─────────────────────────────────────────────────────────
-
-  Set<String> favorites = {};
-
-  Future<void> _loadFavorites() async {
-    try {
-      favorites = (await playlists.read(PlaylistStore.favoritesName)).toSet();
-    } catch (_) {
-      favorites = {};
-    }
-  }
-
-  bool isFavorite(String rel) => favorites.contains(rel);
-
-  Future<void> toggleFavorite(String rel) async {
-    if (favorites.contains(rel)) {
-      favorites.remove(rel);
-    } else {
-      favorites.add(rel);
-    }
-    notifyListeners();
-    await playlists.write(PlaylistStore.favoritesName, favorites.toList());
-  }
-
-  /// Benachrichtigt Ansichten nach Änderungen an Playlists.
-  void playlistsChanged() => notifyListeners();
 
   // ─── Cover ─────────────────────────────────────────────────────────────
 

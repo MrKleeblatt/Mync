@@ -113,12 +113,6 @@ class TrackTile extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (context.library.isFavorite(track.path))
-                  Icon(
-                    Icons.favorite,
-                    size: 16,
-                    color: theme.colorScheme.primary,
-                  ),
                 const SizedBox(width: 8),
                 Text(
                   formatDuration(track.duration),

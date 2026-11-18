@@ -23,10 +23,12 @@ class GlobalShortcuts extends StatelessWidget {
           p.previous,
       const SingleActivator(LogicalKeyboardKey.mediaTrackNext): p.next,
       const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): p.previous,
-      const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
-          p.seekRelative(const Duration(seconds: 10)),
-      const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
-          p.seekRelative(const Duration(seconds: -10)),
+      const SingleActivator(LogicalKeyboardKey.arrowRight): () => p.skipBy(1),
+      const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true): () =>
+          p.seekRelative(const Duration(seconds: 60)),
+      const SingleActivator(LogicalKeyboardKey.arrowLeft): () => p.skipBy(-1),
+      const SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true): () =>
+          p.seekRelative(const Duration(seconds: -60)),
       const SingleActivator(LogicalKeyboardKey.arrowUp, control: true): () =>
           p.setVolume((p.volume + 5).clamp(0, 100)),
       const SingleActivator(LogicalKeyboardKey.arrowDown, control: true): () =>

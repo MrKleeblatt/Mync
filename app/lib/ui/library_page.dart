@@ -2,16 +2,12 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/storage_access.dart';
-import '../library/library.dart';
 import '../library/track.dart';
-import 'cover_art.dart';
-import 'now_playing.dart';
 import 'scope.dart';
 import 'track_actions.dart';
 import 'track_list.dart';
 
-/// Bibliothek mit Ansichten wie bei Musicolet: Ordner, Alben, Künstler,
-/// Album-Künstler, Genres, Titel – plus Suche.
+/// Bibliothek: Ordner (Hauptansicht) und alle Titel – plus Suche.
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
 
@@ -24,16 +20,10 @@ class LibraryPageState extends State<LibraryPage>
   late final TabController _tabs;
   final _search = TextEditingController();
   final searchFocus = FocusNode();
+  final _folderKey = GlobalKey<FolderViewState>();
   String _query = '';
 
-  static const _tabNames = [
-    'Ordner',
-    'Alben',
-    'Künstler',
-    'Album-Künstler',
-    'Genres',
-    'Titel',
-  ];
+  static const _tabNames = ['Ordner', 'Titel'];
 
   @override
   void initState() {
@@ -137,7 +127,17 @@ class LibraryPageState extends State<LibraryPage>
                 ),
               ),
             if (_query.isNotEmpty)
-              Expanded(child: _SearchResults(query: _query))
+              Expanded(
+                child: _SearchResults(
+                  query: _query,
+                  onOpenFolder: (f) {
+                    _search.clear();
+                    setState(() => _query = '');
+                    _tabs.index = 0;
+                    _folderKey.currentState?.open(f);
+                  },
+                ),
+              )
             else ...[
               TabBar(
                 controller: _tabs,
@@ -153,14 +153,7 @@ class LibraryPageState extends State<LibraryPage>
                     : TabBarView(
                         controller: _tabs,
                         children: [
-                          const FolderView(),
-                          const AlbumsGrid(),
-                          GroupList(groups: lib.artists, icon: Icons.person),
-                          GroupList(
-                            groups: lib.albumArtists,
-                            icon: Icons.people,
-                          ),
-                          GroupList(groups: lib.genres, icon: Icons.category),
+                          FolderView(key: _folderKey),
                           const AllTracksView(),
                         ],
                       ),
@@ -218,68 +211,40 @@ class _EmptyLibrary extends StatelessWidget {
 }
 
 class _SearchResults extends StatelessWidget {
-  const _SearchResults({required this.query});
+  const _SearchResults({required this.query, required this.onOpenFolder});
   final String query;
+  final ValueChanged<String> onOpenFolder;
 
   @override
   Widget build(BuildContext context) {
     final lib = context.library;
     final tracks = lib.search(query);
-    final q = query.toLowerCase();
-    final albums = lib.albums
-        .where(
-          (a) =>
-              a.name.toLowerCase().contains(q) ||
-              a.artist.toLowerCase().contains(q),
-        )
-        .take(12)
-        .toList();
-    final artists = lib.artists
-        .where((a) => a.name.toLowerCase().contains(q))
-        .take(12)
-        .toList();
-    if (tracks.isEmpty && albums.isEmpty && artists.isEmpty) {
+    final folders = lib.searchFolders(query).take(20).toList();
+    if (tracks.isEmpty && folders.isEmpty) {
       return const Center(child: Text('Keine Treffer'));
     }
     return TrackListView(
       tracks: tracks,
       header: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (artists.isNotEmpty) ...[
-            const _SectionTitle('Künstler'),
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: [
-                  for (final a in artists)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        avatar: const Icon(Icons.person, size: 18),
-                        label: Text(a.name),
-                        onPressed: () => openGroup(context, a, Icons.person),
-                      ),
-                    ),
-                ],
+          if (folders.isNotEmpty) ...[
+            _SectionTitle('Ordner (${folders.length})'),
+            for (final f in folders)
+              GestureDetector(
+                onSecondaryTapUp: (d) => showTrackMenu(
+                  context,
+                  lib.tracksBelow(f),
+                  position: d.globalPosition,
+                  actions: groupActions,
+                ),
+                child: ListTile(
+                  leading: const Icon(Icons.folder),
+                  title: Text(f.split('/').last),
+                  subtitle: Text(f),
+                  onTap: () => onOpenFolder(f),
+                ),
               ),
-            ),
-          ],
-          if (albums.isNotEmpty) ...[
-            const _SectionTitle('Alben'),
-            SizedBox(
-              height: 190,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: [
-                  for (final a in albums)
-                    SizedBox(width: 150, child: AlbumCard(album: a)),
-                ],
-              ),
-            ),
           ],
           if (tracks.isNotEmpty) _SectionTitle('Titel (${tracks.length})'),
         ],
@@ -304,12 +269,15 @@ class FolderView extends StatefulWidget {
   const FolderView({super.key});
 
   @override
-  State<FolderView> createState() => _FolderViewState();
+  State<FolderView> createState() => FolderViewState();
 }
 
-class _FolderViewState extends State<FolderView>
+class FolderViewState extends State<FolderView>
     with AutomaticKeepAliveClientMixin {
   String _folder = '';
+
+  /// Öffnet einen Ordner (z. B. aus der Suche).
+  void open(String folder) => setState(() => _folder = folder);
 
   @override
   bool get wantKeepAlive => true;
@@ -397,213 +365,6 @@ class _FolderViewState extends State<FolderView>
   }
 
   String _join(String name) => _folder.isEmpty ? name : '$_folder/$name';
-}
-
-// ─── Alben ───────────────────────────────────────────────────────────────
-
-class AlbumsGrid extends StatelessWidget {
-  const AlbumsGrid({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    // Eigene Abhängigkeit von der Bibliothek: const-Widgets werden sonst nicht neu gebaut
-    return ListenableBuilder(
-      listenable: context.library,
-      builder: (context, _) => _build(context),
-    );
-  }
-
-  Widget _build(BuildContext context) {
-    final albums = context.library.albums;
-    return GridView.builder(
-      padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 190,
-        mainAxisExtent: 240,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: albums.length,
-      itemBuilder: (context, i) => AlbumCard(album: albums[i]),
-    );
-  }
-}
-
-class AlbumCard extends StatelessWidget {
-  const AlbumCard({super.key, required this.album});
-  final Album album;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => openAlbum(context, album),
-        // InkWell nimmt den Rechtsklick selbst entgegen (ein äußerer GestureDetector käme nicht zum Zug)
-        onSecondaryTapUp: (d) => showTrackMenu(
-          context,
-          album.tracks,
-          position: d.globalPosition,
-          actions: groupActions,
-        ),
-        onLongPress: () =>
-            showTrackMenu(context, album.tracks, actions: groupActions),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: LayoutBuilder(
-            builder: (context, c) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CoverArt(track: album.first, size: c.maxWidth, radius: 8),
-                const SizedBox(height: 6),
-                Text(
-                  album.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall,
-                ),
-                Text(
-                  album.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-void openAlbum(BuildContext context, Album album) {
-  Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => _scoped(context, AlbumPage(album: album)),
-    ),
-  );
-}
-
-/// Neue Seite im gleichen MyncScope.
-Widget _scoped(BuildContext context, Widget child) {
-  final s = MyncScope.of(context);
-  return MyncScope(
-    settings: s.settings,
-    library: s.library,
-    player: s.player,
-    child: child,
-  );
-}
-
-class AlbumPage extends StatelessWidget {
-  const AlbumPage({super.key, required this.album});
-  final Album album;
-
-  @override
-  Widget build(BuildContext context) {
-    final year = album.year;
-    return Scaffold(
-      bottomNavigationBar: const PageMiniPlayer(),
-      appBar: AppBar(title: Text(album.name)),
-      body: TrackListView(
-        tracks: album.tracks,
-        showTrackNo: true,
-        header: GroupHeader(
-          tracks: album.tracks,
-          title: album.name,
-          subtitle: [album.artist, if (year != null) '$year'].join(' · '),
-          cover: CoverArt(track: album.first, size: 140, radius: 10),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Künstler, Genres … ──────────────────────────────────────────────────
-
-class GroupList extends StatelessWidget {
-  const GroupList({super.key, required this.groups, required this.icon});
-  final List<Group> groups;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      itemCount: groups.length,
-      itemExtent: 60,
-      itemBuilder: (context, i) {
-        final g = groups[i];
-        final albums = g.tracks.map((t) => t.albumKey).toSet().length;
-        return GestureDetector(
-          onSecondaryTapUp: (d) => showTrackMenu(
-            context,
-            g.tracks,
-            position: d.globalPosition,
-            actions: groupActions,
-          ),
-          child: ListTile(
-            leading: CircleAvatar(child: Icon(icon)),
-            title: Text(g.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(
-              '$albums ${albums == 1 ? 'Album' : 'Alben'} · ${g.tracks.length} Titel',
-            ),
-            onTap: () => openGroup(context, g, icon),
-          ),
-        );
-      },
-    );
-  }
-}
-
-void openGroup(BuildContext context, Group g, IconData icon) {
-  Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => _scoped(context, GroupPage(group: g, icon: icon)),
-    ),
-  );
-}
-
-class GroupPage extends StatelessWidget {
-  const GroupPage({super.key, required this.group, required this.icon});
-  final Group group;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final albums = context.library.albumsOf(group);
-    return Scaffold(
-      bottomNavigationBar: const PageMiniPlayer(),
-      appBar: AppBar(title: Text(group.name)),
-      body: TrackListView(
-        tracks: group.tracks,
-        header: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            GroupHeader(
-              tracks: group.tracks,
-              title: group.name,
-              cover: CircleAvatar(radius: 40, child: Icon(icon, size: 40)),
-            ),
-            if (albums.length > 1)
-              SizedBox(
-                height: 200,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  children: [
-                    for (final a in albums)
-                      SizedBox(width: 150, child: AlbumCard(album: a)),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 // ─── Alle Titel ──────────────────────────────────────────────────────────

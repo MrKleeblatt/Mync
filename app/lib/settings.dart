@@ -73,6 +73,13 @@ class AppSettings extends ChangeNotifier {
   double get volume => _prefs.getDouble('volume') ?? 100;
   Future<void> setVolume(double v) => _prefs.setDouble('volume', v);
 
+  /// Schrittweite beim Spulen in Sekunden.
+  int get seekStep => _prefs.getInt('seekStep') ?? 10;
+  Future<void> setSeekStep(int s) async {
+    await _prefs.setInt('seekStep', s);
+    notifyListeners();
+  }
+
   double get speed => _prefs.getDouble('speed') ?? 1.0;
   Future<void> setSpeed(double v) => _prefs.setDouble('speed', v);
 

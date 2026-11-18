@@ -27,7 +27,7 @@ Future<void> main() async {
   // Zustand beim Beenden sichern
   AppLifecycleListener(
     onExitRequested: () async {
-      await player.saveNow();
+      await player.endListening();
       await mpris.stop();
       return AppExitResponse.exit;
     },

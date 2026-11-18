@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mync/library/lrc.dart';
-import 'package:mync/library/playlists.dart';
 import 'package:mync/player/queue.dart';
 
 PlayQueue q(List<String> items, {int index = 0}) =>
@@ -94,40 +92,6 @@ void main() {
       expect(l.synced, isFalse);
       expect(l.plain, 'Zeile 1\nZeile 2');
       expect(Lyrics.parse('  '), isNull);
-    });
-  });
-
-  group('Playlists', () {
-    test('Pfade relativ zur Wurzel, Rundreise über Datei', () async {
-      final tmp = await Directory.systemTemp.createTemp('mync_pl');
-      addTearDown(() => tmp.delete(recursive: true));
-      final root = tmp.path;
-      Directory('$root/Björk/Post').createSync(recursive: true);
-      File('$root/Björk/Post/a.mp3').writeAsStringSync('');
-      final store = PlaylistStore(root);
-      await store.write('Test', ['Björk/Post/a.mp3', 'X/b.flac']);
-      expect(
-        File('$root/Playlists/Test.m3u8').readAsStringSync(),
-        '#EXTM3U\n../Björk/Post/a.mp3\n../X/b.flac\n',
-      );
-      expect(await store.read('Test'), ['Björk/Post/a.mp3', 'X/b.flac']);
-      await store.add('Test', ['X/b.flac', 'c.ogg']);
-      expect(await store.read('Test'), [
-        'Björk/Post/a.mp3',
-        'X/b.flac',
-        'c.ogg',
-      ]);
-      await store.rename('Test', 'Neu');
-      expect(await store.names(), ['Neu']);
-    });
-
-    test('fremde Playlists: absolut, Backslashes, relativ zur Wurzel', () {
-      final out = PlaylistStore.parse(
-        '#EXTM3U\n#EXTINF:123,Titel\n/musik/A/x.mp3\n..\\B\\y.mp3\nC/z.mp3\n/anderswo/q.mp3\n',
-        playlistDir: '/musik/Playlists',
-        root: '/musik',
-      );
-      expect(out, ['A/x.mp3', 'B/y.mp3', 'C/z.mp3']);
     });
   });
 }

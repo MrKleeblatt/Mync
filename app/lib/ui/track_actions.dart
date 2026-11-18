@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../library/playlists.dart';
 import '../library/track.dart';
-import '../player/player_controller.dart';
 import 'scope.dart';
 import 'tag_editor.dart';
 
@@ -13,8 +11,6 @@ enum TrackAction {
   playNext('Als Nächstes spielen', Icons.playlist_play),
   append('Zur Warteschlange hinzufügen', Icons.playlist_add),
   newQueue('In neuer Warteschlange', Icons.add_to_queue),
-  addToPlaylist('Zu Playlist hinzufügen …', Icons.queue_music),
-  favorite('Favorit', Icons.favorite_border),
   editTags('Tags bearbeiten …', Icons.edit),
   details('Details', Icons.info_outline);
 
@@ -27,8 +23,6 @@ const singleTrackActions = [
   TrackAction.playNext,
   TrackAction.append,
   TrackAction.newQueue,
-  TrackAction.addToPlaylist,
-  TrackAction.favorite,
   TrackAction.editTags,
   TrackAction.details,
 ];
@@ -39,7 +33,6 @@ const groupActions = [
   TrackAction.playNext,
   TrackAction.append,
   TrackAction.newQueue,
-  TrackAction.addToPlaylist,
   TrackAction.editTags,
 ];
 
@@ -57,8 +50,6 @@ Future<void> showTrackMenu(
       (box == null
           ? Offset.zero
           : box.localToGlobal(box.size.topRight(Offset.zero)));
-  final lib = context.library;
-  final fav = tracks.length == 1 && lib.isFavorite(tracks.first.path);
   final chosen = await showMenu<TrackAction>(
     context: context,
     position: RelativeRect.fromRect(
@@ -72,14 +63,8 @@ Future<void> showTrackMenu(
           child: ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
-            leading: Icon(
-              a == TrackAction.favorite && fav ? Icons.favorite : a.icon,
-            ),
-            title: Text(
-              a == TrackAction.favorite && fav
-                  ? 'Aus Favoriten entfernen'
-                  : a.label,
-            ),
+            leading: Icon(a.icon),
+            title: Text(a.label),
           ),
         ),
     ],
@@ -96,7 +81,6 @@ Future<void> runTrackAction(
 ) async {
   if (tracks.isEmpty) return;
   final player = context.player;
-  final lib = context.library;
   final paths = tracks.map((t) => t.path).toList();
   final messenger = ScaffoldMessenger.maybeOf(context);
   void toast(String s) => messenger?.showSnackBar(
@@ -120,60 +104,11 @@ Future<void> runTrackAction(
     case TrackAction.newQueue:
       await player.newQueue(paths: paths);
       toast('Neue Warteschlange „${player.queue.name}“');
-    case TrackAction.addToPlaylist:
-      final name = await pickPlaylist(context);
-      if (name == null) return;
-      await lib.playlists.add(name, paths);
-      lib.playlistsChanged();
-      toast('$what zu „$name“ hinzugefügt');
-    case TrackAction.favorite:
-      for (final t in tracks) {
-        await lib.toggleFavorite(t.path);
-      }
     case TrackAction.editTags:
       if (context.mounted) await showTagEditor(context, tracks);
     case TrackAction.details:
       if (context.mounted) await showTrackDetails(context, tracks.first);
   }
-}
-
-/// Auswahl einer Playlist (oder neue anlegen).
-Future<String?> pickPlaylist(BuildContext context) async {
-  final names = await userPlaylists(context.library);
-  if (!context.mounted) return null;
-  return showDialog<String>(
-    context: context,
-    builder: (ctx) => SimpleDialog(
-      title: const Text('Zu Playlist hinzufügen'),
-      children: [
-        SimpleDialogOption(
-          onPressed: () async {
-            final n = await askText(ctx, title: 'Neue Playlist', label: 'Name');
-            if (n != null && ctx.mounted) Navigator.pop(ctx, n);
-          },
-          child: const ListTile(
-            leading: Icon(Icons.add),
-            title: Text('Neue Playlist …'),
-          ),
-        ),
-        SimpleDialogOption(
-          onPressed: () => Navigator.pop(ctx, PlaylistStore.favoritesName),
-          child: const ListTile(
-            leading: Icon(Icons.favorite),
-            title: Text(PlaylistStore.favoritesName),
-          ),
-        ),
-        for (final n in names)
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, n),
-            child: ListTile(
-              leading: const Icon(Icons.queue_music),
-              title: Text(n),
-            ),
-          ),
-      ],
-    ),
-  );
 }
 
 /// Einfacher Texteingabe-Dialog.
@@ -213,7 +148,7 @@ Future<String?> askText(
 }
 
 Future<void> showTrackDetails(BuildContext context, Track t) {
-  final stat = context.player.stats[t.path];
+  final (plays, last) = context.player.playsFor(t);
   final rows = <(String, String)>[
     ('Titel', t.title),
     ('Künstler', t.artist),
@@ -227,12 +162,8 @@ Future<void> showTrackDetails(BuildContext context, Track t) {
     ('Datei', t.path),
     ('Format', t.extension.toUpperCase()),
     ('Hinzugefügt', _date(t.added)),
-    ('Gespielt', '${stat?.plays ?? 0}×'),
-    if (stat != null && stat.lastPlayedMs > 0)
-      (
-        'Zuletzt',
-        _date(DateTime.fromMillisecondsSinceEpoch(stat.lastPlayedMs)),
-      ),
+    ('Gespielt', '$plays×'),
+    if (last != null) ('Zuletzt gehört', _date(last)),
   ];
   return showDialog<void>(
     context: context,

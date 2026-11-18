@@ -92,23 +92,6 @@ class QueuesPage extends StatelessWidget {
                         : player.shuffleQueue,
                     icon: const Icon(Icons.shuffle),
                   ),
-                  IconButton(
-                    tooltip: 'Als Playlist speichern',
-                    onPressed: player.queue.isEmpty
-                        ? null
-                        : () async {
-                            final name = await askText(
-                              context,
-                              title: 'Als Playlist speichern',
-                              label: 'Name',
-                              initial: player.queue.name,
-                            );
-                            if (name != null) {
-                              await player.saveQueueAsPlaylist(name);
-                            }
-                          },
-                    icon: const Icon(Icons.save_alt),
-                  ),
                   Builder(
                     builder: (c) => IconButton(
                       tooltip: 'Weitere Aktionen',

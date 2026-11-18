@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'library_page.dart';
 import 'now_playing.dart';
 import 'placeholder_screen.dart';
-import 'playlists_page.dart';
+import 'stats_page.dart';
 import 'queues_page.dart';
 import 'scope.dart';
 import 'settings_page.dart';
@@ -27,11 +27,7 @@ const _dests = [
     Icons.queue_music,
     'Queues',
   ),
-  _Dest(
-    'Playlists',
-    Icons.featured_play_list_outlined,
-    Icons.featured_play_list,
-  ),
+  _Dest('Statistik', Icons.insights_outlined, Icons.insights),
   _Dest('Sync', Icons.sync_alt_outlined, Icons.sync_alt),
   _Dest('Einstellungen', Icons.settings_outlined, Icons.settings, 'Optionen'),
 ];
@@ -54,7 +50,7 @@ class _HomeShellState extends State<HomeShell> {
   Widget _page(bool sidePanel) => switch (_index) {
     0 => LibraryPage(key: _libraryKey),
     1 => const QueuesPage(),
-    2 => const PlaylistsPage(),
+    2 => const StatsPage(),
     3 => const PlaceholderScreen(
       icon: Icons.sync_alt,
       title: 'Sync mit dem Handy',
