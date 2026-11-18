@@ -176,6 +176,20 @@ class AppSettings extends ChangeNotifier {
   double get speed => _prefs.getDouble('speed') ?? 1.0;
   Future<void> setSpeed(double v) => _prefs.setDouble('speed', v);
 
+  /// Applaus am Anfang/Ende automatisch überspringen.
+  bool get autoSkipApplause => _prefs.getBool('autoSkipApplause') ?? false;
+  Future<void> setAutoSkipApplause(bool v) async {
+    await _prefs.setBool('autoSkipApplause', v);
+    notifyListeners();
+  }
+
+  /// Visualisierung hinter der Zeitleiste.
+  bool get visualizer => _prefs.getBool('visualizer') ?? true;
+  Future<void> setVisualizer(bool v) async {
+    await _prefs.setBool('visualizer', v);
+    notifyListeners();
+  }
+
   /// Zuletzt benutztes Muster für „Nach Tags umbenennen“.
   String get renamePattern =>
       _prefs.getString('renamePattern') ?? '{track} - {title}';

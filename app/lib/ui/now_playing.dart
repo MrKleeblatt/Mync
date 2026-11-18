@@ -12,6 +12,7 @@ import '../player/queue.dart';
 import 'cover_art.dart';
 import 'compact_window.dart';
 import 'lrc_editor.dart';
+import 'visualizer.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
 import 'track_actions.dart';
@@ -169,6 +170,11 @@ class MiniPlayer extends StatelessWidget {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          if (player.inApplause)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: SkipApplauseButton(player: player),
+                            ),
                           PositionText(controller: player),
                           const SizedBox(width: 8),
                           _RepeatButton(player: player),
@@ -198,6 +204,12 @@ class MiniPlayer extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(child: info),
+                if (player.inApplause)
+                  IconButton(
+                    tooltip: 'Applaus überspringen',
+                    onPressed: player.skipApplause,
+                    icon: const Icon(Icons.sign_language),
+                  ),
                 controls,
               ],
             ),
@@ -210,11 +222,29 @@ class MiniPlayer extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  height: 4,
-                  child: PositionSlider(controller: player, compact: true),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: wide ? 1132 : double.infinity,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        wide ? 24 : 0,
+                        6,
+                        wide ? 24 : 0,
+                        0,
+                      ),
+                      child: SizedBox(
+                        height: 24,
+                        child: PositionSlider(
+                          controller: player,
+                          compact: true,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                SizedBox(height: 64, child: row),
+                SizedBox(height: 60, child: row),
               ],
             ),
           ),
@@ -222,6 +252,19 @@ class MiniPlayer extends StatelessWidget {
       },
     );
   }
+}
+
+/// „Applaus überspringen“ (erscheint nur, während erkannter Applaus läuft).
+class SkipApplauseButton extends StatelessWidget {
+  const SkipApplauseButton({super.key, required this.player});
+  final PlayerController player;
+
+  @override
+  Widget build(BuildContext context) => FilledButton.tonalIcon(
+    onPressed: player.skipApplause,
+    icon: const Icon(Icons.sign_language, size: 18),
+    label: const Text('Applaus überspringen'),
+  );
 }
 
 /// Fortschrittsbalken mit eigener Aktualisierung (ohne den ganzen Baum neu zu bauen).
@@ -280,9 +323,45 @@ class _PositionSliderState extends State<PositionSlider> {
           max <= 0 ? 0.0 : max,
         );
         if (widget.compact) {
-          return LinearProgressIndicator(
-            value: max <= 0 ? 0 : pos / max,
-            minHeight: 4,
+          // Streifen mit Visualisierung, unten eine dünne Fortschrittslinie;
+          // Antippen springt an die Stelle
+          return LayoutBuilder(
+            builder: (context, box) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: max <= 0
+                  ? null
+                  : (d) => c.seek(
+                      Duration(
+                        milliseconds:
+                            (max *
+                                    (d.localPosition.dx / box.maxWidth).clamp(
+                                      0.0,
+                                      1.0,
+                                    ))
+                                .round(),
+                      ),
+                    ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    bottom: 3,
+                    child: TrackVisualizer(
+                      controller: c,
+                      height: box.maxHeight - 3,
+                      barWidth: 2,
+                      mirrored: false,
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: LinearProgressIndicator(
+                      value: max <= 0 ? 0 : pos / max,
+                      minHeight: 3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         }
         final starts = [
@@ -295,6 +374,11 @@ class _PositionSliderState extends State<PositionSlider> {
             Stack(
               alignment: Alignment.center,
               children: [
+                // Visualisierung hinter der Leiste (rein dekorativ)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: TrackVisualizer(controller: c, height: 64),
+                ),
                 // Kapitelanfänge als kleine Striche über der Leiste
                 if (starts.isNotEmpty)
                   Positioned.fill(
@@ -487,6 +571,16 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               ),
             const SizedBox(height: 16),
             PositionSlider(controller: player),
+            // Platz fest reservieren, damit nichts springt
+            SizedBox(
+              height: 44,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: player.inApplause
+                    ? SkipApplauseButton(player: player)
+                    : const SizedBox.shrink(),
+              ),
+            ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,

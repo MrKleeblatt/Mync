@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
 
+import '../analysis/analysis_service.dart';
 import '../library/chapters.dart';
 import '../library/library.dart';
 import '../library/track.dart';
@@ -34,7 +35,11 @@ class PlayStat {
 class PlayerController extends ChangeNotifier {
   PlayerController(this.settings, this.library)
     : _store = StateStore(settings.stateFile),
-      history = ListeningHistory(File('${settings.dataDir}/history.jsonl'));
+      history = ListeningHistory(File('${settings.dataDir}/history.jsonl')),
+      analysis = AnalysisService(settings.cacheDir);
+
+  /// Wellenform und Applaus-Erkennung (im Hintergrund).
+  final AnalysisService analysis;
 
   final AppSettings settings;
   final Library library;
@@ -92,6 +97,7 @@ class PlayerController extends ChangeNotifier {
 
   /// Lädt die Kapitel, wenn sich der aktuelle Titel geändert hat.
   void _syncChapters({bool force = false}) {
+    _requestAnalysis();
     final path = queue.current;
     if (!force && path == _chaptersFor) return;
     _chaptersFor = path;
@@ -205,6 +211,7 @@ class PlayerController extends ChangeNotifier {
           }
           _save(delay: const Duration(seconds: 5));
           _checkCrossfade();
+          _checkApplause();
         }
       }),
       player.stream.duration.listen((d) {
@@ -225,6 +232,7 @@ class PlayerController extends ChangeNotifier {
     ]);
 
     library.onRenamed = renamePaths;
+    analysis.addListener(notifyListeners);
     // Nach Scans/Tag-Änderungen: Kapitel des aktuellen Titels neu laden
     library.addListener(() {
       if (!library.scanning) _syncChapters(force: true);
@@ -485,6 +493,11 @@ class PlayerController extends ChangeNotifier {
     _markUserSkip();
     final n = queue.nextIndex(manual: true);
     if (n == null) return;
+    if (n == queue.index) {
+      // nur ein Titel: mpv ignoriert den Sprung auf denselben Eintrag
+      await player.seek(Duration.zero);
+      return;
+    }
     if (n == 0 && queue.index == queue.items.length - 1) {
       await player.jump(0);
     } else {
@@ -825,6 +838,104 @@ class PlayerController extends ChangeNotifier {
     await settings.setBalance(v);
     await applyAudioFilters();
     notifyListeners();
+  }
+
+  // ─── Analyse: Wellenform und Applaus ──────────────────────────────────
+
+  /// Analyse des laufenden und des nächsten Titels anstoßen.
+  void _requestAnalysis() {
+    if (queue.isEmpty) return;
+    final q = queue;
+    for (final (i, prio) in [(q.index, true), (q.nextIndex(), false)]) {
+      if (i == null || i < 0 || i >= q.items.length) continue;
+      final t = library.byPath(q.items[i]);
+      if (t == null) continue;
+      unawaited(
+        analysis.request(
+          t.fileId,
+          t.info.durationMs,
+          library.abs(t.path),
+          priority: prio,
+        ),
+      );
+    }
+  }
+
+  /// Analyse des laufenden Titels (null = noch nicht fertig).
+  TrackAnalysis? get currentAnalysis {
+    final t = currentTrack;
+    if (t == null) return null;
+    return analysis.get(AnalysisService.keyOf(t.fileId, t.info.durationMs));
+  }
+
+  Duration get _length => duration > Duration.zero
+      ? duration
+      : (currentTrack?.duration ?? Duration.zero);
+
+  /// Beginn des Applauses am Ende (null = keiner).
+  Duration? get outroApplauseStart {
+    final o = currentAnalysis?.outroApplause;
+    if (o == null || _length <= Duration.zero) return null;
+    return _length - o;
+  }
+
+  /// Läuft gerade erkannter Applaus, den man überspringen kann?
+  bool get inApplause {
+    final a = currentAnalysis;
+    if (a == null || !_loaded) return false;
+    final intro = a.introApplause;
+    if (intro != null && position < intro - const Duration(milliseconds: 500)) {
+      return true;
+    }
+    final out = outroApplauseStart;
+    return out != null &&
+        position >= out &&
+        position < _length - const Duration(milliseconds: 500);
+  }
+
+  /// Applaus überspringen: am Anfang zum Musikbeginn, am Ende zum nächsten Titel.
+  Future<void> skipApplause() async {
+    final a = currentAnalysis;
+    if (a == null) return;
+    _debug(
+      'Applaus überspringen bei $position (Wiederholen: ${queue.repeat.name})',
+    );
+    final intro = a.introApplause;
+    if (intro != null && position < intro) {
+      await seek(intro);
+      return;
+    }
+    final out = outroApplauseStart;
+    if (out != null && position >= out) {
+      final last =
+          queue.repeat == QueueRepeat.off &&
+          queue.index >= queue.items.length - 1;
+      if (last) {
+        await seek(_length - const Duration(milliseconds: 200));
+      } else {
+        await next();
+      }
+    }
+  }
+
+  String?
+  _autoSkipped; // „Pfad|intro“ bzw. „Pfad|outro“: schon einmal übersprungen
+  bool _wasInApplause = false;
+
+  void _checkApplause() {
+    final now = inApplause;
+    if (now != _wasInApplause) {
+      _wasInApplause = now;
+      notifyListeners(); // Knopf ein-/ausblenden
+    }
+    if (!now || !settings.autoSkipApplause || !playing) return;
+    final cur = queue.current;
+    final which = position < _length ~/ 2 ? 'intro' : 'outro';
+    final tag = '$cur|$which';
+    // nur einmal je Titel – wer zurückspult, will den Applaus hören
+    if (_autoSkipped == tag) return;
+    _autoSkipped = tag;
+    unawaited(skipApplause());
   }
 
   // ─── Überblenden ───────────────────────────────────────────────────────

@@ -46,6 +46,8 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Überblenden (Crossfade) | ✅ | 2–12 s, gleiche Leistung; nicht bei Hörbüchern, wahlweise nicht innerhalb eines Albums |
 | Position je Datei (Hörbücher) | ✅ | ab einstellbarer Länge (Standard 20 min), auch über Warteschlangen hinweg; Anzeige „gemerkt / Länge“ |
 | Tonhöhe, Balance | ✅ | ±6 Halbtöne (rubberband), Balance links/rechts |
+| **Applaus überspringen** | ✅ | erkennt Applaus am Anfang und Ende (Live-Aufnahmen), Knopf „Applaus überspringen“ oder automatisch (Einstellungen) |
+| Visualisierung | ✅ | Wellenform des Titels hinter der Zeitleiste, bewegt sich mit dem Pegel; Applaus hinterlegt; abschaltbar |
 
 ## Tags, Lyrics, Cover
 | Funktion | Stand | Anmerkung |
@@ -92,6 +94,25 @@ mync läuft auf PC und Handy; abgeglichen wird der Hauptmusikordner.
 Verbindung: TCP im Heimnetz (Port 47788, Suche per UDP 47789),
 Ende-zu-Ende verschlüsselt (X25519 + ChaCha20-Poly1305); fremde Geräte ohne
 Kopplung werden abgelehnt.
+
+## Wie die Analyse funktioniert
+![Wellenform mit erkanntem Applaus](screenshots/visualisierung.png)
+
+Für jeden laufenden und den nächsten Titel dekodiert eine eigene, stumme
+mpv-Instanz im Hintergrund (`ao=pcm`, so schnell wie möglich):
+
+- **Wellenform:** Betrag des Signals auf 200 Hz geglättet (Hüllkurve) →
+  480 Balken und ein Pegelverlauf mit 20 Werten/s. Eine 25-min-Datei
+  braucht etwa 3 s.
+- **Applaus:** die ersten und letzten 60 s mit 16 kHz. Je Block von 64 ms
+  wird verglichen, ob die Feinstruktur des Spektrums zum vorigen Block
+  passt: Bei Musik bleiben Töne und Obertöne an ihrer Stelle (auch bei
+  verzerrten Gitarren), bei Applaus ist sie jedes Mal zufällig. Überwiegt
+  das in jeder Sekunde, ist es Applaus (mindestens 2 s, Stille davor/danach
+  wird übersprungen; reines Rauschen ohne Übergang zu Musik zählt nicht).
+
+Ergebnisse liegen im Cache (`…/analysis/`) und bleiben beim Umbenennen und
+Taggen gültig.
 
 ## Tastenkürzel
 | Taste | Aktion |

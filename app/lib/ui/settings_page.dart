@@ -167,6 +167,16 @@ class SettingsPage extends StatelessWidget {
               value: s.crossfadeSkipAlbum,
               onChanged: s.setCrossfadeSkipAlbum,
             ),
+          SwitchListTile(
+            secondary: const Icon(Icons.sign_language),
+            title: const Text('Applaus automatisch überspringen'),
+            subtitle: const Text(
+              'Bei Live-Aufnahmen Applaus am Anfang und Ende auslassen '
+              '(sonst erscheint ein Knopf „Applaus überspringen“)',
+            ),
+            value: s.autoSkipApplause,
+            onChanged: s.setAutoSkipApplause,
+          ),
           ListTile(
             leading: const Icon(Icons.bookmark_outline),
             title: const Text('Position je Datei merken'),
@@ -198,6 +208,13 @@ class SettingsPage extends StatelessWidget {
               selected: {s.themeMode},
               onSelectionChanged: (v) => s.setThemeMode(v.first),
             ),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.graphic_eq),
+            title: const Text('Visualisierung'),
+            subtitle: const Text('Wellenform des Titels hinter der Zeitleiste'),
+            value: s.visualizer,
+            onChanged: s.setVisualizer,
           ),
           const _Section('Tastenkürzel'),
           const _Shortcuts(),

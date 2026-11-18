@@ -15,6 +15,7 @@ sich ihre Position merken, Zufall, Spulen mit einstellbarer Schrittweite,
 **Kapitel** (aus den Tags oder wie bei YouTube aus dem Beschreibungstext) zum
 Springen, **Hörstatistik** („diesen Monat am meisten gehört“, Hörzeit nach
 Tageszeit) mit **Vorschlägen**, Hörbuch-Positionen je Datei, Überblenden,
+**Applaus überspringen** bei Live-Aufnahmen, eine Wellenform-Visualisierung,
 Tag-Editor für MP3/FLAC/Ogg/Opus/M4A/WAV inkl. Cover, Umbenennen nach Tags,
 synchronisierte Lyrics mit LRC-Editor, Tonhöhe, Balance, ReplayGain,
 Sleeptimer, Mini-Player, mehrere Musikordner, Sicherung, Medientasten (MPRIS),
