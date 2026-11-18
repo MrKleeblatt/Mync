@@ -10,6 +10,8 @@ pub const tags = @import("tags.zig");
 pub const diff = @import("diff.zig");
 pub const manifest = @import("manifest.zig");
 pub const sqlite = @import("sqlite.zig");
+pub const duration = @import("duration.zig");
+pub const writer = @import("writer.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

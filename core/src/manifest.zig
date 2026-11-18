@@ -11,6 +11,7 @@ const sqlite = @import("sqlite.zig");
 const audiohash = @import("audiohash.zig");
 const tags_mod = @import("tags.zig");
 const diff = @import("diff.zig");
+const duration = @import("duration.zig");
 
 pub const extensions = [_][]const u8{
     "mp3", "flac", "ogg", "oga", "opus", "m4a", "m4b", "mp4", "aac", "wav", "lrc", "m3u", "m3u8",
@@ -31,6 +32,16 @@ const schema =
     \\CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ;
 
+/// Spalten, die nach der ersten Version hinzukamen: (Name, Definition).
+/// duration_ms: -2 = noch nicht berechnet (→ wird beim nächsten Scan ermittelt), -1 = unbekannt.
+/// added_ms: Zeitpunkt, an dem die Datei zum ersten Mal gesehen wurde.
+const migrations = [_][2][]const u8{
+    .{ "duration_ms", "ALTER TABLE file ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT -2" },
+    .{ "added_ms", "ALTER TABLE file ADD COLUMN added_ms INTEGER NOT NULL DEFAULT 0" },
+};
+
+const not_computed: i64 = -2;
+
 pub const FileRow = struct {
     file_id: []const u8,
     entry: diff.Entry,
@@ -38,6 +49,10 @@ pub const FileRow = struct {
     tags_json: []const u8,
     size: u64,
     mtime_ns: i64,
+    /// Dauer in ms, -1 wenn unbekannt.
+    duration_ms: i64 = -1,
+    /// Erstmals gesehen (Unix-Zeit in ms).
+    added_ms: i64 = 0,
 };
 
 pub const ScanError = struct { path: []const u8, message: []const u8 };
@@ -59,6 +74,18 @@ pub const Manifest = struct {
         const db = try sqlite.Db.open(db_path);
         errdefer db.close();
         try db.exec(schema);
+        for (migrations) |mig| {
+            const q = try db.prepare("SELECT COUNT(*) FROM pragma_table_info('file') WHERE name=?1");
+            defer q.deinit();
+            try q.bind(.{mig[0]});
+            if (try q.step() and q.int(0) == 0) {
+                var buf: [128]u8 = undefined;
+                try db.exec(try std.fmt.bufPrintSentinel(&buf, "{s}", .{mig[1]}, 0));
+                if (std.mem.eql(u8, mig[0], "added_ms")) {
+                    try db.exec("UPDATE file SET added_ms = mtime_ns / 1000000");
+                }
+            }
+        }
         return .{ .db = db, .io = io, .root = root };
     }
 
@@ -69,7 +96,7 @@ pub const Manifest = struct {
     /// Alle Einträge, nach Pfad sortiert. Speicher gehört `gpa` (Arena empfohlen).
     pub fn files(m: Manifest, gpa: Allocator) ![]FileRow {
         const st = try m.db.prepare(
-            "SELECT file_id,path,audio_hash,tag_hash,tags_json,size,mtime_ns FROM file ORDER BY path",
+            "SELECT file_id,path,audio_hash,tag_hash,tags_json,size,mtime_ns,duration_ms,added_ms FROM file ORDER BY path",
         );
         defer st.deinit();
         var out: std.ArrayList(FileRow) = .empty;
@@ -84,6 +111,8 @@ pub const Manifest = struct {
                 .tags_json = try gpa.dupe(u8, st.text(4)),
                 .size = @intCast(st.int(5)),
                 .mtime_ns = st.int(6),
+                .duration_ms = st.int(7),
+                .added_ms = st.int(8),
             });
         }
         return out.items;
@@ -155,7 +184,7 @@ pub const Manifest = struct {
             try seen.put(gpa, rel, {});
             const mtime_ns: i64 = @intCast(st.mtime.nanoseconds);
             if (known.get(rel)) |k| {
-                if (k.size == st.size and k.mtime_ns == mtime_ns) continue; // unverändert
+                if (k.size == st.size and k.mtime_ns == mtime_ns and k.duration_ms != not_computed) continue; // unverändert
             }
             report.hashed += 1;
             const h = hashFile(gpa, io, ent.dir, ent.basename) catch |err| {
@@ -168,6 +197,7 @@ pub const Manifest = struct {
                 .tags_json = h.tags_json,
                 .size = st.size,
                 .mtime_ns = mtime_ns,
+                .duration_ms = if (duration.ofFile(io, ent.dir, ent.basename)) |d| @intCast(d) else -1,
             } });
         }
 
@@ -183,12 +213,13 @@ pub const Manifest = struct {
         for (vanished.items) |v| try del.run(.{v.file_id});
 
         const ins = try m.db.prepare(
-            \\INSERT INTO file(file_id,path,size,mtime_ns,audio_hash,tag_hash,tags_json,seq)
-            \\VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+            \\INSERT INTO file(file_id,path,size,mtime_ns,audio_hash,tag_hash,tags_json,seq,duration_ms,added_ms)
+            \\VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
             \\ON CONFLICT(file_id) DO UPDATE SET path=?2,size=?3,mtime_ns=?4,
-            \\  audio_hash=?5,tag_hash=?6,tags_json=?7,seq=?8
+            \\  audio_hash=?5,tag_hash=?6,tags_json=?7,seq=?8,duration_ms=?9
         );
         defer ins.deinit();
+        const now_ms: i64 = @intCast(@divTrunc(Io.Clock.real.now(io).nanoseconds, std.time.ns_per_ms));
         for (fresh.items) |*f| {
             var r = &f.row;
             var id: ?[]const u8 = if (known.get(r.entry.path)) |k| k.file_id else null;
@@ -206,6 +237,7 @@ pub const Manifest = struct {
             try ins.run(.{
                 r.file_id,           r.entry.path,      r.size,     r.mtime_ns,
                 r.entry.audio_hash,  r.entry.tag_hash,  r.tags_json, seq,
+                r.duration_ms,       now_ms,
             });
         }
         try m.db.exec("COMMIT");

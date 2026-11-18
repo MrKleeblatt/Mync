@@ -21,6 +21,12 @@ pub const field_names = [_][]const u8{
     "disctotal", "genre", "lyrics", "title", "track", "tracktotal",
 };
 
+/// Index des Feldnamens in `field_names`, null wenn unbekannt.
+pub fn fieldIndex(name: []const u8) ?usize {
+    for (field_names, 0..) |f, i| if (std.mem.eql(u8, f, name)) return i;
+    return null;
+}
+
 pub const Field = struct {
     name: []const u8,
     values: []const []const u8,
@@ -32,6 +38,8 @@ pub const Tags = struct {
     fields: []const Field = &.{},
     /// SHA-256 (hex) je eingebettetem Bild, in Dateireihenfolge.
     pictures: []const [64]u8 = &.{},
+    /// Bilddaten des ersten eingebetteten Bildes (nicht Teil des Hashes).
+    first_picture: ?[]const u8 = null,
 
     pub fn get(t: Tags, name: []const u8) ?[]const []const u8 {
         for (t.fields) |f| if (std.mem.eql(u8, f.name, name)) return f.values;
@@ -103,6 +111,7 @@ const Builder = struct {
     gpa: Allocator,
     map: std.StringArrayHashMapUnmanaged(std.ArrayList([]const u8)) = .empty,
     pictures: std.ArrayList([64]u8) = .empty,
+    first_picture: ?[]const u8 = null,
 
     fn add(b: *Builder, name: []const u8, raw: []const u8) !void {
         if (std.mem.eql(u8, name, "track") or std.mem.eql(u8, name, "disc")) {
@@ -128,6 +137,7 @@ const Builder = struct {
         var out: [32]u8 = undefined;
         Sha256.hash(data, &out, .{});
         try b.pictures.append(b.gpa, std.fmt.bytesToHex(out, .lower));
+        if (b.first_picture == null) b.first_picture = data;
     }
 
     fn isEmpty(b: *const Builder) bool {
@@ -156,7 +166,7 @@ const Builder = struct {
             }
             try fields.append(b.gpa, .{ .name = k, .values = out.items });
         }
-        return .{ .fields = fields.items, .pictures = b.pictures.items };
+        return .{ .fields = fields.items, .pictures = b.pictures.items, .first_picture = b.first_picture };
     }
 };
 
@@ -347,10 +357,10 @@ fn cleanGenre(v: []const u8) []const u8 {
     return v;
 }
 
-const Term = struct { text_end: usize, next: usize };
+pub const Term = struct { text_end: usize, next: usize };
 
 /// Ende eines terminierten Strings in Kodierung `enc`.
-fn termEnd(enc: u8, data: []const u8) Term {
+pub fn termEnd(enc: u8, data: []const u8) Term {
     if (enc == 1 or enc == 2) {
         var i: usize = 0;
         while (i + 1 < data.len) : (i += 2) {
@@ -375,7 +385,7 @@ fn decodeStrings(gpa: Allocator, enc: u8, data: []const u8) ![]const []const u8 
     return out.items;
 }
 
-fn decodeText(gpa: Allocator, enc: u8, data: []const u8) ![]const u8 {
+pub fn decodeText(gpa: Allocator, enc: u8, data: []const u8) ![]const u8 {
     switch (enc) {
         0 => return latin1ToUtf8(gpa, data),
         3 => return data,
@@ -400,7 +410,7 @@ fn decodeText(gpa: Allocator, enc: u8, data: []const u8) ![]const u8 {
     }
 }
 
-fn latin1ToUtf8(gpa: Allocator, data: []const u8) ![]const u8 {
+pub fn latin1ToUtf8(gpa: Allocator, data: []const u8) ![]const u8 {
     var out = try std.ArrayList(u8).initCapacity(gpa, data.len * 2);
     for (data) |c| {
         if (c < 0x80) {
@@ -435,7 +445,7 @@ fn parseId3v1(b: *Builder, s: Source) !void {
 
 // ───────────────────────────── Vorbis Comments / FLAC ──────────────────────
 
-fn vorbisField(key_upper: []const u8) ?[]const u8 {
+pub fn vorbisField(key_upper: []const u8) ?[]const u8 {
     const map = std.StaticStringMap([]const u8).initComptime(.{
         .{ "TITLE", "title" },         .{ "ARTIST", "artist" },         .{ "ALBUM", "album" },
         .{ "ALBUMARTIST", "albumartist" }, .{ "ALBUM ARTIST", "albumartist" },
