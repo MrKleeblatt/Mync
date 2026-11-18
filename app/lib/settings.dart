@@ -73,6 +73,13 @@ class AppSettings extends ChangeNotifier {
   double get volume => _prefs.getDouble('volume') ?? 100;
   Future<void> setVolume(double v) => _prefs.setDouble('volume', v);
 
+  /// Sync im Heimnetz erlauben (Gerät ist für gekoppelte Geräte erreichbar).
+  bool get syncEnabled => _prefs.getBool('syncEnabled') ?? true;
+  Future<void> setSyncEnabled(bool v) async {
+    await _prefs.setBool('syncEnabled', v);
+    notifyListeners();
+  }
+
   /// Regelmäßig nach Updates suchen (beim Start und alle 6 Stunden).
   bool get updateCheck => _prefs.getBool('updateCheck') ?? true;
   Future<void> setUpdateCheck(bool v) async {

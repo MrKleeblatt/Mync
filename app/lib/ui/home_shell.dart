@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 
 import 'library_page.dart';
 import 'now_playing.dart';
-import 'placeholder_screen.dart';
 import 'stats_page.dart';
+import 'sync_page.dart';
 import 'update_widgets.dart';
 import 'queues_page.dart';
 import 'scope.dart';
@@ -52,11 +52,7 @@ class _HomeShellState extends State<HomeShell> {
     0 => LibraryPage(key: _libraryKey),
     1 => const QueuesPage(),
     2 => const StatsPage(),
-    3 => const PlaceholderScreen(
-      icon: Icons.sync_alt,
-      title: 'Sync mit dem Handy',
-      text: 'Hier erscheinen eingehende Änderungen vom Handy zum Annehmen oder Ablehnen (Meilenstein M1).',
-    ),
+    3 => const SyncPage(),
     _ => const SettingsPage(),
   };
 
@@ -93,6 +89,7 @@ class _HomeShellState extends State<HomeShell> {
             body: Column(
               children: [
                 const UpdateBanner(),
+                SyncBanner(onOpen: () => setState(() => _index = 3)),
                 Expanded(
                   child: Row(
                     children: [
@@ -124,6 +121,7 @@ class _HomeShellState extends State<HomeShell> {
               child: Column(
                 children: [
                   const UpdateBanner(),
+                  SyncBanner(onOpen: () => setState(() => _index = 3)),
                   Expanded(child: body),
                 ],
               ),

@@ -136,6 +136,8 @@ const ChapterJson = struct { start_ms: u64, end_ms: ?u64, title: []const u8 };
 const FileTags = struct {
     fields: Fields,
     pictures: usize,
+    /// SHA-256 je Bild (für den Sync: hat sich das Cover geändert?)
+    picture_hashes: []const []const u8,
     /// Kapitel aus den Tags (ID3 CHAP, Vorbis CHAPTERxxx, MP4 chpl)
     chapters: []const ChapterJson,
     /// Kann mync die Tags dieser Datei schreiben?
@@ -149,7 +151,9 @@ fn readTags(a: std.mem.Allocator, io: Io, path: []const u8) !FileTags {
     const fmt = core.audiohash.Format.fromPath(path);
     const ch = try a.alloc(ChapterJson, t.chapters.len);
     for (t.chapters, ch) |c, *o| o.* = .{ .start_ms = c.start_ms, .end_ms = c.end_ms, .title = c.title };
-    return .{ .fields = f, .pictures = t.pictures.len, .chapters = ch, .writable = fmt == .mp3 or fmt == .flac };
+    const ph = try a.alloc([]const u8, t.pictures.len);
+    for (t.pictures, ph) |p, *o| o.* = try a.dupe(u8, &p);
+    return .{ .fields = f, .pictures = t.pictures.len, .picture_hashes = ph, .chapters = ch, .writable = fmt == .mp3 or fmt == .flac };
 }
 
 /// Liest alle Tags einer Datei (inkl. Lyrics).
@@ -213,4 +217,141 @@ test "Fehler werden als JSON gemeldet" {
     const r = mync_scan("/gibt/es/nicht", "/tmp/mync-ffi-test/manifest.db").?;
     defer mync_free(r);
     try std.testing.expectEqualStrings("{\"error\":\"FileNotFound\"}", std.mem.span(r));
+}
+
+// ───────────────────────────── Sync ────────────────────────────────────────
+
+const SyncEntry = struct {
+    path: []const u8,
+    audio_hash: []const u8,
+    tag_hash: []const u8,
+    file_id: []const u8 = "",
+    size: u64 = 0,
+};
+
+fn manifestEntries(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const u8) ![]SyncEntry {
+    if (std.fs.path.dirname(db)) |d| try Io.Dir.cwd().createDirPath(io, d);
+    const m = try core.manifest.Manifest.open(io, db, root);
+    defer m.close();
+    const rows = try m.files(a);
+    const out = try a.alloc(SyncEntry, rows.len);
+    for (rows, out) |r, *o| o.* = .{
+        .path = r.entry.path,
+        .audio_hash = r.entry.audio_hash,
+        .tag_hash = r.entry.tag_hash,
+        .file_id = r.file_id,
+        .size = r.size,
+    };
+    return out;
+}
+
+/// Alle Dateien des Manifests mit Hashes (für den Sync-Abgleich).
+export fn mync_manifest_entries(root: [*:0]const u8, db: [*:0]const u8) ?[*:0]u8 {
+    return call(manifestEntries, .{ std.mem.span(root), std.mem.span(db) });
+}
+
+const PlanInput = struct {
+    base: []const SyncEntry,
+    local: []const SyncEntry,
+    remote: []const SyncEntry,
+};
+
+fn toEntries(a: std.mem.Allocator, xs: []const SyncEntry) ![]core.diff.Entry {
+    const out = try a.alloc(core.diff.Entry, xs.len);
+    for (xs, out) |x, *o| o.* = .{ .path = x.path, .audio_hash = x.audio_hash, .tag_hash = x.tag_hash };
+    return out;
+}
+
+fn syncPlan(a: std.mem.Allocator, _: Io, input_json: []const u8) ![]core.diff.Proposal {
+    const in = try std.json.parseFromSliceLeaky(PlanInput, a, input_json, .{ .ignore_unknown_fields = true });
+    const base = try toEntries(a, in.base);
+    const local = try core.diff.changes(a, base, try toEntries(a, in.local));
+    const remote = try core.diff.changes(a, base, try toEntries(a, in.remote));
+    return core.diff.proposals(a, local, remote);
+}
+
+/// Vorschläge für das lokale Gerät: {"base":[…],"local":[…],"remote":[…]} → Proposals
+export fn mync_sync_plan(input_json: [*:0]const u8) ?[*:0]u8 {
+    return call(syncPlan, .{std.mem.span(input_json)});
+}
+
+// ─── Kryptografie (binär, ohne JSON) ───
+
+const X25519 = std.crypto.dh.X25519;
+const Aead = std.crypto.aead.chacha_poly.ChaCha20Poly1305;
+const Hkdf = std.crypto.kdf.hkdf.HkdfSha256;
+
+/// Erzeugt ein X25519-Schlüsselpaar (je 32 Byte).
+export fn mync_x25519_keypair(secret_out: [*]u8, public_out: [*]u8) void {
+    const kp = X25519.KeyPair.generate(threaded.io());
+    @memcpy(secret_out[0..32], &kp.secret_key);
+    @memcpy(public_out[0..32], &kp.public_key);
+}
+
+/// Gemeinsames Geheimnis; 0 = ok, -1 = ungültiger Schlüssel.
+export fn mync_x25519(secret: [*]const u8, public: [*]const u8, out: [*]u8) c_int {
+    const s = X25519.scalarmult(secret[0..32].*, public[0..32].*) catch return -1;
+    @memcpy(out[0..32], &s);
+    return 0;
+}
+
+/// Verschlüsselt [msg] → out (len + 16 Byte Tag am Ende).
+export fn mync_aead_seal(key: [*]const u8, nonce: [*]const u8, ad: [*]const u8, ad_len: usize, msg: [*]const u8, len: usize, out: [*]u8) void {
+    var tag: [Aead.tag_length]u8 = undefined;
+    Aead.encrypt(out[0..len], &tag, msg[0..len], ad[0..ad_len], nonce[0..12].*, key[0..32].*);
+    @memcpy(out[len .. len + 16], &tag);
+}
+
+/// Entschlüsselt und prüft; 0 = ok, -1 = manipuliert/falscher Schlüssel.
+export fn mync_aead_open(key: [*]const u8, nonce: [*]const u8, ad: [*]const u8, ad_len: usize, ct: [*]const u8, len: usize, out: [*]u8) c_int {
+    if (len < 16) return -1;
+    const m = len - 16;
+    Aead.decrypt(out[0..m], ct[0..m], ct[m..len][0..16].*, ad[0..ad_len], nonce[0..12].*, key[0..32].*) catch return -1;
+    return 0;
+}
+
+/// HKDF-SHA256.
+export fn mync_hkdf(salt: [*]const u8, salt_len: usize, ikm: [*]const u8, ikm_len: usize, info: [*]const u8, info_len: usize, out: [*]u8, out_len: usize) void {
+    const prk = Hkdf.extract(salt[0..salt_len], ikm[0..ikm_len]);
+    Hkdf.expand(out[0..out_len], info[0..info_len], prk);
+}
+
+/// SHA-256 über einen Speicherbereich.
+export fn mync_sha256(data: [*]const u8, len: usize, out: [*]u8) void {
+    std.crypto.hash.sha2.Sha256.hash(data[0..len], out[0..32], .{});
+}
+
+test "Sync-Plan über FFI" {
+    const json =
+        \\{"base":[{"path":"a.mp3","audio_hash":"A","tag_hash":"1"}],
+        \\ "local":[{"path":"a.mp3","audio_hash":"A","tag_hash":"1"}],
+        \\ "remote":[{"path":"neu/a.mp3","audio_hash":"A","tag_hash":"2"},{"path":"b.mp3","audio_hash":"B","tag_hash":"1"}]}
+    ;
+    const r = mync_sync_plan(json).?;
+    defer mync_free(r);
+    const s = std.mem.span(r);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"rename\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "\"add\"") != null);
+}
+
+test "AEAD und X25519 über FFI" {
+    var sa: [32]u8 = undefined;
+    var pa: [32]u8 = undefined;
+    var sb: [32]u8 = undefined;
+    var pb: [32]u8 = undefined;
+    mync_x25519_keypair(&sa, &pa);
+    mync_x25519_keypair(&sb, &pb);
+    var k1: [32]u8 = undefined;
+    var k2: [32]u8 = undefined;
+    try std.testing.expectEqual(@as(c_int, 0), mync_x25519(&sa, &pb, &k1));
+    try std.testing.expectEqual(@as(c_int, 0), mync_x25519(&sb, &pa, &k2));
+    try std.testing.expectEqualSlices(u8, &k1, &k2);
+    const nonce: [12]u8 = @splat(0);
+    var ct: [21]u8 = undefined;
+    mync_aead_seal(&k1, &nonce, "ad", 2, "hallo", 5, &ct);
+    var pt: [5]u8 = undefined;
+    try std.testing.expectEqual(@as(c_int, 0), mync_aead_open(&k2, &nonce, "ad", 2, &ct, 21, &pt));
+    try std.testing.expectEqualStrings("hallo", &pt);
+    ct[0] ^= 1;
+    try std.testing.expectEqual(@as(c_int, -1), mync_aead_open(&k2, &nonce, "ad", 2, &ct, 21, &pt));
 }

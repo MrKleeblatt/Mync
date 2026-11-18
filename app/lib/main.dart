@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,9 @@ import 'settings.dart';
 import 'ui/global_shortcuts.dart';
 import 'ui/home_shell.dart';
 import 'ui/scope.dart';
+import 'sync/library_sync_host.dart';
+import 'sync/sync_service.dart';
+import 'ui/sync_page.dart';
 import 'update/update_service.dart';
 
 bool? _lastUpdateCheck;
@@ -26,6 +30,16 @@ Future<void> main() async {
   final mpris = Mpris(player);
   unawaited(mpris.start());
   if (settings.scanOnStart) unawaited(library.refresh());
+
+  // Sync mit gekoppelten Geräten im Heimnetz
+  final sync = SyncService(
+    dataDir: settings.dataDir,
+    host: LibrarySyncHost(library, settings),
+    deviceName: Platform.isAndroid ? 'Android-Handy' : Platform.localHostname,
+  );
+  SyncScope.service = sync;
+  await sync.init();
+  if (settings.syncEnabled) unawaited(sync.startServer());
 
   // Teil-Updates über GitHub-Releases (nur Linux)
   final updates = UpdateService(settings, beforeRestart: player.endListening);

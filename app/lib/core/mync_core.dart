@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
@@ -22,6 +23,68 @@ typedef _ThreeStr = Pointer<Utf8> Function(
   Pointer<Utf8>,
 );
 typedef _FreeC = Void Function(Pointer<Utf8>);
+typedef _KeypairC = Void Function(Pointer<Uint8>, Pointer<Uint8>);
+typedef _KeypairD = void Function(Pointer<Uint8>, Pointer<Uint8>);
+typedef _DhC = Int32 Function(Pointer<Uint8>, Pointer<Uint8>, Pointer<Uint8>);
+typedef _DhD = int Function(Pointer<Uint8>, Pointer<Uint8>, Pointer<Uint8>);
+typedef _SealC = Void Function(
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  Size,
+  Pointer<Uint8>,
+  Size,
+  Pointer<Uint8>,
+);
+typedef _SealD = void Function(
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+);
+typedef _OpenC = Int32 Function(
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  Size,
+  Pointer<Uint8>,
+  Size,
+  Pointer<Uint8>,
+);
+typedef _OpenD = int Function(
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+);
+typedef _HkdfC = Void Function(
+  Pointer<Uint8>,
+  Size,
+  Pointer<Uint8>,
+  Size,
+  Pointer<Uint8>,
+  Size,
+  Pointer<Uint8>,
+  Size,
+);
+typedef _HkdfD = void Function(
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+  int,
+  Pointer<Uint8>,
+  int,
+);
+typedef _ShaC = Void Function(Pointer<Uint8>, Size, Pointer<Uint8>);
+typedef _ShaD = void Function(Pointer<Uint8>, int, Pointer<Uint8>);
 typedef _FreeDart = void Function(Pointer<Utf8>);
 typedef _VersionC = Pointer<Utf8> Function();
 
@@ -54,6 +117,18 @@ class _Lib {
         'mync_verify_ed25519',
       ),
       sha256File = lib.lookupFunction<_OneStr, _OneStr>('mync_sha256_file'),
+      manifestEntries = lib.lookupFunction<_TwoStr, _TwoStr>(
+        'mync_manifest_entries',
+      ),
+      syncPlan = lib.lookupFunction<_OneStr, _OneStr>('mync_sync_plan'),
+      x25519Keypair = lib.lookupFunction<_KeypairC, _KeypairD>(
+        'mync_x25519_keypair',
+      ),
+      x25519 = lib.lookupFunction<_DhC, _DhD>('mync_x25519'),
+      aeadSeal = lib.lookupFunction<_SealC, _SealD>('mync_aead_seal'),
+      aeadOpen = lib.lookupFunction<_OpenC, _OpenD>('mync_aead_open'),
+      hkdf = lib.lookupFunction<_HkdfC, _HkdfD>('mync_hkdf'),
+      sha256 = lib.lookupFunction<_ShaC, _ShaD>('mync_sha256'),
       free = lib.lookupFunction<_FreeC, _FreeDart>('mync_free'),
       version = lib.lookupFunction<_VersionC, _VersionC>('mync_version');
 
@@ -64,6 +139,14 @@ class _Lib {
   final _TwoStr extractCover;
   final _ThreeStr verifyEd25519;
   final _OneStr sha256File;
+  final _TwoStr manifestEntries;
+  final _OneStr syncPlan;
+  final _KeypairD x25519Keypair;
+  final _DhD x25519;
+  final _SealD aeadSeal;
+  final _OpenD aeadOpen;
+  final _HkdfD hkdf;
+  final _ShaD sha256;
   final _FreeDart free;
   final _VersionC version;
 
@@ -175,6 +258,7 @@ class FileTags {
     : fields = _fields(j['fields']),
       pictures = j['pictures'] as int,
       writable = j['writable'] as bool,
+      pictureHashes = (j['picture_hashes'] as List? ?? const []).cast<String>(),
       chapters = [
         for (final c in (j['chapters'] as List? ?? const []))
           Chapter(
@@ -191,6 +275,7 @@ class FileTags {
   final TagFields fields;
   final int pictures;
   final bool writable;
+  final List<String> pictureHashes;
 
   /// Kapitel aus den Tags (ID3 CHAP, Vorbis CHAPTERxxx, MP4 chpl).
   final List<Chapter> chapters;
@@ -258,3 +343,133 @@ Future<String> sha256File(String path) => Isolate.run(() {
   final lib = _Lib.instance;
   return lib.call1(lib.sha256File, path) as String;
 });
+
+// ─── Sync ──────────────────────────────────────────────────────────────────
+
+/// Alle Dateien des Manifests mit Hashes (JSON-Objekte path/audio_hash/tag_hash/file_id/size).
+Future<List<Map<String, dynamic>>> manifestEntries({
+  required String root,
+  required String db,
+}) => Isolate.run(() {
+  final lib = _Lib.instance;
+  return (lib.call2(lib.manifestEntries, root, db) as List)
+      .cast<Map<String, dynamic>>();
+});
+
+/// Vorschläge (Diff-Engine des Kerns) aus Basis, lokalem und entferntem Stand.
+List<Map<String, dynamic>> syncPlan(Map<String, Object?> input) {
+  final lib = _Lib.instance;
+  return (lib.call1(lib.syncPlan, jsonEncode(input)) as List)
+      .cast<Map<String, dynamic>>();
+}
+
+// ─── Kryptografie (synchron, schnell) ─────────────────────────────────────
+
+Uint8List _withBuffers(
+  int outLen,
+  void Function(Pointer<Uint8> out, Arena arena) f,
+) {
+  return using((arena) {
+    final out = arena<Uint8>(outLen == 0 ? 1 : outLen);
+    f(out, arena);
+    return Uint8List.fromList(out.asTypedList(outLen));
+  });
+}
+
+Pointer<Uint8> _copy(Arena arena, List<int> data) {
+  final p = arena<Uint8>(data.isEmpty ? 1 : data.length);
+  p.asTypedList(data.length).setAll(0, data);
+  return p;
+}
+
+/// (geheim, öffentlich), je 32 Byte.
+(Uint8List, Uint8List) x25519Keypair() {
+  final lib = _Lib.instance;
+  return using((arena) {
+    final s = arena<Uint8>(32), p = arena<Uint8>(32);
+    lib.x25519Keypair(s, p);
+    return (
+      Uint8List.fromList(s.asTypedList(32)),
+      Uint8List.fromList(p.asTypedList(32)),
+    );
+  });
+}
+
+Uint8List x25519(List<int> secret, List<int> public) {
+  final lib = _Lib.instance;
+  return _withBuffers(32, (out, a) {
+    if (lib.x25519(_copy(a, secret), _copy(a, public), out) != 0) {
+      throw MyncCoreException('X25519: ungültiger Schlüssel');
+    }
+  });
+}
+
+Uint8List aeadSeal(
+  List<int> key,
+  List<int> nonce,
+  List<int> ad,
+  List<int> msg,
+) {
+  final lib = _Lib.instance;
+  return _withBuffers(msg.length + 16, (out, a) {
+    lib.aeadSeal(
+      _copy(a, key),
+      _copy(a, nonce),
+      _copy(a, ad),
+      ad.length,
+      _copy(a, msg),
+      msg.length,
+      out,
+    );
+  });
+}
+
+/// null, wenn die Nachricht manipuliert ist oder der Schlüssel falsch.
+Uint8List? aeadOpen(
+  List<int> key,
+  List<int> nonce,
+  List<int> ad,
+  List<int> ct,
+) {
+  if (ct.length < 16) return null;
+  final lib = _Lib.instance;
+  var ok = true;
+  final r = _withBuffers(ct.length - 16, (out, a) {
+    ok =
+        lib.aeadOpen(
+          _copy(a, key),
+          _copy(a, nonce),
+          _copy(a, ad),
+          ad.length,
+          _copy(a, ct),
+          ct.length,
+          out,
+        ) ==
+        0;
+  });
+  return ok ? r : null;
+}
+
+Uint8List hkdf(List<int> salt, List<int> ikm, List<int> info, int length) {
+  final lib = _Lib.instance;
+  return _withBuffers(length, (out, a) {
+    lib.hkdf(
+      _copy(a, salt),
+      salt.length,
+      _copy(a, ikm),
+      ikm.length,
+      _copy(a, info),
+      info.length,
+      out,
+      length,
+    );
+  });
+}
+
+Uint8List sha256Bytes(List<int> data) {
+  final lib = _Lib.instance;
+  return _withBuffers(
+    32,
+    (out, a) => lib.sha256(_copy(a, data), data.length, out),
+  );
+}

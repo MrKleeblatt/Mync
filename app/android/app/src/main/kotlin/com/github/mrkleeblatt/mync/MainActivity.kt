@@ -1,6 +1,7 @@
 package com.github.mrkleeblatt.mync
 
 import android.content.Intent
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
@@ -26,6 +27,17 @@ class MainActivity : FlutterActivity() {
                             Uri.parse("package:$packageName"),
                         )
                         startActivity(intent)
+                        result.success(null)
+                    }
+                    "scanFiles" -> {
+                        // Nach dem Sync: Änderungen für Musicolet & Co. bekannt machen
+                        val paths = call.arguments as? List<*> ?: emptyList<Any>()
+                        MediaScannerConnection.scanFile(
+                            this,
+                            paths.filterIsInstance<String>().toTypedArray(),
+                            null,
+                            null,
+                        )
                         result.success(null)
                     }
                     else -> result.notImplemented()
