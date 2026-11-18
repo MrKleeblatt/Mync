@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
 
+import '../library/chapters.dart';
 import '../library/library.dart';
 import '../library/track.dart';
 import '../settings.dart';
@@ -68,6 +69,57 @@ class PlayerController extends ChangeNotifier {
 
   /// Der nächste Titelwechsel wurde vom Nutzer ausgelöst (→ ggf. „übersprungen“).
   bool _userSkip = false;
+
+  /// Kapitel des aktuellen Titels (aus Tags oder Beschreibungstext).
+  ChapterList chapters = ChapterList.empty;
+  String? _chaptersFor;
+
+  /// Index des aktuellen Kapitels (-1 = keins).
+  int get chapterIndex => chapters.indexAt(position);
+  Chapter? get currentChapter {
+    final i = chapterIndex;
+    return i < 0 ? null : chapters.chapters[i];
+  }
+
+  /// Lädt die Kapitel, wenn sich der aktuelle Titel geändert hat.
+  void _syncChapters({bool force = false}) {
+    final path = queue.current;
+    if (!force && path == _chaptersFor) return;
+    _chaptersFor = path;
+    chapters = ChapterList.empty;
+    final t = path == null ? null : library.byPath(path);
+    if (t == null) return;
+    loadChapters(t, library.abs(t.path)).then((c) {
+      if (_chaptersFor != path) return; // inzwischen anderer Titel
+      chapters = c;
+      notifyListeners();
+    });
+  }
+
+  /// Springt zum Kapitel [i].
+  Future<void> jumpToChapter(int i) async {
+    if (i < 0 || i >= chapters.length) return;
+    await seek(chapters.chapters[i].start);
+    if (!playing) await playPause();
+  }
+
+  /// Nächstes Kapitel; am Ende: nächster Titel.
+  Future<void> nextChapter() async {
+    final i = chapterIndex;
+    if (i + 1 < chapters.length) return jumpToChapter(i + 1);
+    await next();
+  }
+
+  /// Zum Anfang des Kapitels – oder, in den ersten 3 s, zum vorherigen
+  /// (vor dem ersten Kapitel: vorheriger Titel).
+  Future<void> previousChapter() async {
+    final i = chapterIndex;
+    if (i < 0) return previous();
+    final into = position - chapters.chapters[i].start;
+    if (into > const Duration(seconds: 3)) return jumpToChapter(i);
+    if (i > 0) return jumpToChapter(i - 1);
+    return previous();
+  }
 
   Track? get currentTrack {
     final p = queue.current;
@@ -152,6 +204,10 @@ class PlayerController extends ChangeNotifier {
     ]);
 
     library.onRenamed = renamePaths;
+    // Nach Scans/Tag-Änderungen: Kapitel des aktuellen Titels neu laden
+    library.addListener(() {
+      if (!library.scanning) _syncChapters(force: true);
+    });
     await _openQueue(play: false);
     notifyListeners();
   }
@@ -171,6 +227,7 @@ class PlayerController extends ChangeNotifier {
       await player.stop();
       position = Duration.zero;
       duration = Duration.zero;
+      _syncChapters();
       notifyListeners();
       return;
     }
@@ -197,6 +254,7 @@ class PlayerController extends ChangeNotifier {
     } finally {
       _opening = false;
     }
+    _syncChapters();
     notifyListeners();
   }
 
@@ -208,6 +266,7 @@ class PlayerController extends ChangeNotifier {
     }
     q.index = pl.index;
     q.positionMs = 0;
+    _syncChapters();
     if (sleepAfterTrack) {
       sleepAfterTrack = false;
       unawaited(player.pause());

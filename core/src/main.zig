@@ -65,6 +65,7 @@ pub fn main(init: std.process.Init) !u8 {
                 try w.writeByte('\n');
             }
             if (t.pictures.len > 0) try w.print("  Bilder: {d}\n", .{t.pictures.len});
+            for (t.chapters) |c| try w.print("  Kapitel {d}:{d:0>2}.{d:0>3} {s}\n", .{ c.start_ms / 60000, c.start_ms / 1000 % 60, c.start_ms % 1000, c.title });
         }
     } else if (std.mem.eql(u8, cmd, "tag")) {
         const p = args[2];

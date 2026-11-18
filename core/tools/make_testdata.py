@@ -15,6 +15,7 @@ from mutagen.oggvorbis import OggVorbis
 from mutagen.oggopus import OggOpus
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.wave import WAVE
+from mutagen.id3 import TXXX, CHAP, CTOC, CTOCFlags
 
 OUT = pathlib.Path(__file__).resolve().parent.parent / "testdata"
 # 1×1-PNG als Cover
@@ -121,6 +122,67 @@ def apply(fmt, path, d, cover, variant):
         f.save()
 
 
+CHAPTERS = [(0, "Einleitung"), (150, "Hauptteil – Ärger"), (320, "Schluss")]
+# Beschreibung wie bei YouTube (yt-dlp bettet sie als description ein)
+DESCRIPTION = """Live-Mitschnitt vom Sommerfest.
+
+Kapitel:
+0:00 Begrüßung
+0:12 Erstes Lied – Morgenrot
+1:05:30 Zugabe
+"""
+
+
+def ffmeta(path):
+    lines = [";FFMETADATA1"]
+    for i, (start, title) in enumerate(CHAPTERS):
+        end = CHAPTERS[i + 1][0] if i + 1 < len(CHAPTERS) else 500
+        lines += ["[CHAPTER]", "TIMEBASE=1/1000", f"START={start}", f"END={end}", f"title={title}"]
+    path.write_text("\n".join(lines) + "\n")
+
+
+def chapter_files(expected):
+    """Dateien mit Kapiteln: MP3 (ID3 CHAP/CTOC), M4A (chpl), Opus/Vorbis/FLAC (CHAPTERxxx)."""
+    meta = OUT / "_chapters.ffmeta"
+    ffmeta(meta)
+    for fmt, ext, extra in [("mp3", "mp3", ["-c:a", "libmp3lame", "-b:a", "32k", "-id3v2_version", "4"]),
+                            ("m4a", "m4a", ["-c:a", "aac", "-b:a", "32k"]),
+                            ("opus", "opus", ["-c:a", "libopus", "-b:a", "16k"])]:
+        p = OUT / f"{fmt}-chapters.{ext}"
+        # ohne -fflags +bitexact, sonst verwirft ffmpeg die Kapiteltitel
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                        "sine=frequency=440:duration=0.5:sample_rate=22050", "-i", str(meta),
+                        "-map", "0", "-map_chapters", "1", "-ac", "1",
+                        *extra, str(p)], check=True)
+        expected["files"][p.name] = {"group": f"chapters-{fmt}", "fields": {}, "pictures": 0,
+                                     "chapters": CHAPTERS, "skip_fields": True}
+    for fmt, ext, extra, cls in [("vorbis", "ogg", ["-c:a", "libvorbis", "-q:a", "0"], OggVorbis),
+                                 ("flac", "flac", [], FLAC)]:
+        p = OUT / f"{fmt}-chapters.{ext}"
+        ffmpeg(p, extra)
+        f = cls(str(p))
+        for i, (start, title) in enumerate(CHAPTERS):
+            ms = start
+            f[f"CHAPTER{i:03d}"] = [f"00:00:{ms // 1000:02d}.{ms % 1000:03d}"]
+            f[f"CHAPTER{i:03d}NAME"] = [title]
+        f.save()
+        expected["files"][p.name] = {"group": f"chapters-{fmt}", "fields": {}, "pictures": 0, "chapters": CHAPTERS}
+    meta.unlink()
+    # Beschreibungstexte (für die Kapitelerkennung aus Text)
+    d = OUT / "m4a-description.m4a"
+    shutil.copy(OUT / "m4a-plain.m4a", d)
+    f = MP4(str(d)); f["desc"] = [DESCRIPTION.splitlines()[0]]; f["ldes"] = [DESCRIPTION]; f.save()
+    expected["files"][d.name] = {"group": "m4a", "fields": {"description": DESCRIPTION.strip()}, "pictures": 0}
+    d = OUT / "mp3-description.mp3"
+    shutil.copy(OUT / "mp3-plain.mp3", d)
+    t = ID3(); t.add(TXXX(encoding=3, desc="description", text=DESCRIPTION)); t.save(str(d), v2_version=4)
+    expected["files"][d.name] = {"group": "mp3", "fields": {"description": DESCRIPTION.strip()}, "pictures": 0}
+    d = OUT / "opus-description.opus"
+    shutil.copy(OUT / "opus-plain.opus", d)
+    f = OggOpus(str(d)); f["DESCRIPTION"] = [DESCRIPTION]; f.save()
+    expected["files"][d.name] = {"group": "opus", "fields": {"description": DESCRIPTION.strip()}, "pictures": 0}
+
+
 def main():
     OUT.mkdir(exist_ok=True)
     expected = {"files": {}}
@@ -137,6 +199,7 @@ def main():
                           "sha256:" + hashlib.sha256(v.strip().encode()).hexdigest())
                       for k, v in d.items()}
             expected["files"][p.name] = {"group": fmt, "fields": fields, "pictures": 1 if cover else 0}
+    chapter_files(expected)
     (OUT / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=1) + "\n")
     print("ok:", ", ".join(sorted(x.name for x in OUT.iterdir())))
 

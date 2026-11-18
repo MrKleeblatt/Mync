@@ -322,7 +322,7 @@ const vorbis_out = [_][2][]const u8{
     .{ "albumartist", "ALBUMARTIST" }, .{ "composer", "COMPOSER" }, .{ "genre", "GENRE" },
     .{ "date", "DATE" },           .{ "track", "TRACKNUMBER" },   .{ "tracktotal", "TRACKTOTAL" },
     .{ "disc", "DISCNUMBER" },     .{ "disctotal", "DISCTOTAL" }, .{ "comment", "COMMENT" },
-    .{ "lyrics", "LYRICS" },
+    .{ "lyrics", "LYRICS" },        .{ "description", "DESCRIPTION" },
 };
 
 fn appendU32Le(gpa: Allocator, out: *std.ArrayList(u8), v: usize) !void {
@@ -538,6 +538,27 @@ test "FLAC: Vorbis Comment in-place und mit Neuschreiben" {
     try checkRoundtrip("flac-tagged.flac", true);
     try checkRoundtrip("flac-retagged.flac", false);
     try checkRoundtrip("flac-plain.flac", false);
+}
+
+test "Kapitel bleiben beim Tag-Schreiben erhalten" {
+    for ([_][]const u8{ "mp3-chapters.mp3", "flac-chapters.flac" }) |name| {
+        var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const options = @import("build_options");
+        var td = try Io.Dir.cwd().openDir(testing.io, options.testdata_dir, .{});
+        defer td.close(testing.io);
+        var tmp = testing.tmpDir(.{});
+        defer tmp.cleanup();
+        try td.copyFile(name, tmp.dir, name, testing.io, .{});
+        const before = try tags.readFile(a, testing.io, tmp.dir, name);
+        try testing.expectEqual(@as(usize, 3), before.chapters.len);
+        try writeFile(a, testing.io, tmp.dir, name, &new_fields);
+        const after = try tags.readFile(a, testing.io, tmp.dir, name);
+        try testing.expectEqual(@as(usize, 3), after.chapters.len);
+        try testing.expectEqualStrings("Hauptteil – Ärger", after.chapters[1].title);
+        try testing.expectEqual(@as(u64, 150), after.chapters[1].start_ms);
+    }
 }
 
 test "nicht unterstützte Formate" {

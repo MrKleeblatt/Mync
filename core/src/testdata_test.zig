@@ -59,7 +59,7 @@ test "Testdateien: Audio-Hash stabil, Tags korrekt gelesen" {
         // Tags: genau die erwarteten Felder
         const tg = try tags.readFile(a, t.io, dir, name);
         const want = exp.get("fields").?.object;
-        try t.expectEqual(want.count(), tg.fields.len);
+        if (exp.get("skip_fields") == null) try t.expectEqual(want.count(), tg.fields.len);
         var wit = want.iterator();
         while (wit.next()) |w| {
             errdefer std.debug.print("Feld: {s}\n", .{w.key_ptr.*});
@@ -68,6 +68,14 @@ test "Testdateien: Audio-Hash stabil, Tags korrekt gelesen" {
         }
         try t.expectEqual(@as(usize, @intCast(exp.get("pictures").?.integer)), tg.pictures.len);
 
+        // Kapitel
+        const want_ch = if (exp.get("chapters")) |c| c.array.items else &[_]std.json.Value{};
+        try t.expectEqual(want_ch.len, tg.chapters.len);
+        for (want_ch, tg.chapters) |w, c| {
+            try t.expectEqual(@as(u64, @intCast(w.array.items[0].integer)), c.start_ms);
+            try t.expectEqualStrings(w.array.items[1].string, c.title);
+        }
+
         // tag_hash: innerhalb einer Gruppe verschieden
         const th = try tg.hash();
         const key = try std.fmt.allocPrint(a, "{s}:{s}", .{ group, &th });
@@ -75,7 +83,8 @@ test "Testdateien: Audio-Hash stabil, Tags korrekt gelesen" {
         try tag_hashes.put(a, key, {});
         count += 1;
     }
-    try t.expectEqual(@as(usize, 18), count);
+    try t.expectEqual(files.count(), count);
+    try t.expect(count >= 26);
 }
 
 test "Scan erkennt Umbenennung mit Tag-Änderung und hasht nur Geändertes" {

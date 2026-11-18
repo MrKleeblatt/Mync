@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/mync_core.dart';
+import '../library/chapters.dart';
 import '../library/lrc.dart';
 import '../library/track.dart';
 import '../player/player_controller.dart';
@@ -124,11 +125,19 @@ class MiniPlayer extends StatelessWidget {
                               style: theme.textTheme.titleSmall,
                             ),
                             if (t != null)
-                              Text(
-                                t.artist,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall,
+                              StreamBuilder<Duration>(
+                                stream: player.player.stream.position,
+                                builder: (context, _) {
+                                  final ch = player.currentChapter;
+                                  return Text(
+                                    ch == null
+                                        ? t.artist
+                                        : '${t.artist} · ${ch.title}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall,
+                                  );
+                                },
                               ),
                           ],
                         ),
@@ -193,6 +202,30 @@ class PositionSlider extends StatefulWidget {
   State<PositionSlider> createState() => _PositionSliderState();
 }
 
+/// Zeichnet kurze senkrechte Striche an den Kapitelanfängen.
+class _ChapterTicks extends CustomPainter {
+  _ChapterTicks(this.fractions, this.color);
+  final List<double> fractions;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final mid = size.height / 2;
+    for (final f in fractions) {
+      final x = size.width * f.clamp(0.0, 1.0);
+      canvas.drawLine(Offset(x, mid - 9), Offset(x, mid - 5), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ChapterTicks old) =>
+      old.fractions != fractions || old.color != color;
+}
+
 class _PositionSliderState extends State<PositionSlider> {
   double? _drag;
 
@@ -216,16 +249,39 @@ class _PositionSliderState extends State<PositionSlider> {
             minHeight: 4,
           );
         }
+        final starts = [
+          for (final ch in c.chapters.chapters)
+            if (ch.start > Duration.zero && max > 0)
+              ch.start.inMilliseconds / max,
+        ];
         return Column(
           children: [
-            Slider(
-              value: pos,
-              max: max <= 0 ? 1 : max,
-              onChanged: max <= 0 ? null : (v) => setState(() => _drag = v),
-              onChangeEnd: (v) async {
-                await c.seek(Duration(milliseconds: v.round()));
-                setState(() => _drag = null);
-              },
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                // Kapitelanfänge als kleine Striche über der Leiste
+                if (starts.isNotEmpty)
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: CustomPaint(
+                        painter: _ChapterTicks(
+                          starts,
+                          Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                Slider(
+                  value: pos,
+                  max: max <= 0 ? 1 : max,
+                  onChanged: max <= 0 ? null : (v) => setState(() => _drag = v),
+                  onChangeEnd: (v) async {
+                    await c.seek(Duration(milliseconds: v.round()));
+                    setState(() => _drag = null);
+                  },
+                ),
+              ],
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -316,7 +372,8 @@ class NowPlayingPage extends StatefulWidget {
 }
 
 class _NowPlayingPageState extends State<NowPlayingPage> {
-  bool _showLyrics = false;
+  /// Was anstelle des Covers gezeigt wird.
+  _Panel _panel = _Panel.cover;
 
   @override
   Widget build(BuildContext context) {
@@ -353,6 +410,44 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                 t!.album!,
                 style: theme.textTheme.bodyMedium,
                 textAlign: TextAlign.center,
+              ),
+            if (!player.chapters.isEmpty)
+              StreamBuilder<Duration>(
+                stream: player.player.stream.position,
+                builder: (context, _) {
+                  final i = player.chapterIndex;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: 'Vorheriges Kapitel (Bild ↑)',
+                          onPressed: player.previousChapter,
+                          icon: const Icon(Icons.keyboard_double_arrow_left),
+                        ),
+                        Flexible(
+                          child: TextButton(
+                            onPressed: () =>
+                                setState(() => _panel = _Panel.chapters),
+                            child: Text(
+                              i < 0
+                                  ? '${player.chapters.length} Kapitel'
+                                  : 'Kapitel ${i + 1}/${player.chapters.length} · ${player.chapters.chapters[i].title}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Nächstes Kapitel (Bild ↓)',
+                          onPressed: player.nextChapter,
+                          icon: const Icon(Icons.keyboard_double_arrow_right),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             const SizedBox(height: 16),
             PositionSlider(controller: player),
@@ -398,11 +493,27 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               children: [
                 IconButton(
                   tooltip: 'Lyrics',
-                  isSelected: _showLyrics,
-                  onPressed: () => setState(() => _showLyrics = !_showLyrics),
+                  isSelected: _panel == _Panel.lyrics,
+                  onPressed: () => setState(
+                    () => _panel = _panel == _Panel.lyrics
+                        ? _Panel.cover
+                        : _Panel.lyrics,
+                  ),
                   icon: const Icon(Icons.lyrics_outlined),
                   selectedIcon: const Icon(Icons.lyrics),
                 ),
+                if (!player.chapters.isEmpty)
+                  IconButton(
+                    tooltip: 'Kapitel',
+                    isSelected: _panel == _Panel.chapters,
+                    onPressed: () => setState(
+                      () => _panel = _panel == _Panel.chapters
+                          ? _Panel.cover
+                          : _Panel.chapters,
+                    ),
+                    icon: const Icon(Icons.list_alt_outlined),
+                    selectedIcon: const Icon(Icons.list_alt),
+                  ),
                 IconButton(
                   tooltip: 'Equalizer',
                   onPressed: () => showEqualizer(context),
@@ -436,13 +547,22 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               SizedBox(width: 360, child: _VolumeSlider(player: player)),
           ],
         );
-        final art = _showLyrics && t != null
-            ? SizedBox(
-                width: coverSize * 1.2,
-                height: coverSize,
-                child: LyricsView(track: t, controller: player),
-              )
-            : CoverArt(track: t, size: coverSize, radius: 16);
+        final panel = (_panel == _Panel.chapters && player.chapters.isEmpty)
+            ? _Panel.cover
+            : _panel;
+        final art = switch (panel) {
+          _Panel.lyrics when t != null => SizedBox(
+            width: coverSize * 1.2,
+            height: coverSize,
+            child: LyricsView(track: t, controller: player),
+          ),
+          _Panel.chapters => SizedBox(
+            width: coverSize * 1.2,
+            height: coverSize,
+            child: ChapterListView(controller: player),
+          ),
+          _ => CoverArt(track: t, size: coverSize, radius: 16),
+        };
         return CallbackShortcuts(
           bindings: {
             const SingleActivator(LogicalKeyboardKey.escape): () =>
@@ -482,6 +602,76 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+enum _Panel { cover, lyrics, chapters }
+
+/// Kapitelliste; das laufende Kapitel ist hervorgehoben, Antippen springt dorthin.
+class ChapterListView extends StatelessWidget {
+  const ChapterListView({super.key, required this.controller});
+  final PlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final list = controller.chapters;
+    return StreamBuilder<Duration>(
+      stream: controller.player.stream.position,
+      builder: (context, _) {
+        final cur = controller.chapterIndex;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              list.source == ChapterSource.tags
+                  ? 'Kapitel aus den Tags'
+                  : 'Kapitel aus dem Beschreibungstext',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                itemCount: list.length,
+                itemBuilder: (context, i) {
+                  final ch = list.chapters[i];
+                  final active = i == cur;
+                  return ListTile(
+                    dense: true,
+                    selected: active,
+                    leading: SizedBox(
+                      width: 64,
+                      child: Text(
+                        formatDuration(ch.start),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                    title: Text(
+                      ch.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: active
+                          ? const TextStyle(fontWeight: FontWeight.w600)
+                          : null,
+                    ),
+                    trailing: active
+                        ? Icon(
+                            controller.playing ? Icons.graphic_eq : Icons.pause,
+                            size: 18,
+                          )
+                        : null,
+                    onTap: () => controller.jumpToChapter(i),
+                  );
+                },
+              ),
+            ),
+          ],
         );
       },
     );

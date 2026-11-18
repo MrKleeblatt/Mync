@@ -149,6 +149,7 @@ class _Shortcuts extends StatelessWidget {
     ('→ / ←', 'Spulen (Schrittweite einstellbar)'),
     ('Umschalt + → / ←', '1 min vor / zurück'),
     ('Strg + ↑ / ↓', 'Lauter / leiser'),
+    ('Bild ↑ / Bild ↓', 'Vorheriges / nächstes Kapitel'),
     ('Strg + F', 'Suche'),
     ('Strg + R', 'Wiederholen umschalten'),
     ('Strg + S', 'Warteschlange mischen'),

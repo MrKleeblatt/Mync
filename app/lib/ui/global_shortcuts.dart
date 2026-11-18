@@ -22,6 +22,8 @@ class GlobalShortcuts extends StatelessWidget {
       const SingleActivator(LogicalKeyboardKey.arrowLeft, control: true):
           p.previous,
       const SingleActivator(LogicalKeyboardKey.mediaTrackNext): p.next,
+      const SingleActivator(LogicalKeyboardKey.pageDown): p.nextChapter,
+      const SingleActivator(LogicalKeyboardKey.pageUp): p.previousChapter,
       const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): p.previous,
       const SingleActivator(LogicalKeyboardKey.arrowRight): () => p.skipBy(1),
       const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true): () =>

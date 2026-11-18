@@ -12,6 +12,8 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
+import '../library/chapters.dart';
+
 typedef _OneStr = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _TwoStr = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef _FreeC = Void Function(Pointer<Utf8>);
@@ -148,11 +150,26 @@ class FileTags {
   FileTags.fromJson(Map<String, dynamic> j)
     : fields = _fields(j['fields']),
       pictures = j['pictures'] as int,
-      writable = j['writable'] as bool;
+      writable = j['writable'] as bool,
+      chapters = [
+        for (final c in (j['chapters'] as List? ?? const []))
+          Chapter(
+            Duration(
+              milliseconds: (c as Map<String, dynamic>)['start_ms'] as int,
+            ),
+            c['title'] as String,
+            end: c['end_ms'] == null
+                ? null
+                : Duration(milliseconds: c['end_ms'] as int),
+          ),
+      ];
 
   final TagFields fields;
   final int pictures;
   final bool writable;
+
+  /// Kapitel aus den Tags (ID3 CHAP, Vorbis CHAPTERxxx, MP4 chpl).
+  final List<Chapter> chapters;
 }
 
 String coreVersion() => _Lib.instance.version().toDartString();

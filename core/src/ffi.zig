@@ -55,7 +55,7 @@ export fn mync_free(p: ?[*:0]u8) void {
 }
 
 export fn mync_version() [*:0]const u8 {
-    return "0.2.0";
+    return "0.3.0";
 }
 
 // ───────────────────────────── Bibliothek ──────────────────────────────────
@@ -131,9 +131,13 @@ export fn mync_list_tracks(root: [*:0]const u8, db: [*:0]const u8) ?[*:0]u8 {
 
 // ───────────────────────────── Einzelne Datei ──────────────────────────────
 
+const ChapterJson = struct { start_ms: u64, end_ms: ?u64, title: []const u8 };
+
 const FileTags = struct {
     fields: Fields,
     pictures: usize,
+    /// Kapitel aus den Tags (ID3 CHAP, Vorbis CHAPTERxxx, MP4 chpl)
+    chapters: []const ChapterJson,
     /// Kann mync die Tags dieser Datei schreiben?
     writable: bool,
 };
@@ -143,7 +147,9 @@ fn readTags(a: std.mem.Allocator, io: Io, path: []const u8) !FileTags {
     var f: Fields = .{};
     for (t.fields) |x| try f.map.put(a, x.name, x.values);
     const fmt = core.audiohash.Format.fromPath(path);
-    return .{ .fields = f, .pictures = t.pictures.len, .writable = fmt == .mp3 or fmt == .flac };
+    const ch = try a.alloc(ChapterJson, t.chapters.len);
+    for (t.chapters, ch) |c, *o| o.* = .{ .start_ms = c.start_ms, .end_ms = c.end_ms, .title = c.title };
+    return .{ .fields = f, .pictures = t.pictures.len, .chapters = ch, .writable = fmt == .mp3 or fmt == .flac };
 }
 
 /// Liest alle Tags einer Datei (inkl. Lyrics).

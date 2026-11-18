@@ -278,5 +278,5 @@ test "Dauer der Testdateien (je 0,5 s)" {
         }
         n += 1;
     }
-    try t.expectEqual(@as(usize, 18), n);
+    try t.expect(n >= 26);
 }

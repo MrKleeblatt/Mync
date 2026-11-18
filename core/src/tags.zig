@@ -17,7 +17,7 @@ const audiohash = @import("audiohash.zig");
 
 /// Alle unterstützten Feldnamen, alphabetisch.
 pub const field_names = [_][]const u8{
-    "album",  "albumartist", "artist", "comment", "composer", "date",  "disc",
+    "album",  "albumartist", "artist", "comment", "composer", "date", "description", "disc",
     "disctotal", "genre", "lyrics", "title", "track", "tracktotal",
 };
 
@@ -32,6 +32,14 @@ pub const Field = struct {
     values: []const []const u8,
 };
 
+/// Ein Kapitel (aus ID3 CHAP, Vorbis CHAPTERxxx oder MP4 chpl).
+pub const Chapter = struct {
+    start_ms: u64,
+    /// Ende, falls im Tag angegeben (sonst Beginn des nächsten Kapitels).
+    end_ms: ?u64 = null,
+    title: []const u8,
+};
+
 /// Ergebnis: Felder alphabetisch sortiert, Werte sortiert und ohne Duplikate.
 /// Der gesamte Speicher gehört dem beim Lesen übergebenen (Arena-)Allocator.
 pub const Tags = struct {
@@ -40,6 +48,8 @@ pub const Tags = struct {
     pictures: []const [64]u8 = &.{},
     /// Bilddaten des ersten eingebetteten Bildes (nicht Teil des Hashes).
     first_picture: ?[]const u8 = null,
+    /// Kapitel, nach Beginn sortiert.
+    chapters: []const Chapter = &.{},
 
     pub fn get(t: Tags, name: []const u8) ?[]const []const u8 {
         for (t.fields) |f| if (std.mem.eql(u8, f.name, name)) return f.values;
@@ -67,6 +77,18 @@ pub const Tags = struct {
         try s.beginArray();
         for (t.pictures) |p| try s.write(@as([]const u8, &p));
         try s.endArray();
+        // Nur wenn vorhanden – so bleibt der tag_hash von Dateien ohne Kapitel gleich.
+        if (t.chapters.len > 0) {
+            try s.objectField("chapters");
+            try s.beginArray();
+            for (t.chapters) |c| {
+                try s.beginArray();
+                try s.write(c.start_ms);
+                try s.write(c.title);
+                try s.endArray();
+            }
+            try s.endArray();
+        }
         try s.endObject();
     }
 
@@ -112,6 +134,9 @@ const Builder = struct {
     map: std.StringArrayHashMapUnmanaged(std.ArrayList([]const u8)) = .empty,
     pictures: std.ArrayList([64]u8) = .empty,
     first_picture: ?[]const u8 = null,
+    chapters: std.ArrayList(Chapter) = .empty,
+    /// Vorbis: CHAPTERnnn / CHAPTERnnnNAME, nach Nummer
+    vorbis_chapters: std.AutoArrayHashMapUnmanaged(u16, struct { start: ?u64 = null, title: []const u8 = "" }) = .empty,
 
     fn add(b: *Builder, name: []const u8, raw: []const u8) !void {
         if (std.mem.eql(u8, name, "track") or std.mem.eql(u8, name, "disc")) {
@@ -166,7 +191,20 @@ const Builder = struct {
             }
             try fields.append(b.gpa, .{ .name = k, .values = out.items });
         }
-        return .{ .fields = fields.items, .pictures = b.pictures.items, .first_picture = b.first_picture };
+        for (b.vorbis_chapters.values()) |vc| {
+            if (vc.start) |st| try b.chapters.append(b.gpa, .{ .start_ms = st, .title = vc.title });
+        }
+        std.mem.sort(Chapter, b.chapters.items, {}, struct {
+            fn lt(_: void, a: Chapter, x: Chapter) bool {
+                return a.start_ms < x.start_ms;
+            }
+        }.lt);
+        return .{
+            .fields = fields.items,
+            .pictures = b.pictures.items,
+            .first_picture = b.first_picture,
+            .chapters = b.chapters.items,
+        };
     }
 };
 
@@ -254,6 +292,55 @@ fn deunsync(gpa: Allocator, data: []const u8) ![]u8 {
 }
 
 /// Parst ein komplettes ID3v2-Tag (inkl. 10-Byte-Header).
+/// Iteriert über die Frames eines ID3v2-Tag-Körpers (oder über die Unter-Frames
+/// eines CHAP-Frames). Liefert die Nutzdaten ohne Unsynchronisation/Zusatzbytes.
+const Id3Frames = struct {
+    gpa: Allocator,
+    body: []const u8,
+    pos: usize = 0,
+    major: u8,
+
+    const Frame = struct { id: []const u8, data: []const u8 };
+
+    fn next(it: *Id3Frames) !?Frame {
+        const id_len: usize = if (it.major == 2) 3 else 4;
+        const hdr_len: usize = if (it.major == 2) 6 else 10;
+        while (it.pos + hdr_len <= it.body.len) {
+            const body = it.body;
+            const pos = it.pos;
+            const id = body[pos .. pos + id_len];
+            if (id[0] == 0) return null; // Padding
+            const fsize: usize = switch (it.major) {
+                2 => std.mem.readInt(u24, body[pos + 3 ..][0..3], .big),
+                3 => src_mod.readU32Be(body[pos + 4 ..]),
+                else => src_mod.syncsafe(body[pos + 4 .. pos + 8]),
+            };
+            const fflags: u8 = if (it.major >= 3) body[pos + 9] else 0;
+            const start = pos + hdr_len;
+            if (fsize > body.len - start) return null;
+            var data: []const u8 = body[start .. start + fsize];
+            it.pos = start + fsize;
+            if (it.major == 4) {
+                if (fflags & 0x0c != 0) continue; // komprimiert/verschlüsselt
+                if (fflags & 0x02 != 0) data = try deunsync(it.gpa, data);
+                if (fflags & 0x01 != 0) {
+                    if (data.len < 4) continue;
+                    data = data[4..];
+                }
+            } else if (it.major == 3) {
+                if (fflags & 0xc0 != 0) continue;
+                if (fflags & 0x20 != 0) {
+                    if (data.len < 1) continue;
+                    data = data[1..];
+                }
+            }
+            return .{ .id = id, .data = data };
+        }
+        return null;
+    }
+};
+
+/// Parst ein komplettes ID3v2-Tag (inkl. 10-Byte-Header).
 fn parseId3v2(b: *Builder, tag: []const u8) !void {
     if (tag.len < 10 or !std.mem.eql(u8, tag[0..3], "ID3")) return;
     const major = tag[3];
@@ -267,42 +354,47 @@ fn parseId3v2(b: *Builder, tag: []const u8) !void {
         if (body.len < 4) return;
         pos = if (major == 3) 4 + src_mod.readU32Be(body[0..4]) else src_mod.syncsafe(body[0..4]);
     }
-    const id_len: usize = if (major == 2) 3 else 4;
-    const hdr_len: usize = if (major == 2) 6 else 10;
-    while (pos + hdr_len <= body.len) {
-        const id = body[pos .. pos + id_len];
-        if (id[0] == 0) break; // Padding
-        const fsize: usize = switch (major) {
-            2 => std.mem.readInt(u24, body[pos + 3 ..][0..3], .big),
-            3 => src_mod.readU32Be(body[pos + 4 ..]),
-            else => src_mod.syncsafe(body[pos + 4 .. pos + 8]),
-        };
-        const fflags: u8 = if (major >= 3) body[pos + 9] else 0;
-        pos += hdr_len;
-        if (fsize > body.len - pos) break;
-        var data: []const u8 = body[pos .. pos + fsize];
-        pos += fsize;
-
-        if (major == 4) {
-            if (fflags & 0x0c != 0) continue; // komprimiert/verschlüsselt
-            if (fflags & 0x02 != 0) data = try deunsync(b.gpa, data);
-            if (fflags & 0x01 != 0) {
-                if (data.len < 4) continue;
-                data = data[4..];
-            }
-        } else if (major == 3) {
-            if (fflags & 0xc0 != 0) continue;
-            if (fflags & 0x20 != 0) {
-                if (data.len < 1) continue;
-                data = data[1..];
-            }
-        }
-        try id3Frame(b, id, data);
-    }
+    var it: Id3Frames = .{ .gpa = b.gpa, .body = body, .pos = pos, .major = major };
+    while (try it.next()) |f| try id3Frame(b, f.id, f.data, major);
 }
 
-fn id3Frame(b: *Builder, id: []const u8, data: []const u8) !void {
+/// CHAP: Element-ID (NUL-terminiert), Start/Ende in ms, Byte-Offsets, Unter-Frames (TIT2 = Titel).
+fn parseChap(b: *Builder, data: []const u8, major: u8) !void {
+    const id_end = std.mem.indexOfScalar(u8, data, 0) orelse return;
+    var p = id_end + 1;
+    if (p + 16 > data.len) return;
+    const start = src_mod.readU32Be(data[p..]);
+    const end = src_mod.readU32Be(data[p + 4 ..]);
+    p += 16;
+    var title: []const u8 = data[0..id_end];
+    var sub: Id3Frames = .{ .gpa = b.gpa, .body = data[p..], .major = major };
+    while (try sub.next()) |f| {
+        if ((std.mem.eql(u8, f.id, "TIT2") or std.mem.eql(u8, f.id, "TT2")) and f.data.len > 1) {
+            const vals = try decodeStrings(b.gpa, f.data[0], f.data[1..]);
+            if (vals.len > 0) title = vals[0];
+        }
+    }
+    try b.chapters.append(b.gpa, .{
+        .start_ms = start,
+        .end_ms = if (end == 0xffffffff or end <= start) null else end,
+        .title = std.mem.trim(u8, title, " \t\r\n"),
+    });
+}
+
+fn id3Frame(b: *Builder, id: []const u8, data: []const u8, major: u8) !void {
     if (data.len < 1) return;
+    if (std.mem.eql(u8, id, "CHAP")) return parseChap(b, data, major);
+    if (std.mem.eql(u8, id, "TXXX") or std.mem.eql(u8, id, "TXX")) {
+        // Benutzerdefiniert: Beschreibung (z. B. von yt-dlp) → description
+        const rest = data[1..];
+        const d = termEnd(data[0], rest);
+        const desc = try decodeText(b.gpa, data[0], rest[0..d.text_end]);
+        if (std.ascii.eqlIgnoreCase(desc, "description") or std.ascii.eqlIgnoreCase(desc, "synopsis")) {
+            const vals = try decodeStrings(b.gpa, data[0], rest[d.next..]);
+            if (vals.len > 0) try b.add("description", vals[0]);
+        }
+        return;
+    }
     if (id3Field(id)) |name| {
         const vals = try decodeStrings(b.gpa, data[0], data[1..]);
         for (vals) |v| {
@@ -452,7 +544,8 @@ pub fn vorbisField(key_upper: []const u8) ?[]const u8 {
         .{ "COMPOSER", "composer" },   .{ "GENRE", "genre" },           .{ "DATE", "date" },
         .{ "YEAR", "date" },           .{ "TRACKNUMBER", "track" },     .{ "TRACKTOTAL", "tracktotal" },
         .{ "TOTALTRACKS", "tracktotal" }, .{ "DISCNUMBER", "disc" },    .{ "DISCTOTAL", "disctotal" },
-        .{ "TOTALDISCS", "disctotal" }, .{ "COMMENT", "comment" },      .{ "DESCRIPTION", "comment" },
+        .{ "TOTALDISCS", "disctotal" }, .{ "COMMENT", "comment" },      .{ "DESCRIPTION", "description" },
+        .{ "SYNOPSIS", "description" },
         .{ "LYRICS", "lyrics" },       .{ "UNSYNCEDLYRICS", "lyrics" },
     });
     return map.get(key_upper);
@@ -479,7 +572,15 @@ fn parseVorbisComment(b: *Builder, data: []const u8) !void {
         var kb: [64]u8 = undefined;
         const key = std.ascii.upperString(&kb, entry[0..eq]);
         const value = entry[eq + 1 ..];
-        if (vorbisField(key)) |name| {
+        if (vorbisChapter(key)) |vc| {
+            const gop = try b.vorbis_chapters.getOrPut(b.gpa, vc.index);
+            if (!gop.found_existing) gop.value_ptr.* = .{};
+            if (vc.is_name) {
+                gop.value_ptr.title = std.mem.trim(u8, value, " \t\r\n");
+            } else if (parseClock(value)) |ms| {
+                gop.value_ptr.start = ms;
+            }
+        } else if (vorbisField(key)) |name| {
             try b.add(name, value);
         } else if (std.mem.eql(u8, key, "METADATA_BLOCK_PICTURE")) {
             const raw = base64Decode(b.gpa, value) catch continue;
@@ -489,6 +590,45 @@ fn parseVorbisComment(b: *Builder, data: []const u8) !void {
             try b.addPicture(raw);
         }
     }
+}
+
+/// CHAPTER001 → (1, Zeit), CHAPTER001NAME → (1, Titel)
+fn vorbisChapter(key: []const u8) ?struct { index: u16, is_name: bool } {
+    if (!std.mem.startsWith(u8, key, "CHAPTER") or key.len < 10) return null;
+    const digits = key[7..10];
+    const idx = std.fmt.parseInt(u16, digits, 10) catch return null;
+    if (key.len == 10) return .{ .index = idx, .is_name = false };
+    if (std.mem.eql(u8, key[10..], "NAME")) return .{ .index = idx, .is_name = true };
+    return null;
+}
+
+/// „HH:MM:SS.mmm“, „MM:SS“, „H:MM:SS“ → Millisekunden
+pub fn parseClock(text: []const u8) ?u64 {
+    const t = std.mem.trim(u8, text, " \t");
+    var parts: [3]u64 = .{ 0, 0, 0 };
+    var n: usize = 0;
+    var frac_ms: u64 = 0;
+    var it = std.mem.splitScalar(u8, t, ':');
+    while (it.next()) |raw| {
+        if (n == 3) return null;
+        var piece = raw;
+        if (std.mem.indexOfAny(u8, piece, ".,")) |dot| {
+            if (it.peek() != null) return null; // Bruchteil nur am Ende
+            const frac = piece[dot + 1 ..];
+            if (frac.len == 0 or frac.len > 9) return null;
+            var f = std.fmt.parseInt(u64, frac, 10) catch return null;
+            var digits = frac.len;
+            while (digits > 3) : (digits -= 1) f /= 10;
+            while (digits < 3) : (digits += 1) f *= 10;
+            frac_ms = f;
+            piece = piece[0..dot];
+        }
+        parts[n] = std.fmt.parseInt(u64, piece, 10) catch return null;
+        n += 1;
+    }
+    if (n < 2) return null;
+    const secs = if (n == 3) parts[0] * 3600 + parts[1] * 60 + parts[2] else parts[0] * 60 + parts[1];
+    return secs * 1000 + frac_ms;
 }
 
 fn base64Decode(gpa: Allocator, s: []const u8) ![]u8 {
@@ -594,6 +734,27 @@ fn findChild(data: []const u8, typ: []const u8) ?[]const u8 {
     return null;
 }
 
+/// Nero-Kapitel (moov/udta/chpl): Version, Flags, [4 Byte], Anzahl (u8),
+/// je Kapitel Start (u64, 100-ns-Einheiten), Titellänge (u8), Titel.
+fn parseChpl(b: *Builder, d: []const u8) !void {
+    if (d.len < 5) return;
+    const version = d[0];
+    var p: usize = 4;
+    if (version != 0) p += 4;
+    if (p >= d.len) return;
+    const count = d[p];
+    p += 1;
+    var i: usize = 0;
+    while (i < count and p + 9 <= d.len) : (i += 1) {
+        const start = src_mod.readU64Be(d[p..]);
+        const len = d[p + 8];
+        p += 9;
+        if (p + len > d.len) return;
+        try b.chapters.append(b.gpa, .{ .start_ms = start / 10_000, .title = d[p .. p + len] });
+        p += len;
+    }
+}
+
 fn readMp4(b: *Builder, s: Source) !void {
     var pos: u64 = 0;
     const moov = while (pos + 8 <= s.len) {
@@ -602,10 +763,16 @@ fn readMp4(b: *Builder, s: Source) !void {
         pos += a.size;
     } else return;
     const udta = findChild(moov, "udta") orelse return;
+    if (findChild(udta, "chpl")) |chpl| try parseChpl(b, chpl);
     var meta = findChild(udta, "meta") orelse return;
     // „meta“ ist meist eine Full-Box (4 Byte Version/Flags), bei QuickTime nicht.
     if (meta.len >= 8 and !std.mem.eql(u8, meta[4..8], "hdlr")) meta = meta[4..];
     const ilst = findChild(meta, "ilst") orelse return;
+    var desc_short: ?[]const u8 = null;
+    var desc_long: ?[]const u8 = null;
+    defer {
+        if (desc_long orelse desc_short) |d| b.add("description", d) catch {};
+    }
     var items: AtomIter = .{ .data = ilst };
     while (items.next()) |item| {
         var datas: AtomIter = .{ .data = item.body };
@@ -613,7 +780,11 @@ fn readMp4(b: *Builder, s: Source) !void {
             if (!std.mem.eql(u8, d.typ, "data") or d.body.len < 8) continue;
             const kind = src_mod.readU32Be(d.body[0..4]) & 0xffffff;
             const payload = d.body[8..];
-            if (mp4Field(item.typ)) |name| {
+            if (std.mem.eql(u8, item.typ, "desc")) {
+                if (kind == 1) desc_short = payload;
+            } else if (std.mem.eql(u8, item.typ, "ldes")) {
+                if (kind == 1) desc_long = payload;
+            } else if (mp4Field(item.typ)) |name| {
                 if (kind == 1) try b.add(name, payload);
             } else if (std.mem.eql(u8, item.typ, "trkn") or std.mem.eql(u8, item.typ, "disk")) {
                 if (payload.len < 6) continue;
