@@ -10,9 +10,44 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  GtkWindow* window;
+  FlMethodChannel* window_channel;
+  gint saved_width;
+  gint saved_height;
+  gboolean mini;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+// Kanal „mync/window“: kompaktes Mini-Player-Fenster (immer im Vordergrund).
+static void window_method_cb(FlMethodChannel* channel, FlMethodCall* call,
+                             gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  const gchar* name = fl_method_call_get_name(call);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (g_strcmp0(name, "setMini") == 0) {
+    FlValue* args = fl_method_call_get_args(call);
+    gboolean mini = args != nullptr &&
+                    fl_value_get_type(args) == FL_VALUE_TYPE_BOOL &&
+                    fl_value_get_bool(args);
+    if (mini && !self->mini) {
+      gtk_window_get_size(self->window, &self->saved_width,
+                          &self->saved_height);
+      gtk_window_unmaximize(self->window);
+      gtk_window_resize(self->window, 380, 156);
+      gtk_window_set_keep_above(self->window, TRUE);
+    } else if (!mini && self->mini) {
+      gtk_window_set_keep_above(self->window, FALSE);
+      gtk_window_resize(self->window, self->saved_width > 0 ? self->saved_width : 1280,
+                        self->saved_height > 0 ? self->saved_height : 720);
+    }
+    self->mini = mini;
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(TRUE)));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  fl_method_call_respond(call, response, nullptr);
+}
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
@@ -75,6 +110,14 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
+  self->window = window;
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  self->window_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)), "mync/window",
+      FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(self->window_channel,
+                                            window_method_cb, self, nullptr);
+
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -121,6 +164,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_object(&self->window_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

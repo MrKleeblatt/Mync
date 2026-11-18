@@ -1,6 +1,9 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import 'dart:io';
+
+import '../backup/backup.dart';
 import '../core/mync_core.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
@@ -198,6 +201,24 @@ class SettingsPage extends StatelessWidget {
           ),
           const _Section('Tastenkürzel'),
           const _Shortcuts(),
+          const _Section('Sicherung'),
+          ListTile(
+            leading: const Icon(Icons.save_alt),
+            title: const Text('Sicherung erstellen …'),
+            subtitle: const Text(
+              'Einstellungen, Warteschlangen, Hörstatistik, gemerkte '
+              'Positionen und Kopplungen in eine Datei',
+            ),
+            onTap: () => _createBackup(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.settings_backup_restore),
+            title: const Text('Sicherung wiederherstellen …'),
+            subtitle: const Text(
+              'Ersetzt den aktuellen Stand; mync startet neu',
+            ),
+            onTap: () => _restoreBackup(context),
+          ),
           const _Section('Updates'),
           const UpdateSettings(),
           const _Section('Info'),
@@ -326,4 +347,153 @@ Future<void> _editExcludes(BuildContext context) async {
   if (ok == true) await s.setExcludes(ctrl.text.split('\n'));
   // nicht sofort entsorgen: der Dialog blendet noch aus
   Future<void>.delayed(const Duration(seconds: 1), ctrl.dispose);
+}
+
+Future<bool?> _askPairings(BuildContext context, String title, String action) {
+  var pairings = true;
+  return showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 440,
+          child: CheckboxListTile(
+            value: pairings,
+            onChanged: (v) => setState(() => pairings = v ?? false),
+            title: const Text('Kopplungen einschließen'),
+            subtitle: const Text(
+              'Enthält den geheimen Schlüssel dieses Geräts – die Datei '
+              'sicher aufbewahren.',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, pairings),
+            child: Text(action),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<void> _createBackup(BuildContext context) async {
+  final settings = context.settings;
+  final player = context.player;
+  final messenger = ScaffoldMessenger.of(context);
+  final pairings = await _askPairings(
+    context,
+    'Sicherung erstellen',
+    'Speichern unter …',
+  );
+  if (pairings == null) return;
+  final d = DateTime.now();
+  final name =
+      'mync-${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}.${Backup.extension}';
+  String? path;
+  if (Platform.isAndroid) {
+    path = '/storage/emulated/0/Download/$name';
+  } else {
+    final loc = await getSaveLocation(
+      suggestedName: name,
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'mync-Sicherung', extensions: [Backup.extension]),
+      ],
+    );
+    path = loc?.path;
+  }
+  if (path == null) return;
+  try {
+    await player.saveNow();
+    final f = await Backup.create(settings, path, pairings: pairings);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Gesichert: ${f.path} (${formatSize(f.lengthSync())})'),
+      ),
+    );
+  } catch (e) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('Sicherung fehlgeschlagen: $e')),
+    );
+  }
+}
+
+String formatSize(int b) => b >= 1e6
+    ? '${(b / 1e6).toStringAsFixed(1).replaceAll('.', ',')} MB'
+    : '${(b / 1e3).ceil()} kB';
+
+Future<void> _restoreBackup(BuildContext context) async {
+  final settings = context.settings;
+  final player = context.player;
+  final messenger = ScaffoldMessenger.of(context);
+  final file = await openFile(
+    acceptedTypeGroups: const [
+      XTypeGroup(label: 'mync-Sicherung', extensions: [Backup.extension]),
+    ],
+  );
+  if (file == null || !context.mounted) return;
+  final BackupInfo info;
+  try {
+    info = await Backup.inspect(file.path);
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('$e')));
+    return;
+  }
+  if (!context.mounted) return;
+  final c = info.created;
+  final pairings = await _askPairings(
+    context,
+    'Sicherung vom ${c.day}.${c.month}.${c.year}, '
+        '${c.hour}:${c.minute.toString().padLeft(2, '0')} wiederherstellen?',
+    'Wiederherstellen',
+  );
+  if (pairings == null) return;
+  try {
+    // ab jetzt nichts mehr speichern, sonst überschreibt das Beenden die Sicherung
+    player.frozen = true;
+    await Backup.restore(
+      settings,
+      file.path,
+      pairings: pairings && info.hasPairings,
+    );
+  } catch (e) {
+    player.frozen = false;
+    messenger.showSnackBar(
+      SnackBar(content: Text('Wiederherstellen fehlgeschlagen: $e')),
+    );
+    return;
+  }
+  if (!context.mounted) return;
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Wiederhergestellt'),
+      content: Text(
+        Platform.isAndroid
+            ? 'mync wird jetzt beendet. Bitte die App wieder öffnen.'
+            : 'mync startet jetzt neu.',
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+  if (!Platform.isAndroid) {
+    await Process.start(
+      Platform.resolvedExecutable,
+      const [],
+      mode: ProcessStartMode.detached,
+    );
+  }
+  exit(0);
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'compact_window.dart';
+
 import '../player/player_controller.dart';
 
 /// Tastenkürzel für die Wiedergabe – gelten auf allen Seiten der App,
@@ -16,6 +18,8 @@ class GlobalShortcuts extends StatelessWidget {
     final p = player;
     return {
       const SingleActivator(LogicalKeyboardKey.space): p.playPause,
+      const SingleActivator(LogicalKeyboardKey.keyM, control: true):
+          CompactWindow.instance.toggle,
       const SingleActivator(LogicalKeyboardKey.mediaPlayPause): p.playPause,
       const SingleActivator(LogicalKeyboardKey.arrowRight, control: true):
           p.next,

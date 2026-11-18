@@ -11,6 +11,7 @@ import 'player/player_controller.dart';
 import 'settings.dart';
 import 'ui/global_shortcuts.dart';
 import 'ui/home_shell.dart';
+import 'ui/compact_window.dart';
 import 'ui/scope.dart';
 import 'sync/library_sync_host.dart';
 import 'sync/sync_service.dart';
@@ -97,8 +98,41 @@ class MyncApp extends StatelessWidget {
         theme: theme(Brightness.light),
         darkTheme: theme(Brightness.dark),
         themeMode: settings.themeMode,
-        builder: (context, child) =>
-            GlobalShortcuts(player: player, child: child!),
+        builder: (context, child) => GlobalShortcuts(
+          player: player,
+          child: ListenableBuilder(
+            listenable: CompactWindow.instance,
+            builder: (context, _) {
+              final compact = CompactWindow.instance.active;
+              // Das große Fenster bleibt erhalten (Offstage), damit offene
+              // Seiten und Zustände beim Zurückschalten noch da sind.
+              return Stack(
+                children: [
+                  Offstage(offstage: compact, child: child),
+                  if (compact)
+                    Positioned.fill(
+                      child: Overlay(
+                        initialEntries: [
+                          OverlayEntry(
+                            builder: (_) => MyncScope(
+                              settings: settings,
+                              library: library,
+                              player: player,
+                              // eigener Fokus, damit Tastenkürzel ankommen
+                              child: Focus(
+                                autofocus: true,
+                                child: CompactPlayerView(player: player),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
         home: MyncScope(
           settings: settings,
           library: library,

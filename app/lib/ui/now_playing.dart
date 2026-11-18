@@ -10,6 +10,7 @@ import '../library/track.dart';
 import '../player/player_controller.dart';
 import '../player/queue.dart';
 import 'cover_art.dart';
+import 'compact_window.dart';
 import 'lrc_editor.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
@@ -175,6 +176,12 @@ class MiniPlayer extends StatelessWidget {
                           width: 140,
                           child: _VolumeSlider(player: player),
                         ),
+                        if (CompactWindow.instance.supported)
+                          IconButton(
+                            tooltip: 'Mini-Player (Strg+M)',
+                            onPressed: CompactWindow.instance.toggle,
+                            icon: const Icon(Icons.picture_in_picture_alt),
+                          ),
                       ],
                       const SizedBox(width: 8),
                     ],

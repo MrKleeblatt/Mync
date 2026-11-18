@@ -38,6 +38,43 @@ class AppSettings extends ChangeNotifier {
     return '$home/Music';
   }
 
+  /// Alle Einstellungen mit Typ (für das Backup).
+  Map<String, Object> exportPrefs() => {
+    for (final k in _prefs.getKeys())
+      if (_prefs.get(k) case final Object v)
+        k: {
+          't': switch (v) {
+            bool() => 'b',
+            int() => 'i',
+            double() => 'd',
+            List() => 'l',
+            _ => 's',
+          },
+          'v': v,
+        },
+  };
+
+  /// Ersetzt alle Einstellungen (aus einem Backup).
+  Future<void> importPrefs(Map<String, dynamic> prefs) async {
+    await _prefs.clear();
+    for (final e in prefs.entries) {
+      final m = e.value as Map<String, dynamic>;
+      final v = m['v'];
+      switch (m['t']) {
+        case 'b':
+          await _prefs.setBool(e.key, v as bool);
+        case 'i':
+          await _prefs.setInt(e.key, (v as num).toInt());
+        case 'd':
+          await _prefs.setDouble(e.key, (v as num).toDouble());
+        case 'l':
+          await _prefs.setStringList(e.key, (v as List).cast<String>());
+        default:
+          await _prefs.setString(e.key, '$v');
+      }
+    }
+  }
+
   String get musicDir => _prefs.getString('musicDir') ?? defaultMusicDir;
   Future<void> setMusicDir(String path) async {
     await _prefs.setString('musicDir', path);

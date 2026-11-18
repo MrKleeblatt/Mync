@@ -417,6 +417,7 @@ class PlayerController extends ChangeNotifier {
 
   /// Beim Beenden der App: laufende Messung abschließen.
   Future<void> endListening() async {
+    if (frozen) return;
     _endSession(byUser: false);
     await saveNow();
   }
@@ -435,8 +436,13 @@ class PlayerController extends ChangeNotifier {
   /// Markiert den nächsten Titelwechsel als Nutzeraktion.
   void _markUserSkip() => _userSkip = true;
 
-  void _save({Duration delay = const Duration(seconds: 1)}) =>
-      _store.scheduleSave(_snapshot, delay: delay);
+  /// Nach dem Wiederherstellen eines Backups: nichts mehr speichern, damit
+  /// die wiederhergestellten Dateien beim Beenden nicht überschrieben werden.
+  bool frozen = false;
+
+  void _save({Duration delay = const Duration(seconds: 1)}) {
+    if (!frozen) _store.scheduleSave(_snapshot, delay: delay);
+  }
 
   Map<String, Object?> _snapshot() => {
     'version': 1,
@@ -447,6 +453,7 @@ class PlayerController extends ChangeNotifier {
   };
 
   Future<void> saveNow() {
+    if (frozen) return Future.value();
     _store.scheduleSave(_snapshot);
     return _store.saveNow();
   }
