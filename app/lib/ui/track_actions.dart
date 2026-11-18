@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../library/track.dart';
+import 'lrc_editor.dart';
+import 'rename_dialog.dart';
 import 'scope.dart';
 import 'tag_editor.dart';
 
@@ -12,6 +14,8 @@ enum TrackAction {
   append('Zur Warteschlange hinzufügen', Icons.playlist_add),
   newQueue('In neuer Warteschlange', Icons.add_to_queue),
   editTags('Tags bearbeiten …', Icons.edit),
+  syncLyrics('Lyrics synchronisieren …', Icons.lyrics_outlined),
+  rename('Nach Tags umbenennen …', Icons.drive_file_rename_outline),
   details('Details', Icons.info_outline);
 
   const TrackAction(this.label, this.icon);
@@ -24,6 +28,8 @@ const singleTrackActions = [
   TrackAction.append,
   TrackAction.newQueue,
   TrackAction.editTags,
+  TrackAction.syncLyrics,
+  TrackAction.rename,
   TrackAction.details,
 ];
 
@@ -34,6 +40,7 @@ const groupActions = [
   TrackAction.append,
   TrackAction.newQueue,
   TrackAction.editTags,
+  TrackAction.rename,
 ];
 
 /// Zeigt ein Popup-Menü an [position] und führt die gewählte Aktion aus.
@@ -106,6 +113,10 @@ Future<void> runTrackAction(
       toast('Neue Warteschlange „${player.queue.name}“');
     case TrackAction.editTags:
       if (context.mounted) await showTagEditor(context, tracks);
+    case TrackAction.syncLyrics:
+      if (context.mounted) await showLrcEditor(context, tracks.first);
+    case TrackAction.rename:
+      if (context.mounted) await showRenameDialog(context, tracks);
     case TrackAction.details:
       if (context.mounted) await showTrackDetails(context, tracks.first);
   }

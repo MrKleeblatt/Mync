@@ -90,3 +90,42 @@ class LyricLine {
   final Duration time;
   final String text;
 }
+
+/// Eine Zeile im LRC-Editor (Zeit noch offen = null).
+class LrcDraftLine {
+  LrcDraftLine(this.text, [this.time]);
+  String text;
+  Duration? time;
+}
+
+/// Zerlegt vorhandene Lyrics in Editor-Zeilen (Zeiten bleiben erhalten).
+List<LrcDraftLine> lrcDraftFrom(String? text) {
+  final l = Lyrics.parse(text);
+  if (l == null) return [];
+  if (l.synced) return [for (final x in l.lines) LrcDraftLine(x.text, x.time)];
+  return [
+    for (final line in l.plain!.split(RegExp(r'\r?\n')))
+      if (line.trim().isNotEmpty) LrcDraftLine(line.trim()),
+  ];
+}
+
+String _stamp(Duration d) {
+  final cs = (d.inMilliseconds / 10).round();
+  final m = cs ~/ 6000, s = (cs ~/ 100) % 60, c = cs % 100;
+  return '[${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}.${c.toString().padLeft(2, '0')}]';
+}
+
+/// LRC-Text aus den Zeilen; Zeilen ohne Zeit werden ausgelassen.
+String formatLrc(List<LrcDraftLine> lines, {String? title, String? artist}) {
+  final b = StringBuffer();
+  if (artist != null && artist.isNotEmpty) b.writeln('[ar:$artist]');
+  if (title != null && title.isNotEmpty) b.writeln('[ti:$title]');
+  final timed = [
+    for (final l in lines)
+      if (l.time != null) l,
+  ]..sort((a, x) => a.time!.compareTo(x.time!));
+  for (final l in timed) {
+    b.writeln('${_stamp(l.time!)}${l.text}');
+  }
+  return b.toString();
+}

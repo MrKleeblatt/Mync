@@ -734,6 +734,8 @@ class PlayerController extends ChangeNotifier {
     for (final e in renames.entries) {
       final s = stats.remove(e.key);
       if (s != null) stats[e.value] = s;
+      final r = resume.remove(e.key);
+      if (r != null) resume[e.value] = r;
     }
     // mpv kennt noch die alten Pfade: Playlist neu laden, Position bleibt erhalten
     if (_loaded && (currentChanged || queue.items.any(renames.containsValue))) {

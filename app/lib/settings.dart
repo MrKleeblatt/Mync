@@ -139,6 +139,12 @@ class AppSettings extends ChangeNotifier {
   double get speed => _prefs.getDouble('speed') ?? 1.0;
   Future<void> setSpeed(double v) => _prefs.setDouble('speed', v);
 
+  /// Zuletzt benutztes Muster für „Nach Tags umbenennen“.
+  String get renamePattern =>
+      _prefs.getString('renamePattern') ?? '{track} - {title}';
+  Future<void> setRenamePattern(String v) =>
+      _prefs.setString('renamePattern', v);
+
   /// Tonhöhe in Halbtönen (unabhängig von der Geschwindigkeit).
   double get pitch => _prefs.getDouble('pitch') ?? 0;
   Future<void> setPitch(double v) => _prefs.setDouble('pitch', v);

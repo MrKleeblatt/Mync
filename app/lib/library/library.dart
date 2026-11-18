@@ -35,6 +35,21 @@ class Library extends ChangeNotifier {
   List<LibraryRoot> get extraRoots => _extra;
   List<LibraryRoot> _extra = const [];
 
+  /// Präfix des Musikordners, in dem [rel] liegt ('' = Hauptordner).
+  String rootPrefixOf(String rel) {
+    for (final r in _extra) {
+      if (rel == r.prefix || rel.startsWith('${r.prefix}/')) return r.prefix;
+    }
+    return '';
+  }
+
+  /// Wird erhöht, wenn Lyrics gespeichert wurden (Ansichten laden neu).
+  int lyricsVersion = 0;
+  void lyricsChanged() {
+    lyricsVersion++;
+    notifyListeners();
+  }
+
   /// Absoluter Pfad zu einem Bibliothekspfad.
   String abs(String rel) {
     for (final r in _extra) {

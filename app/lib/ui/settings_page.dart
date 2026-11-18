@@ -324,5 +324,6 @@ Future<void> _editExcludes(BuildContext context) async {
     ),
   );
   if (ok == true) await s.setExcludes(ctrl.text.split('\n'));
-  ctrl.dispose();
+  // nicht sofort entsorgen: der Dialog blendet noch aus
+  Future<void>.delayed(const Duration(seconds: 1), ctrl.dispose);
 }

@@ -10,6 +10,7 @@ import '../library/track.dart';
 import '../player/player_controller.dart';
 import '../player/queue.dart';
 import 'cover_art.dart';
+import 'lrc_editor.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
 import 'track_actions.dart';
@@ -692,6 +693,7 @@ class LyricsView extends StatefulWidget {
 class _LyricsViewState extends State<LyricsView> {
   Future<Lyrics?>? _future;
   String? _for;
+  int _version = -1;
   final _scroll = ScrollController();
   int _lastIndex = -2;
 
@@ -714,12 +716,31 @@ class _LyricsViewState extends State<LyricsView> {
 
   @override
   Widget build(BuildContext context) {
-    if (_for != widget.track.path) {
+    final version = context.library.lyricsVersion;
+    if (_for != widget.track.path || version != _version) {
       _for = widget.track.path;
+      _version = version;
       _future = _load(widget.track);
       _lastIndex = -2;
     }
     final theme = Theme.of(context);
+    return Stack(
+      children: [
+        Positioned.fill(child: _content(theme)),
+        Positioned(
+          top: 0,
+          right: 0,
+          child: IconButton(
+            tooltip: 'Lyrics synchronisieren',
+            icon: const Icon(Icons.edit_note),
+            onPressed: () => showLrcEditor(context, widget.track),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _content(ThemeData theme) {
     return FutureBuilder<Lyrics?>(
       future: _future,
       builder: (context, snap) {
@@ -730,7 +751,7 @@ class _LyricsViewState extends State<LyricsView> {
         if (l == null) {
           return Center(
             child: Text(
-              'Keine Lyrics vorhanden.\nTags bearbeiten oder eine .lrc-Datei neben den Titel legen.',
+              'Keine Lyrics vorhanden.\nÜber ✎ oben rechts Text einfügen und synchronisieren\noder eine .lrc-Datei neben den Titel legen.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium,
             ),

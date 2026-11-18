@@ -1,0 +1,314 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import '../library/rename.dart';
+import '../library/track.dart';
+import 'scope.dart';
+
+Future<void> showRenameDialog(BuildContext context, List<Track> tracks) =>
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => MyncScope(
+        settings: context.settings,
+        library: context.library,
+        player: context.player,
+        child: RenameDialog(tracks: tracks),
+      ),
+    );
+
+enum _State { ok, same, conflict, invalid }
+
+class _Plan {
+  _Plan(this.track, this.target, this.state);
+  final Track track;
+  final String? target;
+  final _State state;
+}
+
+/// Benennt Dateien nach einem Muster aus ihren Tags um (mit Vorschau).
+class RenameDialog extends StatefulWidget {
+  const RenameDialog({super.key, required this.tracks});
+  final List<Track> tracks;
+
+  @override
+  State<RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<RenameDialog> {
+  late final _ctrl = TextEditingController(text: context.settings.renamePattern)
+    ..addListener(() => setState(() {}));
+  bool _running = false;
+  int _done = 0;
+  String? _result;
+
+  List<_Plan> _plan() {
+    final lib = context.library;
+    final pattern = _ctrl.text;
+    final seen = <String, int>{};
+    final targets = [
+      for (final t in widget.tracks)
+        renameTarget(t, pattern, rootPrefix: lib.rootPrefixOf(t.path)),
+    ];
+    for (final x in targets) {
+      if (x != null) seen[x.toLowerCase()] = (seen[x.toLowerCase()] ?? 0) + 1;
+    }
+    return [
+      for (var i = 0; i < widget.tracks.length; i++)
+        _Plan(widget.tracks[i], targets[i], switch (targets[i]) {
+          null => _State.invalid,
+          final x when x == widget.tracks[i].path => _State.same,
+          final x
+              when seen[x.toLowerCase()]! > 1 ||
+                  File(lib.abs(x)).existsSync() &&
+                      x.toLowerCase() != widget.tracks[i].path.toLowerCase() =>
+            _State.conflict,
+          _ => _State.ok,
+        }),
+    ];
+  }
+
+  Future<void> _run(List<_Plan> plan) async {
+    final lib = context.library;
+    await context.settings.setRenamePattern(_ctrl.text);
+    setState(() {
+      _running = true;
+      _done = 0;
+    });
+    var ok = 0;
+    final errors = <String>[];
+    final todo = plan.where((p) => p.state == _State.ok).toList();
+    for (final p in todo) {
+      try {
+        await _move(lib.abs(p.track.path), lib.abs(p.target!));
+        ok++;
+      } catch (e) {
+        errors.add('${p.track.fileName}: $e');
+      }
+      if (mounted) setState(() => _done++);
+    }
+    // leere alte Ordner aufräumen
+    for (final p in todo) {
+      await _pruneEmpty(File(lib.abs(p.track.path)).parent);
+    }
+    await lib.refresh();
+    if (!mounted) return;
+    if (errors.isEmpty) {
+      Navigator.pop(context);
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text('$ok Dateien umbenannt')));
+    } else {
+      setState(() {
+        _running = false;
+        _result =
+            '$ok umbenannt, ${errors.length} Fehler:\n${errors.join('\n')}';
+      });
+    }
+  }
+
+  static String _base(String path) {
+    final slash = path.lastIndexOf('/');
+    final dot = path.lastIndexOf('.');
+    return dot > slash ? path.substring(0, dot) : path;
+  }
+
+  Future<void> _move(String from, String to) async {
+    await File(to).parent.create(recursive: true);
+    if (await File(to).exists() && from.toLowerCase() != to.toLowerCase()) {
+      throw const FileSystemException('Ziel existiert schon');
+    }
+    await File(from).rename(to);
+    // Begleitdateien mit gleichem Namen (Lyrics, Beschreibung, Kapitel)
+    final fb = _base(from), tb = _base(to);
+    for (final ext in sidecarExtensions) {
+      final side = File('$fb.$ext');
+      if (await side.exists() && !await File('$tb.$ext').exists()) {
+        await side.rename('$tb.$ext');
+      }
+    }
+  }
+
+  Future<void> _pruneEmpty(Directory d) async {
+    final roots = {
+      context.library.root,
+      for (final r in context.library.extraRoots) r.dir,
+    };
+    var dir = d;
+    while (!roots.contains(dir.path) && await dir.exists()) {
+      try {
+        if (!await dir.list().isEmpty) return;
+        await dir.delete();
+      } catch (_) {
+        return;
+      }
+      dir = dir.parent;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _insert(String ph) {
+    final sel = _ctrl.selection;
+    final text = _ctrl.text;
+    final start = sel.isValid ? sel.start : text.length;
+    final end = sel.isValid ? sel.end : text.length;
+    _ctrl.value = TextEditingValue(
+      text: text.replaceRange(start, end, ph),
+      selection: TextSelection.collapsed(offset: start + ph.length),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final plan = _plan();
+    final count = plan.where((p) => p.state == _State.ok).length;
+    final conflicts = plan.where((p) => p.state == _State.conflict).length;
+    return AlertDialog(
+      title: Text(
+        widget.tracks.length == 1
+            ? 'Nach Tags umbenennen'
+            : '${widget.tracks.length} Titel nach Tags umbenennen',
+      ),
+      content: SizedBox(
+        width: 640,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _ctrl,
+              enabled: !_running,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Muster',
+                helperText:
+                    'Ohne „/“ am Anfang: im bisherigen Ordner. Mit „/“: ab dem '
+                    'Musikordner, „/“ dazwischen legt Unterordner an.',
+                helperMaxLines: 2,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final e in renamePlaceholders.entries)
+                  Tooltip(
+                    message: e.value,
+                    child: ActionChip(
+                      label: Text(e.key),
+                      onPressed: _running ? null : () => _insert(e.key),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final ex in const [
+                  '{track} - {title}',
+                  '{artist} - {title}',
+                  '/{albumartist}/{album}/{track} {title}',
+                ])
+                  TextButton(
+                    onPressed: _running ? null : () => _ctrl.text = ex,
+                    child: Text(ex),
+                  ),
+              ],
+            ),
+            const Divider(),
+            Text('Vorschau', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 260,
+              child: ListView.builder(
+                itemCount: plan.length,
+                itemBuilder: (context, i) {
+                  final p = plan[i];
+                  final (icon, color, note) = switch (p.state) {
+                    _State.ok => (
+                      Icons.arrow_forward,
+                      theme.colorScheme.primary,
+                      p.target!,
+                    ),
+                    _State.same => (
+                      Icons.check,
+                      theme.colorScheme.outline,
+                      'unverändert',
+                    ),
+                    _State.conflict => (
+                      Icons.warning_amber,
+                      theme.colorScheme.error,
+                      '${p.target} – existiert schon oder doppelt, wird übersprungen',
+                    ),
+                    _State.invalid => (
+                      Icons.block,
+                      theme.colorScheme.error,
+                      'leerer Name – wird übersprungen',
+                    ),
+                  };
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(icon, color: color, size: 20),
+                    title: Text(
+                      p.track.path,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      note,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: p.state == _State.ok ? null : color,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Lyrics (.lrc), Beschreibungen und Kapiteldateien mit gleichem '
+              'Namen werden mit umbenannt. Warteschlangen und Statistik '
+              'folgen der Umbenennung.'
+              '${conflicts > 0 ? '\n$conflicts Konflikte werden übersprungen.' : ''}',
+              style: theme.textTheme.bodySmall,
+            ),
+            if (_result != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _result!,
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        if (_running)
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Text('$_done / $count'),
+          ),
+        TextButton(
+          onPressed: _running ? null : () => Navigator.pop(context),
+          child: const Text('Abbrechen'),
+        ),
+        FilledButton(
+          onPressed: _running || count == 0 ? null : () => _run(plan),
+          child: Text('$count umbenennen'),
+        ),
+      ],
+    );
+  }
+}
