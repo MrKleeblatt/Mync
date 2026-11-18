@@ -24,9 +24,12 @@ void main() {
   test('Scan und Titelliste über FFI', () async {
     final tmp = await Directory.systemTemp.createTemp('mync_ffi');
     addTearDown(() => tmp.delete(recursive: true));
-    final lib = Directory('${tmp.path}/Musik/Björk/Post')..createSync(recursive: true);
-    File('../core/testdata/mp3-tagged.mp3').copySync('${lib.path}/02 - Hyperballad.mp3');
-    File('../core/testdata/flac-plain.flac').copySync('${lib.path}/ohne-tags.flac');
+    final lib = Directory('${tmp.path}/Musik/Björk/Post')
+      ..createSync(recursive: true);
+    File('../core/testdata/mp3-tagged.mp3')
+        .copySync('${lib.path}/02 - Hyperballad.mp3');
+    File('../core/testdata/flac-plain.flac')
+        .copySync('${lib.path}/ohne-tags.flac');
     final root = '${tmp.path}/Musik';
     final db = '${tmp.path}/daten/manifest.db';
 
@@ -40,18 +43,48 @@ void main() {
       'Björk/Post/02 - Hyperballad.mp3',
       'Björk/Post/ohne-tags.flac',
     ]);
-    expect(tracks.first.title, 'Hyperballad');
-    expect(tracks.first.artist, 'Björk');
-    expect(tracks.first.track, '2');
-    expect(tracks.last.title, isNull);
+    expect(tracks.first.fields['title'], ['Hyperballad']);
+    expect(tracks.first.fields['artist'], ['Björk']);
+    expect(tracks.first.fields['track'], ['2']);
+    expect(tracks.first.hasLyrics, isTrue);
+    expect(tracks.first.fields.containsKey('lyrics'), isFalse);
+    expect(tracks.first.durationMs, inInclusiveRange(450, 600));
+    expect(tracks.last.fields['title'], isNull);
 
+    // Tags lesen, schreiben und Cover extrahieren
+    final abs = '$root/${tracks.first.path}';
+    final tags = await readTags(abs);
+    expect(tags.writable, isTrue);
+    expect(tags.pictures, 1);
+    expect(tags.fields['lyrics'], ['We live on a mountain']);
+    final written = await writeTags(abs, {
+      ...tags.fields,
+      'title': ['Neu'],
+      'genre': [],
+    });
+    expect(written.fields['title'], ['Neu']);
+    expect(written.fields.containsKey('genre'), isFalse);
+    expect(written.pictures, 1);
+    expect(await extractCover(abs, '${tmp.path}/cover.img'), isTrue);
+    expect(File('${tmp.path}/cover.img').lengthSync(), greaterThan(0));
+    await expectLater(
+      writeTags('$root/Björk/Post/ohne-tags.opus', {}),
+      throwsA(isA<MyncCoreException>()),
+    );
+
+    // Nur die geänderte Datei wird neu eingelesen, die Umbenennung bleibt erkannt
     final again = await scanLibrary(root: root, db: db);
-    expect(again.hashed, 0);
+    expect(again.hashed, 1);
+    expect(again.added, 0);
+    expect((await scanLibrary(root: root, db: db)).hashed, 0);
   }, skip: skip);
 
   test('Fehler werden als Exception gemeldet', () async {
     expect(
-      () => scanLibrary(root: '/gibt/es/nicht', db: '${Directory.systemTemp.path}/x/m.db'),
+      () => scanLibrary(
+        root: '/gibt/es/nicht',
+        db: '${Directory.systemTemp.path}/x/m.db',
+      ),
       throwsA(isA<MyncCoreException>()),
     );
   }, skip: skip);

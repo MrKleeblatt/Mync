@@ -70,6 +70,10 @@ set_target_properties(${BINARY_NAME}
 )
 
 
+# media_kit soll beim Bauen nichts herunterladen (mimalloc); ist libmimalloc.so
+# im System vorhanden (Arch: Paket „mimalloc“), wird es dynamisch verwendet.
+set(MIMALLOC_USE_STATIC_LIBS OFF CACHE BOOL "mync: mimalloc nicht herunterladen" FORCE)
+
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)

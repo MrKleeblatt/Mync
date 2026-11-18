@@ -1,120 +1,80 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:ui';
 
-import 'screens/library_screen.dart';
-import 'screens/placeholder_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
+
+import 'library/library.dart';
+import 'player/mpris.dart';
+import 'player/player_controller.dart';
 import 'settings.dart';
+import 'ui/global_shortcuts.dart';
+import 'ui/home_shell.dart';
+import 'ui/scope.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   final settings = await AppSettings.load();
-  runApp(MyncApp(settings: settings));
+  final library = Library(settings);
+  final player = PlayerController(settings, library);
+  await library.load();
+  await player.init();
+  final mpris = Mpris(player);
+  unawaited(mpris.start());
+  if (settings.scanOnStart) unawaited(library.refresh());
+
+  // Zustand beim Beenden sichern
+  AppLifecycleListener(
+    onExitRequested: () async {
+      await player.saveNow();
+      await mpris.stop();
+      return AppExitResponse.exit;
+    },
+    onPause: player.saveNow,
+    onHide: player.saveNow,
+  );
+
+  runApp(MyncApp(settings: settings, library: library, player: player));
 }
 
 class MyncApp extends StatelessWidget {
-  const MyncApp({super.key, required this.settings});
+  const MyncApp({
+    super.key,
+    required this.settings,
+    required this.library,
+    required this.player,
+  });
 
   final AppSettings settings;
+  final Library library;
+  final PlayerController player;
 
   @override
   Widget build(BuildContext context) {
     ThemeData theme(Brightness b) => ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF2E7D6B),
-            brightness: b,
-          ),
-          useMaterial3: true,
-        );
-    return MaterialApp(
-      title: 'mync',
-      debugShowCheckedModeBanner: false,
-      theme: theme(Brightness.light),
-      darkTheme: theme(Brightness.dark),
-      home: HomeShell(settings: settings),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF2E7D6B),
+        brightness: b,
+      ),
+      useMaterial3: true,
     );
-  }
-}
-
-class _Destination {
-  const _Destination(this.label, this.icon, this.selectedIcon);
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
-}
-
-const _destinations = [
-  _Destination('Bibliothek', Icons.library_music_outlined, Icons.library_music),
-  _Destination('Warteschlangen', Icons.queue_music_outlined, Icons.queue_music),
-  _Destination('Sync', Icons.sync_alt_outlined, Icons.sync_alt),
-];
-
-/// Grundgerüst: Navigationsleiste links (breite Fenster) oder unten (Handy).
-class HomeShell extends StatefulWidget {
-  const HomeShell({super.key, required this.settings});
-
-  final AppSettings settings;
-
-  @override
-  State<HomeShell> createState() => _HomeShellState();
-}
-
-class _HomeShellState extends State<HomeShell> {
-  int _index = 0;
-
-  Widget _page() => switch (_index) {
-        0 => LibraryScreen(settings: widget.settings),
-        1 => const PlaceholderScreen(
-            icon: Icons.queue_music,
-            title: 'Warteschlangen',
-            text: 'Mehrere Warteschlangen, die sich ihre Position merken – '
-                'kommt mit dem Player (Meilenstein M3).',
-          ),
-        _ => const PlaceholderScreen(
-            icon: Icons.sync_alt,
-            title: 'Sync-Inbox',
-            text: 'Hier erscheinen eingehende Änderungen vom anderen Gerät '
-                'zum Annehmen oder Ablehnen (Meilenstein M1).',
-          ),
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 720;
-    if (wide) {
-      return Scaffold(
-        body: Row(
-          children: [
-            NavigationRail(
-              selectedIndex: _index,
-              onDestinationSelected: (i) => setState(() => _index = i),
-              labelType: NavigationRailLabelType.all,
-              destinations: [
-                for (final d in _destinations)
-                  NavigationRailDestination(
-                    icon: Icon(d.icon),
-                    selectedIcon: Icon(d.selectedIcon),
-                    label: Text(d.label),
-                  ),
-              ],
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(child: _page()),
-          ],
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) => MaterialApp(
+        title: 'mync',
+        debugShowCheckedModeBanner: false,
+        theme: theme(Brightness.light),
+        darkTheme: theme(Brightness.dark),
+        themeMode: settings.themeMode,
+        builder: (context, child) =>
+            GlobalShortcuts(player: player, child: child!),
+        home: MyncScope(
+          settings: settings,
+          library: library,
+          player: player,
+          child: const HomeShell(),
         ),
-      );
-    }
-    return Scaffold(
-      body: SafeArea(child: _page()),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: [
-          for (final d in _destinations)
-            NavigationDestination(
-              icon: Icon(d.icon),
-              selectedIcon: Icon(d.selectedIcon),
-              label: d.label,
-            ),
-        ],
       ),
     );
   }
