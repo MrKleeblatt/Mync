@@ -115,7 +115,7 @@ class TrackTile extends StatelessWidget {
               children: [
                 const SizedBox(width: 8),
                 Text(
-                  formatDuration(track.duration),
+                  _durationText(context, track),
                   style: theme.textTheme.bodySmall,
                 ),
                 Builder(
@@ -222,4 +222,11 @@ class GroupHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Dauer, bei Hörbüchern mit gemerkter Position („12:34 / 1:02:00“).
+String _durationText(BuildContext context, Track t) {
+  final r = context.player.resumePosition(t.path);
+  if (r == null) return formatDuration(t.duration);
+  return '${formatDuration(r)} / ${formatDuration(t.duration)}';
 }

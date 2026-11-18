@@ -110,6 +110,40 @@ class _EqualizerSheetState extends State<_EqualizerSheet> {
             ),
           ),
           const SizedBox(height: 12),
+          ListenableBuilder(
+            listenable: context.player,
+            builder: (context, _) {
+              final b = context.player.balance;
+              final label = b == 0
+                  ? 'Mitte'
+                  : '${(b.abs() * 100).round()} % ${b < 0 ? 'links' : 'rechts'}';
+              return Row(
+                children: [
+                  Text('Balance', style: theme.textTheme.titleSmall),
+                  Expanded(
+                    child: Slider(
+                      value: b,
+                      min: -1,
+                      max: 1,
+                      divisions: 20,
+                      label: label,
+                      onChanged: context.player.setBalance,
+                    ),
+                  ),
+                  SizedBox(
+                    width: 96,
+                    child: TextButton(
+                      onPressed: b == 0
+                          ? null
+                          : () => context.player.setBalance(0),
+                      child: Text(label),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
           Text('ReplayGain', style: theme.textTheme.titleSmall),
           const SizedBox(height: 6),
           ListenableBuilder(
@@ -145,7 +179,7 @@ Future<void> showSpeedDialog(BuildContext context) {
     builder: (ctx) => ListenableBuilder(
       listenable: player,
       builder: (ctx, _) => AlertDialog(
-        title: const Text('Geschwindigkeit'),
+        title: const Text('Geschwindigkeit und Tonhöhe'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -169,6 +203,27 @@ Future<void> showSpeedDialog(BuildContext context) {
                     onPressed: () => player.setSpeed(v),
                   ),
               ],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Tonhöhe: ${player.pitch == 0 ? 'unverändert' : '${player.pitch > 0 ? '+' : ''}${player.pitch.toStringAsFixed(1)} Halbtöne'}',
+              style: Theme.of(ctx).textTheme.titleMedium,
+            ),
+            Slider(
+              value: player.pitch,
+              min: -6,
+              max: 6,
+              divisions: 24,
+              onChanged: player.setPitch,
+            ),
+            if (player.pitchUnavailable && player.pitch != 0)
+              Text(
+                'Tonhöhe nicht verfügbar: mpv/ffmpeg ohne „rubberband“.',
+                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+              ),
+            TextButton(
+              onPressed: player.pitch == 0 ? null : () => player.setPitch(0),
+              child: const Text('Tonhöhe zurücksetzen'),
             ),
           ],
         ),

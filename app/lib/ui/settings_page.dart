@@ -129,9 +129,58 @@ class SettingsPage extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.speed),
-            title: const Text('Geschwindigkeit'),
-            subtitle: Text('${s.speed.toStringAsFixed(2)}×'),
+            title: const Text('Geschwindigkeit und Tonhöhe'),
+            subtitle: Text(
+              '${s.speed.toStringAsFixed(2)}×'
+              '${s.pitch == 0 ? '' : ' · ${s.pitch > 0 ? '+' : ''}${s.pitch.toStringAsFixed(1)} Halbtöne'}',
+            ),
             onTap: () => showSpeedDialog(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.swap_horiz),
+            title: const Text('Überblenden'),
+            subtitle: const Text(
+              'Ende und Anfang zweier Titel ineinander blenden',
+            ),
+            trailing: DropdownButton<int>(
+              value: s.crossfadeSec,
+              onChanged: (v) => s.setCrossfadeSec(v ?? 0),
+              items: [
+                for (final v in [0, 2, 4, 6, 8, 10, 12])
+                  DropdownMenuItem(
+                    value: v,
+                    child: Text(v == 0 ? 'Aus' : '$v s'),
+                  ),
+              ],
+            ),
+          ),
+          if (s.crossfadeSec > 0)
+            SwitchListTile(
+              secondary: const Icon(Icons.album_outlined),
+              title: const Text('Nicht innerhalb eines Albums'),
+              subtitle: const Text(
+                'Aufeinanderfolgende Albumtitel lückenlos spielen',
+              ),
+              value: s.crossfadeSkipAlbum,
+              onChanged: s.setCrossfadeSkipAlbum,
+            ),
+          ListTile(
+            leading: const Icon(Icons.bookmark_outline),
+            title: const Text('Position je Datei merken'),
+            subtitle: const Text(
+              'Hörbücher und lange Titel später an derselben Stelle fortsetzen',
+            ),
+            trailing: DropdownButton<int>(
+              value: s.resumeMinutes,
+              onChanged: (v) => s.setResumeMinutes(v ?? 0),
+              items: [
+                for (final v in [0, 10, 20, 30, 60])
+                  DropdownMenuItem(
+                    value: v,
+                    child: Text(v == 0 ? 'Aus' : 'ab $v min'),
+                  ),
+              ],
+            ),
           ),
           const _Section('Darstellung'),
           ListTile(

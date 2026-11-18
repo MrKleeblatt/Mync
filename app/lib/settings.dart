@@ -139,6 +139,35 @@ class AppSettings extends ChangeNotifier {
   double get speed => _prefs.getDouble('speed') ?? 1.0;
   Future<void> setSpeed(double v) => _prefs.setDouble('speed', v);
 
+  /// Tonhöhe in Halbtönen (unabhängig von der Geschwindigkeit).
+  double get pitch => _prefs.getDouble('pitch') ?? 0;
+  Future<void> setPitch(double v) => _prefs.setDouble('pitch', v);
+
+  /// Balance: -1 = nur links, 0 = Mitte, 1 = nur rechts.
+  double get balance => _prefs.getDouble('balance') ?? 0;
+  Future<void> setBalance(double v) => _prefs.setDouble('balance', v);
+
+  /// Überblenden zwischen Titeln in Sekunden (0 = aus).
+  int get crossfadeSec => _prefs.getInt('crossfade') ?? 0;
+  Future<void> setCrossfadeSec(int v) async {
+    await _prefs.setInt('crossfade', v);
+    notifyListeners();
+  }
+
+  /// Nicht überblenden, wenn beide Titel aus demselben Album stammen.
+  bool get crossfadeSkipAlbum => _prefs.getBool('crossfadeSkipAlbum') ?? true;
+  Future<void> setCrossfadeSkipAlbum(bool v) async {
+    await _prefs.setBool('crossfadeSkipAlbum', v);
+    notifyListeners();
+  }
+
+  /// Position je Datei merken ab dieser Länge in Minuten (0 = aus).
+  int get resumeMinutes => _prefs.getInt('resumeMinutes') ?? 20;
+  Future<void> setResumeMinutes(int v) async {
+    await _prefs.setInt('resumeMinutes', v);
+    notifyListeners();
+  }
+
   /// Equalizer-Verstärkung je Band in dB (10 Bänder).
   List<double> get eqGains {
     final s = _prefs.getStringList('eqGains');

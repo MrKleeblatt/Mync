@@ -59,6 +59,15 @@ class PlayerController extends ChangeNotifier {
   /// Alte Zähler (vor dem Hörprotokoll).
   final Map<String, PlayStat> stats = {};
 
+  /// Gemerkte Positionen langer Dateien (Hörbücher): Pfad → ms.
+  final Map<String, int> resume = {};
+
+  /// Startposition, mit der ein Titel an mpv übergeben wurde.
+  final Map<String, int> _startUsed = {};
+
+  /// Tonhöhe ließ sich nicht einstellen (mpv/ffmpeg ohne rubberband).
+  bool pitchUnavailable = false;
+
   /// Hörprotokoll: Grundlage für Statistik und Vorschläge.
   final ListeningHistory history;
 
@@ -153,9 +162,12 @@ class PlayerController extends ChangeNotifier {
     }
     await player.setVolume(settings.volume);
     await player.setRate(settings.speed);
-    await applyEqualizer();
+    await applyAudioFilters();
 
     final state = await _store.load();
+    for (final e in ((state['resume'] as Map?) ?? const {}).entries) {
+      resume[e.key as String] = (e.value as num).toInt();
+    }
     for (final q in (state['queues'] as List? ?? const [])) {
       queues.add(PlayQueue.fromJson(q as Map<String, dynamic>));
     }
@@ -183,7 +195,16 @@ class PlayerController extends ChangeNotifier {
         _trackSession();
         if (_loaded && !_opening) {
           queue.positionMs = p.inMilliseconds;
+          final cur = queue.current;
+          if (cur != null &&
+              !_switching &&
+              DateTime.now().difference(_switchedAt) >
+                  const Duration(milliseconds: 1500) &&
+              isLong(cur)) {
+            resume[cur] = p.inMilliseconds;
+          }
           _save(delay: const Duration(seconds: 5));
+          _checkCrossfade();
         }
       }),
       player.stream.duration.listen((d) {
@@ -216,7 +237,46 @@ class PlayerController extends ChangeNotifier {
       DateTime.now().microsecondsSinceEpoch.toRadixString(36) +
       Random().nextInt(1 << 20).toRadixString(36);
 
-  Media _media(String rel) => Media(Uri.file(library.abs(rel)).toString());
+  Media _media(String rel) {
+    final start = isLong(rel) ? (resume[rel] ?? 0) : 0;
+    _startUsed[rel] = start;
+    if (start > 0) _debug('Start bei $start ms: $rel');
+    return Media(
+      Uri.file(library.abs(rel)).toString(),
+      start: start > 0 ? Duration(milliseconds: start) : null,
+    );
+  }
+
+  static void _debug(String m) {
+    if (Platform.environment['MYNC_DEBUG'] != null) debugPrint('mync: $m');
+  }
+
+  /// Lange Datei (Hörbuch, Podcast …): Position wird je Datei gemerkt.
+  bool isLong(String rel) {
+    final min = settings.resumeMinutes;
+    if (min <= 0) return false;
+    var ms = library.byPath(rel)?.info.durationMs ?? -1;
+    if (ms <= 0 && rel == queue.current) ms = duration.inMilliseconds;
+    return ms >= min * 60000;
+  }
+
+  /// Gemerkte Position einer langen Datei (null = keine).
+  Duration? resumePosition(String rel) {
+    final ms = resume[rel];
+    return ms == null || ms < 5000 ? null : Duration(milliseconds: ms);
+  }
+
+  /// Gemerkte Position verwerfen, wenn die Datei (fast) zu Ende gehört ist.
+  void _forgetIfFinished(String rel) {
+    final ms = resume[rel];
+    if (ms == null) return;
+    final total = library.byPath(rel)?.info.durationMs ?? 0;
+    if (total > 0 && ms >= total - 30000) resume.remove(rel);
+  }
+
+  /// Während eines Titelwechsels keine Positionen speichern.
+  bool _switching = false;
+  DateTime _switchedAt = DateTime(0);
 
   // ─── mpv-Synchronisation ───────────────────────────────────────────────
 
@@ -231,6 +291,12 @@ class PlayerController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    _cancelCrossfade();
+    final cur = q.current;
+    if (q.positionMs == 0 && cur != null && isLong(cur)) {
+      q.positionMs = resume[cur] ?? 0;
+    }
+    _switchedAt = DateTime.now();
     _opening = true;
     try {
       await player.open(
@@ -264,9 +330,22 @@ class PlayerController extends ChangeNotifier {
     if (pl.index == q.index || pl.index < 0 || pl.index >= q.items.length) {
       return;
     }
+    _switchedAt = DateTime.now();
+    final old = q.current;
+    if (old != null) _forgetIfFinished(old);
     q.index = pl.index;
     q.positionMs = 0;
     _syncChapters();
+    final cur = q.current!;
+    if (_fading) {
+      unawaited(_finishCrossfade());
+    } else {
+      // Gemerkte Position hat sich seit dem Laden der Playlist geändert?
+      final want = isLong(cur) ? (resume[cur] ?? 0) : 0;
+      if ((want - (_startUsed[cur] ?? 0)).abs() > 2000) {
+        unawaited(_seekWhenLoaded(Duration(milliseconds: want)));
+      }
+    }
     if (sleepAfterTrack) {
       sleepAfterTrack = false;
       unawaited(player.pause());
@@ -281,6 +360,8 @@ class PlayerController extends ChangeNotifier {
     final q = queue;
     if (q.repeat == QueueRepeat.off && q.index >= q.items.length - 1) {
       _endSession(byUser: false, completed: true);
+      final cur = q.current;
+      if (cur != null) resume.remove(cur);
       // Ende der Warteschlange: zurück an den Anfang, angehalten
       q.index = 0;
       q.positionMs = 0;
@@ -362,6 +443,7 @@ class PlayerController extends ChangeNotifier {
     'current': _current,
     'queues': [for (final q in queues) q.toJson()],
     'stats': {for (final e in stats.entries) e.key: e.value.toJson()},
+    'resume': resume,
   };
 
   Future<void> saveNow() {
@@ -381,6 +463,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> playPause() async {
+    _cancelCrossfade();
     if (queue.isEmpty) return;
     if (!_loaded) {
       await _openQueue(play: true);
@@ -391,6 +474,7 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> next() async {
     if (!_loaded) return;
+    _cancelCrossfade();
     _markUserSkip();
     final n = queue.nextIndex(manual: true);
     if (n == null) return;
@@ -404,6 +488,7 @@ class PlayerController extends ChangeNotifier {
   /// Wie bei Musicolet: nach 3 s zurück an den Anfang, sonst vorheriger Titel.
   Future<void> previous() async {
     if (!_loaded) return;
+    _cancelCrossfade();
     if (position > const Duration(seconds: 3) || queue.items.length == 1) {
       await player.seek(Duration.zero);
       return;
@@ -418,6 +503,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> seek(Duration d) async {
+    _cancelCrossfade();
     if (!_loaded) {
       queue.positionMs = d.inMilliseconds;
       position = d;
@@ -425,6 +511,22 @@ class PlayerController extends ChangeNotifier {
       return;
     }
     await player.seek(d);
+  }
+
+  /// Springt an [d], sobald die (gerade gewechselte) Datei geladen ist.
+  Future<void> _seekWhenLoaded(Duration d) async {
+    _switching = true;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      try {
+        await player.stream.duration
+            .firstWhere((x) => x > Duration.zero)
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      await player.seek(d);
+    } finally {
+      _switching = false;
+    }
   }
 
   /// Spult um die eingestellte Schrittweite (× [times], negativ = zurück).
@@ -437,6 +539,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   Future<void> jumpTo(int index) async {
+    _cancelCrossfade();
     if (index < 0 || index >= queue.items.length) return;
     _markUserSkip();
     if (!_loaded) {
@@ -664,30 +767,205 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Setzt den mpv-Audiofilter für den Equalizer.
-  Future<void> applyEqualizer() async {
-    final native = player.platform;
-    if (native is! NativePlayer) return;
-    final gains = settings.eqGains;
-    final active = settings.eqEnabled && gains.any((g) => g != 0);
-    if (!active) {
-      await native.setProperty('af', '');
-      return;
-    }
+  /// mpv-Audiofilter: Equalizer, Tonhöhe, Balance.
+  String _filterChain({bool withPitch = true}) {
     final parts = <String>[];
-    for (var i = 0; i < eqBands.length; i++) {
-      if (gains[i] == 0) continue;
-      parts.add(
-        'equalizer=f=${eqBands[i]}:t=o:w=1:g=${gains[i].toStringAsFixed(1)}',
-      );
+    final gains = settings.eqGains;
+    if (settings.eqEnabled && gains.any((g) => g != 0)) {
+      for (var i = 0; i < eqBands.length; i++) {
+        if (gains[i] == 0) continue;
+        parts.add(
+          'equalizer=f=${eqBands[i]}:t=o:w=1:g=${gains[i].toStringAsFixed(1)}',
+        );
+      }
+      // Vorverstärkung absenken, damit Anhebungen nicht übersteuern
+      final maxGain = gains.reduce(max);
+      if (maxGain > 0) parts.add('volume=${(-maxGain).toStringAsFixed(1)}dB');
     }
-    // Vorverstärkung absenken, damit Anhebungen nicht übersteuern
-    final maxGain = gains.reduce(max);
-    if (maxGain > 0) parts.add('volume=${(-maxGain).toStringAsFixed(1)}dB');
-    await native.setProperty('af', 'lavfi=[${parts.join(',')}]');
+    if (withPitch && settings.pitch != 0) {
+      final scale = pow(2, settings.pitch / 12).toStringAsFixed(5);
+      parts.add('rubberband=pitch=$scale:pitchq=quality');
+    }
+    final b = settings.balance;
+    if (b != 0) parts.add('stereotools=balance_out=${b.toStringAsFixed(2)}');
+    return parts.isEmpty ? '' : 'lavfi=[${parts.join(',')}]';
+  }
+
+  Future<void> _applyFiltersTo(Player p) async {
+    final native = p.platform;
+    if (native is! NativePlayer) return;
+    var chain = _filterChain();
+    await native.setProperty('af', chain);
+    final wantPitch = settings.pitch != 0;
+    if (wantPitch && !(await native.getProperty('af')).contains('rubberband')) {
+      // mpv hat die Kette abgelehnt: ohne Tonhöhe erneut versuchen
+      chain = _filterChain(withPitch: false);
+      await native.setProperty('af', chain);
+      pitchUnavailable = true;
+    } else if (wantPitch) {
+      pitchUnavailable = false;
+    }
     if (Platform.environment['MYNC_DEBUG'] != null) {
       debugPrint('mync: af=${await native.getProperty('af')}');
     }
+  }
+
+  Future<void> applyAudioFilters() async {
+    await _applyFiltersTo(player);
+    final aux = _aux;
+    if (aux != null) await _applyFiltersTo(aux);
+  }
+
+  /// Für bestehende Aufrufer (Equalizer-Ansicht).
+  Future<void> applyEqualizer() => applyAudioFilters();
+
+  double get pitch => settings.pitch;
+  Future<void> setPitch(double semitones) async {
+    await settings.setPitch(semitones);
+    await applyAudioFilters();
+    notifyListeners();
+  }
+
+  double get balance => settings.balance;
+  Future<void> setBalance(double v) async {
+    await settings.setBalance(v);
+    await applyAudioFilters();
+    notifyListeners();
+  }
+
+  // ─── Überblenden ───────────────────────────────────────────────────────
+  //
+  // Kurz vor dem Ende startet ein zweiter Player den nächsten Titel und die
+  // Lautstärken werden gegenläufig geblendet. Wechselt die Haupt-Playlist
+  // dann (lückenlos) zum nächsten Titel, springt sie an die Stelle des
+  // zweiten Players und übernimmt.
+
+  Player? _aux;
+  bool _fading = false;
+  Timer? _fadeTimer;
+  int _fadeToken = 0;
+
+  bool get crossfading => _fading;
+
+  bool _sameAlbum(String a, String b) {
+    final ta = library.byPath(a), tb = library.byPath(b);
+    if (ta == null || tb == null || ta.folder != tb.folder) return false;
+    return ta.album != null && ta.album == tb.album;
+  }
+
+  void _checkCrossfade() {
+    final secs = settings.crossfadeSec;
+    if (secs <= 0 || _fading || !playing || sleepAfterTrack) return;
+    if (duration <= Duration.zero) return;
+    final remaining = duration - position;
+    if (remaining > Duration(seconds: secs) ||
+        remaining < const Duration(milliseconds: 800)) {
+      return;
+    }
+    final q = queue;
+    if (q.repeat == QueueRepeat.one) return;
+    final n = q.nextIndex();
+    final cur = q.current;
+    if (n == null || cur == null || n == q.index) return;
+    final next = q.items[n];
+    if (isLong(cur) || isLong(next)) return;
+    if (settings.crossfadeSkipAlbum && _sameAlbum(cur, next)) return;
+    unawaited(_startCrossfade(next, remaining));
+  }
+
+  Future<Player> _auxPlayer() async {
+    final existing = _aux;
+    if (existing != null) return existing;
+    final p = Player(
+      configuration: const PlayerConfiguration(
+        title: 'mync-blende',
+        logLevel: MPVLogLevel.warn,
+      ),
+    );
+    final native = p.platform;
+    if (native is NativePlayer) {
+      await native.setProperty('vid', 'no');
+      await native.setProperty('audio-display', 'no');
+      await native.setProperty('audio-client-name', 'mync');
+      await native.setProperty('replaygain', settings.replayGain);
+      final ao = Platform.environment['MYNC_MPV_AO'];
+      if (ao != null && ao.isNotEmpty) await native.setProperty('ao', ao);
+    }
+    _aux = p;
+    await _applyFiltersTo(p);
+    return p;
+  }
+
+  Future<void> _startCrossfade(String next, Duration remaining) async {
+    _fading = true;
+    final token = ++_fadeToken;
+    final aux = await _auxPlayer();
+    await aux.setRate(speed);
+    await aux.setVolume(0);
+    await aux.open(Media(Uri.file(library.abs(next)).toString()), play: true);
+    if (token != _fadeToken) return;
+    final started = DateTime.now();
+    final total = remaining.inMilliseconds / speed;
+    _debug('Überblenden: $next über ${total.round()} ms');
+    _fadeTimer?.cancel();
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 50), (t) {
+      final x = (DateTime.now().difference(started).inMilliseconds / total)
+          .clamp(0.0, 1.0);
+      final v = settings.volume;
+      // gleiche Leistung: cos/sin-Kurve
+      unawaited(player.setVolume(v * cos(x * pi / 2)));
+      unawaited(aux.setVolume(v * sin(x * pi / 2)));
+      if (x >= 1) t.cancel();
+    });
+    notifyListeners();
+  }
+
+  /// Die Haupt-Playlist ist beim nächsten Titel: Position übernehmen.
+  Future<void> _finishCrossfade() async {
+    final aux = _aux;
+    final token = _fadeToken;
+    _fadeTimer?.cancel();
+    if (aux == null) return;
+    _switching = true;
+    try {
+      await player.setVolume(0);
+      // warten, bis die neue Datei läuft
+      try {
+        await player.stream.duration
+            .firstWhere((d) => d > Duration.zero)
+            .timeout(const Duration(seconds: 2));
+      } catch (_) {}
+      if (token != _fadeToken) return;
+      const lead = Duration(milliseconds: 120);
+      final target = aux.state.position + lead;
+      await player.seek(target);
+      try {
+        await player.stream.position
+            .firstWhere((p) => p >= target - const Duration(milliseconds: 250))
+            .timeout(const Duration(seconds: 1));
+      } catch (_) {}
+      if (token != _fadeToken) return;
+      await player.setVolume(settings.volume);
+      await aux.setVolume(0);
+      await aux.stop();
+      _debug('Überblenden fertig: Ziel $target, jetzt $position');
+    } finally {
+      _switching = false;
+      if (token == _fadeToken) _fading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Nutzeraktion während des Überblendens: abbrechen.
+  void _cancelCrossfade() {
+    if (!_fading) return;
+    _fadeToken++;
+    _fading = false;
+    _switching = false;
+    _fadeTimer?.cancel();
+    final aux = _aux;
+    if (aux != null) unawaited(aux.stop());
+    unawaited(player.setVolume(settings.volume));
   }
 
   Future<void> setEqualizer({bool? enabled, List<double>? gains}) async {
@@ -738,6 +1016,8 @@ class PlayerController extends ChangeNotifier {
   @override
   Future<void> dispose() async {
     _sleepTimer?.cancel();
+    _cancelCrossfade();
+    await _aux?.dispose();
     for (final s in _subs) {
       await s.cancel();
     }
