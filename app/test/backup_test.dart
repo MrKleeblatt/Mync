@@ -23,7 +23,6 @@ void main() {
     await s.setSpeed(1.0);
     await s.setCrossfadeSec(6);
     await s.setExcludes(['*.wav']);
-    await s.setEqEnabled(true);
 
     final out = '${tmp.path}/x.${Backup.extension}';
     await Backup.create(s, out);

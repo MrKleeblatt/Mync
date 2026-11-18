@@ -776,21 +776,9 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// mpv-Audiofilter: Equalizer, Tonhöhe, Balance.
+  /// mpv-Audiofilter: Tonhöhe, Balance.
   String _filterChain({bool withPitch = true}) {
     final parts = <String>[];
-    final gains = settings.eqGains;
-    if (settings.eqEnabled && gains.any((g) => g != 0)) {
-      for (var i = 0; i < eqBands.length; i++) {
-        if (gains[i] == 0) continue;
-        parts.add(
-          'equalizer=f=${eqBands[i]}:t=o:w=1:g=${gains[i].toStringAsFixed(1)}',
-        );
-      }
-      // Vorverstärkung absenken, damit Anhebungen nicht übersteuern
-      final maxGain = gains.reduce(max);
-      if (maxGain > 0) parts.add('volume=${(-maxGain).toStringAsFixed(1)}dB');
-    }
     if (withPitch && settings.pitch != 0) {
       final scale = pow(2, settings.pitch / 12).toStringAsFixed(5);
       parts.add('rubberband=pitch=$scale:pitchq=quality');
@@ -824,9 +812,6 @@ class PlayerController extends ChangeNotifier {
     final aux = _aux;
     if (aux != null) await _applyFiltersTo(aux);
   }
-
-  /// Für bestehende Aufrufer (Equalizer-Ansicht).
-  Future<void> applyEqualizer() => applyAudioFilters();
 
   double get pitch => settings.pitch;
   Future<void> setPitch(double semitones) async {
@@ -975,13 +960,6 @@ class PlayerController extends ChangeNotifier {
     final aux = _aux;
     if (aux != null) unawaited(aux.stop());
     unawaited(player.setVolume(settings.volume));
-  }
-
-  Future<void> setEqualizer({bool? enabled, List<double>? gains}) async {
-    if (enabled != null) await settings.setEqEnabled(enabled);
-    if (gains != null) await settings.setEqGains(gains);
-    await applyEqualizer();
-    notifyListeners();
   }
 
   // ─── Sleeptimer ────────────────────────────────────────────────────────

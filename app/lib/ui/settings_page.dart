@@ -111,9 +111,9 @@ class SettingsPage extends StatelessWidget {
           ),
           const _Section('Wiedergabe'),
           ListTile(
-            leading: const Icon(Icons.equalizer),
-            title: const Text('Equalizer und ReplayGain'),
-            onTap: () => showEqualizer(context),
+            leading: const Icon(Icons.tune),
+            title: const Text('Klang (Balance, ReplayGain)'),
+            onTap: () => showSoundSheet(context),
           ),
           ListTile(
             leading: const Icon(Icons.fast_forward),

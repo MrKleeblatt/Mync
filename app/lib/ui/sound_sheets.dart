@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../settings.dart';
 import 'scope.dart';
 
-/// Equalizer mit 10 Bändern und Presets.
-Future<void> showEqualizer(BuildContext context) => showModalBottomSheet<void>(
+/// Klang: Balance und ReplayGain.
+Future<void> showSoundSheet(BuildContext context) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
@@ -12,112 +11,33 @@ Future<void> showEqualizer(BuildContext context) => showModalBottomSheet<void>(
     settings: context.settings,
     library: context.library,
     player: context.player,
-    child: const _EqualizerSheet(),
+    child: const _SoundSheet(),
   ),
 );
 
-class _EqualizerSheet extends StatefulWidget {
-  const _EqualizerSheet();
-
-  @override
-  State<_EqualizerSheet> createState() => _EqualizerSheetState();
-}
-
-class _EqualizerSheetState extends State<_EqualizerSheet> {
-  late List<double> _gains = context.settings.eqGains;
-  late bool _enabled = context.settings.eqEnabled;
-
-  Future<void> _apply() =>
-      context.player.setEqualizer(enabled: _enabled, gains: _gains);
-
-  static String _label(int hz) => hz >= 1000 ? '${hz ~/ 1000}k' : '$hz';
+class _SoundSheet extends StatelessWidget {
+  const _SoundSheet();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final player = context.player;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: ListenableBuilder(
+        listenable: player,
+        builder: (context, _) {
+          final b = player.balance;
+          final label = b == 0
+              ? 'Mitte'
+              : '${(b.abs() * 100).round()} % ${b < 0 ? 'links' : 'rechts'}';
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Equalizer', style: theme.textTheme.titleLarge),
-              const Spacer(),
-              Switch(
-                value: _enabled,
-                onChanged: (v) {
-                  setState(() => _enabled = v);
-                  _apply();
-                },
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final e in eqPresets.entries)
-                ChoiceChip(
-                  label: Text(e.key),
-                  selected: _listEq(_gains, e.value),
-                  onSelected: (_) {
-                    setState(() {
-                      _gains = [...e.value];
-                      _enabled = true;
-                    });
-                    _apply();
-                  },
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 220,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (var i = 0; i < eqBands.length; i++)
-                  Column(
-                    children: [
-                      Text(
-                        '${_gains[i] > 0 ? '+' : ''}${_gains[i].toStringAsFixed(0)}',
-                        style: theme.textTheme.labelSmall,
-                      ),
-                      Expanded(
-                        child: RotatedBox(
-                          quarterTurns: 3,
-                          child: Slider(
-                            value: _gains[i],
-                            min: -12,
-                            max: 12,
-                            divisions: 24,
-                            onChanged: _enabled
-                                ? (v) => setState(() => _gains[i] = v)
-                                : null,
-                            onChangeEnd: (_) => _apply(),
-                          ),
-                        ),
-                      ),
-                      Text(
-                        _label(eqBands[i]),
-                        style: theme.textTheme.labelSmall,
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          ListenableBuilder(
-            listenable: context.player,
-            builder: (context, _) {
-              final b = context.player.balance;
-              final label = b == 0
-                  ? 'Mitte'
-                  : '${(b.abs() * 100).round()} % ${b < 0 ? 'links' : 'rechts'}';
-              return Row(
+              Text('Klang', style: theme.textTheme.titleLarge),
+              const SizedBox(height: 16),
+              Row(
                 children: [
                   Text('Balance', style: theme.textTheme.titleSmall),
                   Expanded(
@@ -127,47 +47,35 @@ class _EqualizerSheetState extends State<_EqualizerSheet> {
                       max: 1,
                       divisions: 20,
                       label: label,
-                      onChanged: context.player.setBalance,
+                      onChanged: player.setBalance,
                     ),
                   ),
                   SizedBox(
-                    width: 96,
+                    width: 104,
                     child: TextButton(
-                      onPressed: b == 0
-                          ? null
-                          : () => context.player.setBalance(0),
+                      onPressed: b == 0 ? null : () => player.setBalance(0),
                       child: Text(label),
                     ),
                   ),
                 ],
-              );
-            },
-          ),
-          const SizedBox(height: 12),
-          Text('ReplayGain', style: theme.textTheme.titleSmall),
-          const SizedBox(height: 6),
-          ListenableBuilder(
-            listenable: context.player,
-            builder: (context, _) => SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'no', label: Text('Aus')),
-                ButtonSegment(value: 'track', label: Text('Titel')),
-                ButtonSegment(value: 'album', label: Text('Album')),
-              ],
-              selected: {context.settings.replayGain},
-              onSelectionChanged: (s) => context.player.setReplayGain(s.first),
-            ),
-          ),
-        ],
+              ),
+              const SizedBox(height: 12),
+              Text('ReplayGain', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'no', label: Text('Aus')),
+                  ButtonSegment(value: 'track', label: Text('Titel')),
+                  ButtonSegment(value: 'album', label: Text('Album')),
+                ],
+                selected: {context.settings.replayGain},
+                onSelectionChanged: (s) => player.setReplayGain(s.first),
+              ),
+            ],
+          );
+        },
       ),
     );
-  }
-
-  static bool _listEq(List<double> a, List<double> b) {
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 }
 

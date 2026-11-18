@@ -211,23 +211,6 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Equalizer-Verstärkung je Band in dB (10 Bänder).
-  List<double> get eqGains {
-    final s = _prefs.getStringList('eqGains');
-    if (s == null || s.length != eqBands.length) {
-      return List.filled(eqBands.length, 0);
-    }
-    return s.map((e) => double.tryParse(e) ?? 0).toList();
-  }
-
-  Future<void> setEqGains(List<double> g) => _prefs.setStringList(
-    'eqGains',
-    g.map((e) => e.toStringAsFixed(1)).toList(),
-  );
-
-  bool get eqEnabled => _prefs.getBool('eqEnabled') ?? false;
-  Future<void> setEqEnabled(bool v) => _prefs.setBool('eqEnabled', v);
-
   /// Aktuelle Bibliotheksansicht (Tab-Index).
   int get libraryTab => _prefs.getInt('libraryTab') ?? 0;
   Future<void> setLibraryTab(int i) => _prefs.setInt('libraryTab', i);
@@ -235,17 +218,3 @@ class AppSettings extends ChangeNotifier {
   String get trackSort => _prefs.getString('trackSort') ?? 'title';
   Future<void> setTrackSort(String v) => _prefs.setString('trackSort', v);
 }
-
-/// Mittenfrequenzen der Equalizer-Bänder (Hz).
-const eqBands = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-
-const eqPresets = <String, List<double>>{
-  'Neutral': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  'Bass': [6, 5, 4, 2, 0, 0, 0, 0, 0, 0],
-  'Höhen': [0, 0, 0, 0, 0, 1, 2, 4, 5, 6],
-  'Rock': [4, 3, 2, 0, -1, -1, 1, 2, 3, 4],
-  'Pop': [-1, 0, 2, 3, 4, 3, 1, 0, -1, -1],
-  'Klassik': [3, 2, 1, 0, 0, 0, 0, 1, 2, 3],
-  'Stimme': [-2, -2, -1, 1, 3, 4, 3, 1, 0, -1],
-  'Elektronik': [4, 4, 1, 0, -2, 1, 1, 2, 4, 5],
-};

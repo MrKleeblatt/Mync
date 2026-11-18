@@ -61,7 +61,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 ## Klang, Steuerung, System
 | Funktion | Stand | Anmerkung |
 |---|---|---|
-| Equalizer (10 Bänder, Presets) | ✅ | mpv-Filter mit automatischer Vorabsenkung gegen Übersteuern |
+| Equalizer | – | entfernt (nicht benötigt); Balance und ReplayGain unter „Klang“ |
 | Sleeptimer (nach Zeit mit Ausblenden, nach Titelende) | ✅ | |
 | MPRIS (Medientasten, GNOME/KDE-Mediensteuerung, `playerctl`) | ✅ | |
 | Tastenkürzel | ✅ | greifen nicht beim Tippen in Textfeldern |
@@ -121,7 +121,7 @@ Kopplung werden abgelehnt.
   Opus/Vorbis-Dateien mehrfach umgetaggt.
 - Oberfläche: unter Xvfb mit xdotool bedient (Abspielen, Warteschlangen wechseln,
   Als Nächstes, Tag-Editor mit Cover, Lyrics und LRC-Editor, Umbenennen,
-  Equalizer, Überblenden, Hörbuch-Position, Mini-Player, Sync zwischen zwei
+  Klang, Überblenden, Hörbuch-Position, Mini-Player, Sync zwischen zwei
   Fenstern, Neustart mit Fortsetzen) und
   MPRIS mit `playerctl` geprüft. Ohne Soundkarte – die Tonausgabe selbst ist
   noch auf einem echten Rechner zu prüfen.

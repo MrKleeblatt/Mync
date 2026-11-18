@@ -523,9 +523,9 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                     selectedIcon: const Icon(Icons.list_alt),
                   ),
                 IconButton(
-                  tooltip: 'Equalizer',
-                  onPressed: () => showEqualizer(context),
-                  icon: const Icon(Icons.equalizer),
+                  tooltip: 'Klang',
+                  onPressed: () => showSoundSheet(context),
+                  icon: const Icon(Icons.tune),
                 ),
                 IconButton(
                   tooltip: 'Geschwindigkeit',
