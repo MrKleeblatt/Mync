@@ -97,6 +97,112 @@ class MiniPlayer extends StatelessWidget {
       builder: (context, _) {
         final t = player.currentTrack;
         final wide = MediaQuery.sizeOf(context).width >= 720;
+        final info = Row(
+          children: [
+            CoverArt(track: t, size: 44),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t?.title ?? 'Nichts in der Warteschlange',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  if (t != null)
+                    StreamBuilder<Duration>(
+                      stream: player.player.stream.position,
+                      builder: (context, _) {
+                        final ch = player.currentChapter;
+                        return Text(
+                          ch == null ? t.artist : '${t.artist} · ${ch.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+        final controls = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'Vorheriger (Strg+←)',
+              onPressed: player.previous,
+              icon: const Icon(Icons.skip_previous),
+            ),
+            if (wide) const SeekButton(forward: false),
+            IconButton.filled(
+              tooltip: 'Abspielen/Pause (Leertaste)',
+              onPressed: player.queue.isEmpty ? null : player.playPause,
+              icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
+            ),
+            if (wide) const SeekButton(forward: true),
+            IconButton(
+              tooltip: 'Nächster (Strg+→)',
+              onPressed: player.next,
+              icon: const Icon(Icons.skip_next),
+            ),
+          ],
+        );
+        final Widget row;
+        if (wide) {
+          row = Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1180),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  children: [
+                    Expanded(child: info),
+                    const SizedBox(width: 16),
+                    controls,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          PositionText(controller: player),
+                          const SizedBox(width: 8),
+                          _RepeatButton(player: player),
+                          Flexible(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 140),
+                              child: _VolumeSlider(player: player),
+                            ),
+                          ),
+                          if (CompactWindow.instance.supported)
+                            IconButton(
+                              tooltip: 'Mini-Player (Strg+M)',
+                              onPressed: CompactWindow.instance.toggle,
+                              icon: const Icon(Icons.picture_in_picture_alt),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        } else {
+          row = Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Expanded(child: info),
+                controls,
+              ],
+            ),
+          );
+        }
         return Material(
           color: theme.colorScheme.surfaceContainer,
           child: InkWell(
@@ -108,85 +214,7 @@ class MiniPlayer extends StatelessWidget {
                   height: 4,
                   child: PositionSlider(controller: player, compact: true),
                 ),
-                SizedBox(
-                  height: 64,
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 12),
-                      CoverArt(track: t, size: 44),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              t?.title ?? 'Nichts in der Warteschlange',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall,
-                            ),
-                            if (t != null)
-                              StreamBuilder<Duration>(
-                                stream: player.player.stream.position,
-                                builder: (context, _) {
-                                  final ch = player.currentChapter;
-                                  return Text(
-                                    ch == null
-                                        ? t.artist
-                                        : '${t.artist} · ${ch.title}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall,
-                                  );
-                                },
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (wide) ...[
-                        PositionText(controller: player),
-                        const SizedBox(width: 8),
-                      ],
-                      IconButton(
-                        tooltip: 'Vorheriger (Strg+←)',
-                        onPressed: player.previous,
-                        icon: const Icon(Icons.skip_previous),
-                      ),
-                      if (wide) const SeekButton(forward: false),
-                      IconButton.filled(
-                        tooltip: 'Abspielen/Pause (Leertaste)',
-                        onPressed: player.queue.isEmpty
-                            ? null
-                            : player.playPause,
-                        icon: Icon(
-                          player.playing ? Icons.pause : Icons.play_arrow,
-                        ),
-                      ),
-                      if (wide) const SeekButton(forward: true),
-                      IconButton(
-                        tooltip: 'Nächster (Strg+→)',
-                        onPressed: player.next,
-                        icon: const Icon(Icons.skip_next),
-                      ),
-                      if (wide) ...[
-                        const SizedBox(width: 8),
-                        _RepeatButton(player: player),
-                        SizedBox(
-                          width: 140,
-                          child: _VolumeSlider(player: player),
-                        ),
-                        if (CompactWindow.instance.supported)
-                          IconButton(
-                            tooltip: 'Mini-Player (Strg+M)',
-                            onPressed: CompactWindow.instance.toggle,
-                            icon: const Icon(Icons.picture_in_picture_alt),
-                          ),
-                      ],
-                      const SizedBox(width: 8),
-                    ],
-                  ),
-                ),
+                SizedBox(height: 64, child: row),
               ],
             ),
           ),

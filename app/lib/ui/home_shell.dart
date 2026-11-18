@@ -76,11 +76,35 @@ class _HomeShellState extends State<HomeShell> {
     Widget body = _page(sidePanel);
     if (sidePanel) {
       body = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(child: body),
-          const VerticalDivider(width: 1),
-          const SizedBox(width: 380, child: QueuesPage(compact: true)),
+          const SizedBox(width: 24),
+          // Warteschlange als abgesetzte Karte neben der Bibliothek
+          SizedBox(
+            width: 360,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Card.filled(
+                clipBehavior: Clip.antiAlias,
+                child: const QueuesPage(compact: true),
+              ),
+            ),
+          ),
         ],
+      );
+    }
+    if (wide) {
+      // Inhalt nicht an die Fensterränder kleben: mittig mit begrenzter Breite
+      body = Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: sidePanel ? 1400 : 980),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: width >= 1000 ? 40 : 16),
+            child: body,
+          ),
+        ),
       );
     }
 
@@ -98,6 +122,7 @@ class _HomeShellState extends State<HomeShell> {
                         onDestinationSelected: (i) =>
                             setState(() => _index = i),
                         labelType: NavigationRailLabelType.all,
+                        groupAlignment: 0, // Navigation senkrecht mittig
                         destinations: [
                           for (final d in _dests)
                             NavigationRailDestination(
@@ -107,7 +132,6 @@ class _HomeShellState extends State<HomeShell> {
                             ),
                         ],
                       ),
-                      const VerticalDivider(width: 1),
                       Expanded(child: body),
                     ],
                   ),
