@@ -1,0 +1,333 @@
+{
+ "files": {
+  "mp3-plain.mp3": {
+   "group": "mp3",
+   "fields": {},
+   "pictures": 0
+  },
+  "mp3-tagged.mp3": {
+   "group": "mp3",
+   "fields": {
+    "title": "Hyperballad",
+    "artist": "Björk",
+    "album": "Post",
+    "albumartist": "Björk",
+    "composer": "Björk Guðmundsdóttir",
+    "genre": "Pop",
+    "date": "1995",
+    "track": "2",
+    "tracktotal": "11",
+    "disc": "1",
+    "disctotal": "1",
+    "comment": "Testkommentar",
+    "lyrics": "We live on a mountain"
+   },
+   "pictures": 1
+  },
+  "mp3-retagged.mp3": {
+   "group": "mp3",
+   "fields": {
+    "title": "Hyperballad (Remaster)",
+    "artist": "Björk",
+    "album": "Post",
+    "track": "3",
+    "lyrics": "sha256:ca9ca5b10c8756a3efa3cdc5a2c834a1e00a899bb64e4f4a3aaf23afe73bb820"
+   },
+   "pictures": 0
+  },
+  "flac-plain.flac": {
+   "group": "flac",
+   "fields": {},
+   "pictures": 0
+  },
+  "flac-tagged.flac": {
+   "group": "flac",
+   "fields": {
+    "title": "Hyperballad",
+    "artist": "Björk",
+    "album": "Post",
+    "albumartist": "Björk",
+    "composer": "Björk Guðmundsdóttir",
+    "genre": "Pop",
+    "date": "1995",
+    "track": "2",
+    "tracktotal": "11",
+    "disc": "1",
+    "disctotal": "1",
+    "comment": "Testkommentar",
+    "lyrics": "We live on a mountain"
+   },
+   "pictures": 1
+  },
+  "flac-retagged.flac": {
+   "group": "flac",
+   "fields": {
+    "title": "Hyperballad (Remaster)",
+    "artist": "Björk",
+    "album": "Post",
+    "track": "3",
+    "lyrics": "sha256:ca9ca5b10c8756a3efa3cdc5a2c834a1e00a899bb64e4f4a3aaf23afe73bb820"
+   },
+   "pictures": 0
+  },
+  "vorbis-plain.ogg": {
+   "group": "vorbis",
+   "fields": {},
+   "pictures": 0
+  },
+  "vorbis-tagged.ogg": {
+   "group": "vorbis",
+   "fields": {
+    "title": "Hyperballad",
+    "artist": "Björk",
+    "album": "Post",
+    "albumartist": "Björk",
+    "composer": "Björk Guðmundsdóttir",
+    "genre": "Pop",
+    "date": "1995",
+    "track": "2",
+    "tracktotal": "11",
+    "disc": "1",
+    "disctotal": "1",
+    "comment": "Testkommentar",
+    "lyrics": "We live on a mountain"
+   },
+   "pictures": 1
+  },
+  "vorbis-retagged.ogg": {
+   "group": "vorbis",
+   "fields": {
+    "title": "Hyperballad (Remaster)",
+    "artist": "Björk",
+    "album": "Post",
+    "track": "3",
+    "lyrics": "sha256:ca9ca5b10c8756a3efa3cdc5a2c834a1e00a899bb64e4f4a3aaf23afe73bb820"
+   },
+   "pictures": 0
+  },
+  "opus-plain.opus": {
+   "group": "opus",
+   "fields": {},
+   "pictures": 0
+  },
+  "opus-tagged.opus": {
+   "group": "opus",
+   "fields": {
+    "title": "Hyperballad",
+    "artist": "Björk",
+    "album": "Post",
+    "albumartist": "Björk",
+    "composer": "Björk Guðmundsdóttir",
+    "genre": "Pop",
+    "date": "1995",
+    "track": "2",
+    "tracktotal": "11",
+    "disc": "1",
+    "disctotal": "1",
+    "comment": "Testkommentar",
+    "lyrics": "We live on a mountain"
+   },
+   "pictures": 1
+  },
+  "opus-retagged.opus": {
+   "group": "opus",
+   "fields": {
+    "title": "Hyperballad (Remaster)",
+    "artist": "Björk",
+    "album": "Post",
+    "track": "3",
+    "lyrics": "sha256:ca9ca5b10c8756a3efa3cdc5a2c834a1e00a899bb64e4f4a3aaf23afe73bb820"
+   },
+   "pictures": 0
+  },
+  "m4a-plain.m4a": {
+   "group": "m4a",
+   "fields": {},
+   "pictures": 0
+  },
+  "m4a-tagged.m4a": {
+   "group": "m4a",
+   "fields": {
+    "title": "Hyperballad",
+    "artist": "Björk",
+    "album": "Post",
+    "albumartist": "Björk",
+    "composer": "Björk Guðmundsdóttir",
+    "genre": "Pop",
+    "date": "1995",
+    "track": "2",
+    "tracktotal": "11",
+    "disc": "1",
+    "disctotal": "1",
+    "comment": "Testkommentar",
+    "lyrics": "We live on a mountain"
+   },
+   "pictures": 1
+  },
+  "m4a-retagged.m4a": {
+   "group": "m4a",
+   "fields": {
+    "title": "Hyperballad (Remaster)",
+    "artist": "Björk",
+    "album": "Post",
+    "track": "3",
+    "lyrics": "sha256:ca9ca5b10c8756a3efa3cdc5a2c834a1e00a899bb64e4f4a3aaf23afe73bb820"
+   },
+   "pictures": 0
+  },
+  "wav-plain.wav": {
+   "group": "wav",
+   "fields": {},
+   "pictures": 0
+  },
+  "wav-tagged.wav": {
+   "group": "wav",
+   "fields": {
+    "title": "Hyperballad",
+    "artist": "Björk",
+    "album": "Post",
+    "albumartist": "Björk",
+    "composer": "Björk Guðmundsdóttir",
+    "genre": "Pop",
+    "date": "1995",
+    "track": "2",
+    "tracktotal": "11",
+    "disc": "1",
+    "disctotal": "1",
+    "comment": "Testkommentar",
+    "lyrics": "We live on a mountain"
+   },
+   "pictures": 1
+  },
+  "wav-retagged.wav": {
+   "group": "wav",
+   "fields": {
+    "title": "Hyperballad (Remaster)",
+    "artist": "Björk",
+    "album": "Post",
+    "track": "3",
+    "lyrics": "sha256:ca9ca5b10c8756a3efa3cdc5a2c834a1e00a899bb64e4f4a3aaf23afe73bb820"
+   },
+   "pictures": 0
+  },
+  "mp3-chapters.mp3": {
+   "group": "chapters-mp3",
+   "fields": {},
+   "pictures": 0,
+   "chapters": [
+    [
+     0,
+     "Einleitung"
+    ],
+    [
+     150,
+     "Hauptteil – Ärger"
+    ],
+    [
+     320,
+     "Schluss"
+    ]
+   ],
+   "skip_fields": true
+  },
+  "m4a-chapters.m4a": {
+   "group": "chapters-m4a",
+   "fields": {},
+   "pictures": 0,
+   "chapters": [
+    [
+     0,
+     "Einleitung"
+    ],
+    [
+     150,
+     "Hauptteil – Ärger"
+    ],
+    [
+     320,
+     "Schluss"
+    ]
+   ],
+   "skip_fields": true
+  },
+  "opus-chapters.opus": {
+   "group": "chapters-opus",
+   "fields": {},
+   "pictures": 0,
+   "chapters": [
+    [
+     0,
+     "Einleitung"
+    ],
+    [
+     150,
+     "Hauptteil – Ärger"
+    ],
+    [
+     320,
+     "Schluss"
+    ]
+   ],
+   "skip_fields": true
+  },
+  "vorbis-chapters.ogg": {
+   "group": "chapters-vorbis",
+   "fields": {},
+   "pictures": 0,
+   "chapters": [
+    [
+     0,
+     "Einleitung"
+    ],
+    [
+     150,
+     "Hauptteil – Ärger"
+    ],
+    [
+     320,
+     "Schluss"
+    ]
+   ]
+  },
+  "flac-chapters.flac": {
+   "group": "chapters-flac",
+   "fields": {},
+   "pictures": 0,
+   "chapters": [
+    [
+     0,
+     "Einleitung"
+    ],
+    [
+     150,
+     "Hauptteil – Ärger"
+    ],
+    [
+     320,
+     "Schluss"
+    ]
+   ]
+  },
+  "m4a-description.m4a": {
+   "group": "m4a",
+   "fields": {
+    "description": "Live-Mitschnitt vom Sommerfest.\n\nKapitel:\n0:00 Begrüßung\n0:12 Erstes Lied – Morgenrot\n1:05:30 Zugabe"
+   },
+   "pictures": 0
+  },
+  "mp3-description.mp3": {
+   "group": "mp3",
+   "fields": {
+    "description": "Live-Mitschnitt vom Sommerfest.\n\nKapitel:\n0:00 Begrüßung\n0:12 Erstes Lied – Morgenrot\n1:05:30 Zugabe"
+   },
+   "pictures": 0
+  },
+  "opus-description.opus": {
+   "group": "opus",
+   "fields": {
+    "description": "Live-Mitschnitt vom Sommerfest.\n\nKapitel:\n0:00 Begrüßung\n0:12 Erstes Lied – Morgenrot\n1:05:30 Zugabe"
+   },
+   "pictures": 0
+  }
+ }
+}

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=mync
+GenericName=Musikplayer
+Comment=Offline-Musikplayer mit mehreren Warteschlangen und Handy-Sync
+Exec=mync
+Icon=mync
+Terminal=false
+Categories=AudioVideo;Audio;Player;Music;
+Keywords=Musik;Player;Warteschlange;Lyrics;MP3;FLAC;
+StartupWMClass=com.github.mrkleeblatt.mync

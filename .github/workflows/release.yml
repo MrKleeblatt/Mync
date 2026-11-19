@@ -1,0 +1,177 @@
+name: Release
+
+# Jeder Merge nach master (nur per Pull Request, siehe docs/updates.md) wird
+# ein Release: Version prüfen, Linux-App mit Teil-Update und Android-APK
+# bauen, den Tag v<version> auf den Merge-Commit setzen und das Release mit
+# allen Dateien anlegen. Die Version steht nur in app/pubspec.yaml.
+#
+# Secrets (optional, empfohlen):
+#   MYNC_UPDATE_KEY      Ed25519-Schlüssel für die Signatur der Teil-Updates
+#                        (Variable MYNC_UPDATE_PUBKEY = öffentlicher Schlüssel)
+#   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+#                        fester Android-Signaturschlüssel
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write # Tag setzen, Release anlegen, Dateien hochladen
+
+# zwei Merges kurz hintereinander nacheinander veröffentlichen
+concurrency: release
+
+jobs:
+  check:
+    name: Version prüfen
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: tag
+        run: echo "tag=$(python3 tools/release/release_check.py --tag)" >> "$GITHUB_OUTPUT"
+      - name: Änderungen seit dem letzten Release
+        run: |
+          mkdir -p notes
+          python3 tools/release/release_check.py --notes > notes/notes.md
+          cat notes/notes.md
+      - uses: actions/upload-artifact@v6
+        with:
+          name: notes
+          path: notes/notes.md
+
+  linux:
+    name: Linux (mit Teil-Update)
+    needs: check
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+      PLATFORM: linux-x86_64
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v7
+        with:
+          name: notes
+
+      - name: Kern testen und bauen
+        working-directory: core
+        run: |
+          zig build test
+          zig build -Doptimize=ReleaseSafe
+
+      - name: App testen und bauen
+        working-directory: app
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/zig-out/lib
+        run: |
+          flutter pub get
+          flutter test
+          flutter build linux --release --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
+
+      - name: Manifest des vorigen Releases holen
+        run: |
+          mkdir -p prev
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern "update-$PLATFORM.json" --dir prev || true
+
+      - name: Teil-Update erzeugen
+        env:
+          MYNC_UPDATE_KEY: ${{ secrets.MYNC_UPDATE_KEY }}
+        run: |
+          sign=()
+          if [ -n "$MYNC_UPDATE_KEY" ]; then
+            printf '%s' "$MYNC_UPDATE_KEY" > "$RUNNER_TEMP/key"
+            sign=(--sign-key "$RUNNER_TEMP/key" --signer core/zig-out/bin/mync)
+          else
+            echo "::warning::Secret MYNC_UPDATE_KEY fehlt – Teil-Updates werden nicht signiert."
+          fi
+          python3 tools/release/make_update.py \
+            --bundle app/build/linux/x64/release/bundle \
+            --version "${TAG#v}" --platform "$PLATFORM" \
+            --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
+            --previous "prev/update-$PLATFORM.json" \
+            --notes "$(cat notes.md)" \
+            "${sign[@]}" --out dist
+          rm -f "$RUNNER_TEMP/key"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: linux
+          path: dist/*
+
+  android:
+    name: Android (APK)
+    needs: check
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          android: "true"
+
+      - name: Signaturschlüssel einrichten
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Secret KEYSTORE_BASE64 fehlt – APK wird mit dem Debug-Schlüssel signiert (spätere Versionen lassen sich dann nicht darüber installieren)."
+          fi
+
+      - name: APK bauen
+        working-directory: app
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # Minuten seit 1970 als versionCode: steigt mit jedem Release
+          ../tools/release/retry.sh flutter pub get
+          ../tools/release/retry.sh flutter build apk --release --split-per-abi --target-platform android-arm64 \
+            --build-name "${TAG#v}" --build-number "$(( $(date +%s) / 60 ))" \
+            --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "$GITHUB_WORKSPACE/dist/mync-$TAG-android-arm64.apk"
+          rm -f "$RUNNER_TEMP/release.jks"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: android
+          path: dist/*
+
+  release:
+    name: Release veröffentlichen
+    needs: [check, linux, android]
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Version noch einmal prüfen (falls inzwischen getaggt)
+        run: python3 tools/release/release_check.py
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Prüfsummen
+        run: |
+          mv dist/notes.md notes.md
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - name: Tag setzen und Release anlegen
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "mync ${TAG#v}" --notes-file notes.md

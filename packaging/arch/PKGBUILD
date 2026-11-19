@@ -1,0 +1,55 @@
+# Maintainer: mrkleeblatt
+#
+# mync – Musikplayer im Stil von Musicolet mit Handy-Sync (Flutter + Zig).
+# Baut aus dem Git-Repository. Benötigt Zig 0.17.1 und Flutter (z. B. AUR: flutter-bin).
+#
+#   makepkg -si
+pkgname=mync-git
+pkgver=r0
+pkgrel=1
+pkgdesc='Offline-Musikplayer mit mehreren Warteschlangen, Tag-Editor, Lyrics und Handy-Sync'
+arch=('x86_64' 'aarch64')
+url='https://github.com/mrkleeblatt/mync'
+license=('unknown')
+depends=('gtk3' 'mpv' 'mimalloc')
+makedepends=('git' 'zig' 'flutter' 'clang' 'cmake' 'ninja' 'pkgconf')
+provides=('mync')
+conflicts=('mync')
+# Der Code liegt derzeit auf dem Branch docs/konzept; nach dem Zusammenführen
+# „#branch=docs/konzept“ entfernen.
+source=('mync::git+https://github.com/mrkleeblatt/mync.git#branch=docs/konzept')
+sha256sums=('SKIP')
+
+pkgver() {
+  cd mync
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  cd mync/app
+  flutter --disable-analytics >/dev/null 2>&1 || true
+  flutter pub get
+}
+
+build() {
+  cd mync/core
+  zig build test
+  zig build -Doptimize=ReleaseSafe   # Kommandozeilenwerkzeug nach core/zig-out
+  cd ../app
+  # CMake ruft dabei `zig build -Doptimize=ReleaseSafe` für den Kern auf
+  flutter build linux --release
+}
+
+package() {
+  cd mync
+  local bundle
+  bundle=$(find app/build/linux -path '*/release/bundle' -type d | head -1)
+  install -d "$pkgdir/opt/mync"
+  cp -r "$bundle"/. "$pkgdir/opt/mync/"
+  # Startskript: nimmt die neueste Version (Paket oder Teil-Update in ~/.local/share/mync)
+  install -Dm755 packaging/linux/mync-launcher.sh "$pkgdir/usr/bin/mync"
+  install -Dm644 packaging/linux/mync.desktop "$pkgdir/usr/share/applications/mync.desktop"
+  install -Dm644 packaging/linux/mync.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/mync.svg"
+  # Kommandozeilenwerkzeug des Kerns (scan, status, hash, tag)
+  install -Dm755 core/zig-out/bin/mync "$pkgdir/usr/bin/mync-core"
+}

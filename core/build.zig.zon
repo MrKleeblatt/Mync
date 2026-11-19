@@ -1,0 +1,7 @@
+.{
+    .name = .mync_core,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.1",
+    .paths = .{ "build.zig", "build.zig.zon", "src", "vendor" },
+    .fingerprint = 0x5d59b0e373866afc,
+}
