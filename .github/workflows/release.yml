@@ -134,8 +134,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           # Minuten seit 1970 als versionCode: steigt mit jedem Release
-          flutter pub get
-          flutter build apk --release --split-per-abi --target-platform android-arm64 \
+          ../tools/release/retry.sh flutter pub get
+          ../tools/release/retry.sh flutter build apk --release --split-per-abi --target-platform android-arm64 \
             --build-name "${TAG#v}" --build-number "$(( $(date +%s) / 60 ))" \
             --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
           mkdir -p "$GITHUB_WORKSPACE/dist"

@@ -63,5 +63,5 @@ jobs:
       - name: APK bauen
         working-directory: app
         run: |
-          flutter pub get
-          flutter build apk --release --split-per-abi --target-platform android-arm64
+          ../tools/release/retry.sh flutter pub get
+          ../tools/release/retry.sh flutter build apk --release --split-per-abi --target-platform android-arm64
