@@ -11,6 +11,7 @@ import 'player/player_controller.dart';
 import 'settings.dart';
 import 'ui/global_shortcuts.dart';
 import 'ui/home_shell.dart';
+import 'ui/app_theme.dart';
 import 'ui/compact_window.dart';
 import 'ui/scope.dart';
 import 'sync/library_sync_host.dart';
@@ -83,20 +84,15 @@ class MyncApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    ThemeData theme(Brightness b) => ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF2E7D6B),
-        brightness: b,
-      ),
-      useMaterial3: true,
-    );
     return ListenableBuilder(
       listenable: settings,
       builder: (context, _) => MaterialApp(
         title: 'mync',
         debugShowCheckedModeBanner: false,
-        theme: theme(Brightness.light),
-        darkTheme: theme(Brightness.dark),
+        theme: standardTheme(Brightness.light),
+        darkTheme: settings.design == AppDesign.graphite
+            ? graphiteTheme()
+            : standardTheme(Brightness.dark),
         themeMode: settings.themeMode,
         builder: (context, child) => GlobalShortcuts(
           player: player,

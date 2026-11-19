@@ -5,6 +5,7 @@ import 'dart:io';
 
 import '../backup/backup.dart';
 import '../core/mync_core.dart';
+import 'app_theme.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
 import 'update_widgets.dart';
@@ -199,14 +200,16 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.dark_mode),
             title: const Text('Design'),
-            trailing: SegmentedButton<ThemeMode>(
-              segments: const [
-                ButtonSegment(value: ThemeMode.system, label: Text('System')),
-                ButtonSegment(value: ThemeMode.light, label: Text('Hell')),
-                ButtonSegment(value: ThemeMode.dark, label: Text('Dunkel')),
+            subtitle: s.design == AppDesign.graphite
+                ? const Text('Dunkel, warme Grautöne, Kupfer-Akzent')
+                : null,
+            trailing: SegmentedButton<AppDesign>(
+              segments: [
+                for (final d in AppDesign.values)
+                  ButtonSegment(value: d, label: Text(d.label)),
               ],
-              selected: {s.themeMode},
-              onSelectionChanged: (v) => s.setThemeMode(v.first),
+              selected: {s.design},
+              onSelectionChanged: (v) => s.setDesign(v.first),
             ),
           ),
           SwitchListTile(

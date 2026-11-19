@@ -173,16 +173,17 @@ class MiniPlayer extends StatelessWidget {
                           if (player.inApplause)
                             Padding(
                               padding: const EdgeInsets.only(right: 8),
-                              child: SkipApplauseButton(player: player),
+                              child: SkipApplauseButton(
+                                player: player,
+                                compact: true,
+                              ),
                             ),
                           PositionText(controller: player),
                           const SizedBox(width: 8),
                           _RepeatButton(player: player),
-                          Flexible(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 140),
-                              child: _VolumeSlider(player: player),
-                            ),
+                          SizedBox(
+                            width: 120,
+                            child: _VolumeSlider(player: player),
                           ),
                           if (CompactWindow.instance.supported)
                             IconButton(
@@ -256,14 +257,24 @@ class MiniPlayer extends StatelessWidget {
 
 /// „Applaus überspringen“ (erscheint nur, während erkannter Applaus läuft).
 class SkipApplauseButton extends StatelessWidget {
-  const SkipApplauseButton({super.key, required this.player});
+  const SkipApplauseButton({
+    super.key,
+    required this.player,
+    this.compact = false,
+  });
   final PlayerController player;
 
+  /// Kurze Beschriftung (für die Wiedergabeleiste).
+  final bool compact;
+
   @override
-  Widget build(BuildContext context) => FilledButton.tonalIcon(
-    onPressed: player.skipApplause,
-    icon: const Icon(Icons.sign_language, size: 18),
-    label: const Text('Applaus überspringen'),
+  Widget build(BuildContext context) => Tooltip(
+    message: 'Applaus überspringen',
+    child: FilledButton.tonalIcon(
+      onPressed: player.skipApplause,
+      icon: const Icon(Icons.sign_language, size: 18),
+      label: Text(compact ? 'Applaus' : 'Applaus überspringen'),
+    ),
   );
 }
 

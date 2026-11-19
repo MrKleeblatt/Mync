@@ -67,7 +67,8 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Sleeptimer (nach Zeit mit Ausblenden, nach Titelende) | ✅ | |
 | MPRIS (Medientasten, GNOME/KDE-Mediensteuerung, `playerctl`) | ✅ | |
 | Tastenkürzel | ✅ | greifen nicht beim Tippen in Textfeldern |
-| Hell/Dunkel | ✅ | |
+| Hell/Dunkel, **Graphit** | ✅ | Graphit: eigenes dunkles Design (warme Grautöne, Kupfer, flache Formen) – Einstellungen → Design |
+
 | Sicherung & Wiederherstellen | ✅ | eine `.mync-backup`-Datei: Einstellungen, Warteschlangen, Statistik, Positionen, wahlweise Kopplungen |
 | Mini-Player-Fenster | ✅ | Strg+M, klein und immer im Vordergrund (Linux; unter Wayland je nach Compositor) |
 | Teil-Updates über GitHub-Releases | ✅ | siehe [updates.md](updates.md); auf Wunsch automatisch |

@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'ui/app_theme.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Einstellungen der App (SharedPreferences) und Speicherorte.
@@ -113,13 +116,20 @@ class AppSettings extends ChangeNotifier {
 
   String get stateFile => '$dataDir${Platform.pathSeparator}state.json';
 
-  ThemeMode get themeMode =>
-      ThemeMode.values.asNameMap()[_prefs.getString('theme')] ??
-      ThemeMode.system;
-  Future<void> setThemeMode(ThemeMode m) async {
-    await _prefs.setString('theme', m.name);
+  /// Gewähltes Design (System, Hell, Dunkel, Graphit).
+  AppDesign get design =>
+      AppDesign.values.asNameMap()[_prefs.getString('theme')] ??
+      AppDesign.system;
+  Future<void> setDesign(AppDesign d) async {
+    await _prefs.setString('theme', d.name);
     notifyListeners();
   }
+
+  ThemeMode get themeMode => switch (design) {
+    AppDesign.system => ThemeMode.system,
+    AppDesign.light => ThemeMode.light,
+    AppDesign.dark || AppDesign.graphite => ThemeMode.dark,
+  };
 
   /// Bibliothek beim Start automatisch scannen.
   bool get scanOnStart => _prefs.getBool('scanOnStart') ?? true;
