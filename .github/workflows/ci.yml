@@ -1,0 +1,67 @@
+name: Prüfen und bauen
+
+# Jeder Pull Request nach master (Voraussetzung für den Merge, siehe
+# docs/updates.md): Jeder Merge wird ein Release, deshalb muss die Version in
+# app/pubspec.yaml höher sein als der letzte Tag. Danach Kern und App testen
+# und für Linux und Android bauen.
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Version prüfen
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Tags für den Vergleich
+      - run: python3 tools/release/release_check.py
+
+  linux:
+    name: Linux (Kern, Tests, App)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+
+      - name: Kern testen und bauen
+        working-directory: core
+        run: |
+          zig build test --summary all
+          zig build -Doptimize=ReleaseSafe
+
+      - name: App prüfen und testen
+        working-directory: app
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/core/zig-out/lib
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+
+      - name: Linux-App bauen
+        working-directory: app
+        run: flutter build linux --release
+
+  android:
+    name: Android (APK)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          android: "true"
+      # Gradle baut den Zig-Kern für alle ABIs mit; signiert wird hier nur
+      # mit dem Debug-Schlüssel (der feste Schlüssel ist dem Release vorbehalten)
+      - name: APK bauen
+        working-directory: app
+        run: |
+          flutter pub get
+          flutter build apk --release --split-per-abi --target-platform android-arm64

@@ -44,25 +44,88 @@ die Kopie in einem früheren Release         6. „Jetzt neu starten“ (oder be
 Ist ein Update verfügbar oder installiert, erscheint zusätzlich eine Leiste
 oben im Fenster.
 
-## Ein Release veröffentlichen
+## Ablauf: Pull Request → Prüfung → Merge → Release
 
-1. Version in `app/pubspec.yaml` erhöhen (z. B. `version: 0.4.1+5`) und committen.
-2. Tag setzen und pushen – der Tag-Text wird zu den Änderungsnotizen:
+Wie bei Kassenbon ist **jeder Merge nach `master` ein Release**:
+
+1. Entwickelt wird auf einem eigenen Branch (z. B. `dev/<thema>`).
+2. Im Branch die Version in `app/pubspec.yaml` erhöhen (z. B.
+   `version: 0.6.0+6`) – die einzige Stelle, an der die Version steht.
+3. Pull Request nach `master` öffnen. Der Workflow **„Prüfen und bauen“**
+   (`.github/workflows/ci.yml`) läuft automatisch:
+   - **Version prüfen** (`tools/release/release_check.py`): Den Tag
+     `v<version>` darf es noch nicht geben, und die Version muss höher sein
+     als der letzte Tag.
+   - **Linux:** `zig build test`, Format-Prüfung, `flutter analyze`,
+     `flutter test` (gegen den gebauten Kern), `flutter build linux`.
+   - **Android:** `flutter build apk` (baut den Zig-Kern über Gradle mit).
+4. Nach dem Merge startet **„Release“** (`.github/workflows/release.yml`):
+   Version noch einmal prüfen, Linux-App mit Teil-Update und signierte
+   APK bauen, Tag `v<version>` auf den Merge-Commit setzen und das Release
+   anlegen. Die Änderungsnotizen sind die Commit-Betreffs seit dem letzten
+   Tag.
+
+Dateien eines Releases:
+
+| Datei | Inhalt |
+|---|---|
+| `mync-vX.Y.Z-android-arm64.apk` | Android-App |
+| `mync-linux-x86_64.tar.gz` | Linux-Programm komplett |
+| `update-linux-x86_64.json` (+ `.sig`) | Manifest für Teil-Updates |
+| `f-….gz` | nur die geänderten Programmdateien |
+| `SHA256SUMS` | Prüfsummen |
+
+Lokal prüfen, ob die Version passt:
 
 ```bash
-git tag -a v0.4.1 -m "Kapitel springen per Bild↑/↓, neue Statistik"
+python3 tools/release/release_check.py
 ```
-
-```bash
-git push origin v0.4.1
-```
-
-Der Workflow `.github/workflows/release.yml` baut dann Kern und App, holt das
-Manifest des vorigen Releases, erzeugt mit `tools/release/make_update.py` das
-Teil-Update und lädt alles ins Release hoch.
 
 **Wichtig:** Alte Releases nicht löschen – neuere Manifeste verweisen auf
-deren unveränderte Dateien.
+deren unveränderte Dateien (bis zur Umstellung nach
+[teilupdates-plan.md](teilupdates-plan.md)).
+
+## Einstellungen auf GitHub (einmalig)
+
+Die Workflows allein erzwingen nichts; verbindlich wird der Ablauf erst
+durch diese Einstellungen unter *Settings*:
+
+- **General:** Default-Branch `master`.
+- **Rules → Rulesets** für `master`:
+  - kein direkter Push, nur über Pull Requests, kein Force-Push, nicht löschbar;
+  - Status-Checks **„Version prüfen“**, **„Linux (Kern, Tests, App)“** und
+    **„Android (APK)“** erforderlich, Branch muss aktuell sein;
+  - optional: 1 Freigabe erforderlich.
+- **Rules → Rulesets** für Tags `v*` (optional): ändern und löschen
+  verbieten, GitHub Actions in die Bypass-Liste (der Workflow legt die Tags an).
+- **Actions → General:** Workflows aus Forks nur nach Freigabe;
+  *Workflow permissions* „Read and write“ (für das Anlegen des Releases).
+
+## Android-Signaturschlüssel (einmalig)
+
+Android installiert ein Update nur, wenn es mit demselben Schlüssel signiert
+ist wie die installierte Version. Ohne festen Schlüssel signiert der Workflow
+mit einem wechselnden Debug-Schlüssel (mit Warnung).
+
+```bash
+keytool -genkeypair -keystore mync.jks -alias mync -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=mync"
+```
+
+```bash
+base64 -w0 mync.jks | gh secret set KEYSTORE_BASE64
+```
+
+```bash
+gh secret set KEYSTORE_PASSWORD
+```
+
+```bash
+gh secret set KEY_ALIAS --body mync
+```
+
+`KEY_PASSWORD` nur, wenn es vom Keystore-Passwort abweicht. `mync.jks` gut
+aufbewahren und **nicht** ins Repository legen – geht er verloren, muss die
+App vor dem nächsten Update deinstalliert werden.
 
 ## Signatur einrichten (einmalig)
 

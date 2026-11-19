@@ -29,11 +29,28 @@ android {
         versionName = flutter.versionName
     }
 
+    // Fester Signaturschlüssel aus der Umgebung (Workflow „Release“, Secrets
+    // KEYSTORE_BASE64/KEYSTORE_PASSWORD/KEY_ALIAS/KEY_PASSWORD). Ohne ihn wird
+    // mit dem Debug-Schlüssel signiert – dann lassen sich spätere Versionen
+    // nicht über diese installieren.
+    val keystoreFile = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotEmpty() }
+    signingConfigs {
+        if (keystoreFile != null) {
+            create("release") {
+                storeFile = file(keystoreFile)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")?.takeIf { it.isNotEmpty() }
+                    ?: System.getenv("KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (keystoreFile != null) "release" else "debug",
+            )
         }
     }
 }
