@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:media_kit/media_kit.dart';
 
+import '../core/music_fs.dart';
+
 /// Dekodiert Audio unabhängig von der Wiedergabe: eine eigene, stumme
 /// mpv-Instanz schreibt die Samples mit `ao=pcm` so schnell wie möglich
 /// (`untimed`) in eine Datei. Ausgabe: Mono, 16 Bit, [rate] Hz.
@@ -48,7 +50,7 @@ class PcmDecoder {
       }
       final done = p.stream.completed.firstWhere((c) => c);
       final failed = p.stream.error.first;
-      await p.open(Media(Uri.file(path).toString(), start: start, end: end));
+      await p.open(Media(MusicFs.mediaUri(path), start: start, end: end));
       await Future.any([done, failed.then((e) => throw StateError(e))])
           .timeout(timeout);
     } finally {

@@ -6,7 +6,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 ## Bibliothek & Navigation
 | Funktion | Stand | Anmerkung |
 |---|---|---|
-| Ordner-Ansicht mit Brotkrumen | ✅ | Hauptansicht; Kontextmenü auch für ganze Ordner (abspielen, mischen, als Nächstes …) |
+| Ordner-Ansicht mit Brotkrumen | ✅ | Hauptansicht; Antippen eines Titels öffnet das Kontextmenü (Abspielen, Als Nächstes …); Kontextmenü auch für ganze Ordner |
 | Alle Titel, sortierbar (Titel, Künstler, Album, Jahr, Dauer, hinzugefügt, Datei) | ✅ | |
 | Suche über Titel, Künstler, Album, Pfad – findet auch Ordner | ✅ | Strg+F |
 | Kurze Titel ausblenden | ✅ | Einstellungen |
@@ -36,7 +36,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 |---|---|---|
 | **Mehrere Warteschlangen**, jede mit eigener Position | ✅ | Wechsel setzt exakt dort fort, wo die Warteschlange stand |
 | Als Nächstes / ans Ende / in neue Warteschlange | ✅ | ohne Unterbrechung des laufenden Titels |
-| Umsortieren (Ziehen), Entfernen, Mischen, Leeren, Umbenennen | ✅ | |
+| Umsortieren, Entfernen, Mischen, Leeren, Umbenennen | ✅ | Titel nur per Wischen bearbeiten: nach links herausnehmen (rückgängig machbar), nach rechts zum Verschieben freischalten (Pfeile, Ziehen) |
 | Fortsetzen nach Neustart | ✅ | Zustand in `state.json` (atomar gespeichert) |
 | Wiederholen aus / Warteschlange / Titel | ✅ | je Warteschlange |
 | Lückenlose Wiedergabe | ✅ | mpv `gapless-audio` |
@@ -66,8 +66,10 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Equalizer | – | entfernt (nicht benötigt); Balance und ReplayGain unter „Klang“ |
 | Sleeptimer (nach Zeit mit Ausblenden, nach Titelende) | ✅ | |
 | MPRIS (Medientasten, GNOME/KDE-Mediensteuerung, `playerctl`) | ✅ | |
-| Android-Mediensitzung | ✅ | Benachrichtigung, Sperrbildschirm, Medienausgabe, Kopfhörer-/Bluetooth-Tasten, Spulen; Wiedergabe im Hintergrund |
-| Tastenkürzel | ✅ | greifen nicht beim Tippen in Textfeldern |
+| Android-Mediensitzung | ✅ | Benachrichtigung, Sperrbildschirm, Medienausgabe (auch „Wiedergabe fortsetzen“ nach Neustart), Kopfhörer-/Bluetooth-Tasten, Spulen; Wiedergabe im Hintergrund |
+| Android: nur freigegebene Ordner | ✅ | Musikordner über die Ordnerauswahl des Systems; keine Speicherberechtigung, kein „Zugriff auf alle Dateien“ |
+| Tastenkürzel | ✅ | nur am PC; greifen nicht beim Tippen in Textfeldern |
+| Logbuch | ✅ | Einstellungen → Info und Updates: Meldungen, Netzverkehr und Fehler seit dem Start, filtern, kopieren; Widgets zeigen nur kurz „lädt / erfolgreich / fehlgeschlagen“ |
 | Design **Graphit** | ✅ | eigenes dunkles Design (warme Grautöne, Kupfer, flache Formen); das einzige Design |
 
 | Sicherung & Wiederherstellen | ✅ | eine `.mync-backup`-Datei: Einstellungen, Warteschlangen, Statistik, Positionen, wahlweise Kopplungen |
@@ -88,8 +90,8 @@ mync läuft auf PC und Handy; abgeglichen wird der Hauptmusikordner.
    ausdrücklich mit angenommen.
 3. **Anwenden:** Umbenennungen ohne Übertragung, Tags nach Möglichkeit direkt
    geschrieben, sonst die Datei übertragen (SHA-256-geprüft). Gelöschtes
-   landet 30 Tage in `.mync-trash/`. Auf Android wird danach der MediaScanner
-   angestoßen, damit Musicolet die Änderungen sieht.
+   landet 30 Tage in `.mync-trash/`. Auf Android sieht die Mediendatenbank
+   (und damit Musicolet) die Änderungen von selbst.
 4. **Fertig:** Der gemeinsame Stand wird gespeichert – nicht Angenommenes
    erscheint beim nächsten Mal wieder.
 

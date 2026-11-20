@@ -15,6 +15,7 @@ import '../stats/history.dart';
 import '../stats/stats.dart';
 import 'queue.dart';
 import 'state_store.dart';
+import '../core/music_fs.dart';
 
 /// Zähler aus Versionen vor dem Hörprotokoll (werden nur noch gelesen).
 class PlayStat {
@@ -251,7 +252,7 @@ class PlayerController extends ChangeNotifier {
     _startUsed[rel] = start;
     if (start > 0) _debug('Start bei $start ms: $rel');
     return Media(
-      Uri.file(library.abs(rel)).toString(),
+      MusicFs.mediaUri(library.abs(rel)),
       start: start > 0 ? Duration(milliseconds: start) : null,
     );
   }
@@ -1009,7 +1010,7 @@ class PlayerController extends ChangeNotifier {
     final aux = await _auxPlayer();
     await aux.setRate(speed);
     await aux.setVolume(0);
-    await aux.open(Media(Uri.file(library.abs(next)).toString()), play: true);
+    await aux.open(Media(MusicFs.mediaUri(library.abs(next))), play: true);
     if (token != _fadeToken) return;
     final started = DateTime.now();
     final total = remaining.inMilliseconds / speed;

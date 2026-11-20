@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
+import '../core/music_fs.dart';
 import '../library/rename.dart';
 import '../library/track.dart';
 import '../log.dart';
@@ -63,7 +62,7 @@ class _RenameDialogState extends State<RenameDialog> {
           final x when x == widget.tracks[i].path => _State.same,
           final x
               when seen[x.toLowerCase()]! > 1 ||
-                  File(lib.abs(x)).existsSync() &&
+                  lib.byPath(x) != null &&
                       x.toLowerCase() != widget.tracks[i].path.toLowerCase() =>
             _State.conflict,
           _ => _State.ok,
@@ -100,7 +99,7 @@ class _RenameDialogState extends State<RenameDialog> {
     }
     // leere alte Ordner aufräumen
     for (final p in todo) {
-      await _pruneEmpty(File(lib.abs(p.track.path)).parent);
+      await _pruneEmpty(MusicFs.parent(lib.abs(p.track.path)));
     }
     await lib.refresh();
     if (!mounted) return;
@@ -123,35 +122,34 @@ class _RenameDialogState extends State<RenameDialog> {
   }
 
   Future<void> _move(String from, String to) async {
-    await File(to).parent.create(recursive: true);
-    if (await File(to).exists() && from.toLowerCase() != to.toLowerCase()) {
-      throw const FileSystemException('Ziel existiert schon');
-    }
-    await File(from).rename(to);
+    await MusicFs.rename(from, to);
     // Begleitdateien mit gleichem Namen (Lyrics, Beschreibung, Kapitel)
     final fb = _base(from), tb = _base(to);
     for (final ext in sidecarExtensions) {
-      final side = File('$fb.$ext');
-      if (await side.exists() && !await File('$tb.$ext').exists()) {
-        await side.rename('$tb.$ext');
+      final side = '$fb.$ext';
+      if (await MusicFs.exists(side) && !await MusicFs.exists('$tb.$ext')) {
+        await MusicFs.rename(side, '$tb.$ext');
       }
     }
   }
 
-  Future<void> _pruneEmpty(Directory d) async {
+  Future<void> _pruneEmpty(String d) async {
     final roots = {
       context.library.root,
       for (final r in context.library.extraRoots) r.dir,
     };
     var dir = d;
-    while (!roots.contains(dir.path) && await dir.exists()) {
+    while (!roots.contains(dir) && !roots.contains('$dir/')) {
       try {
-        if (!await dir.list().isEmpty) return;
-        await dir.delete();
+        if (!await MusicFs.isDir(dir)) return;
+        if ((await MusicFs.list(dir)).isNotEmpty) return;
+        await MusicFs.delete(dir);
       } catch (_) {
         return;
       }
-      dir = dir.parent;
+      final up = MusicFs.parent(dir);
+      if (up == dir) return;
+      dir = up;
     }
   }
 

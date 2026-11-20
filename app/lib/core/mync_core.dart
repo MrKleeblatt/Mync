@@ -10,11 +10,13 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
 import '../library/chapters.dart';
+import 'music_fs.dart';
 
 typedef _OneStr = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _TwoStr = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
@@ -22,6 +24,20 @@ typedef _ScanC = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
   Pointer<Utf8>,
+  Pointer<Uint32>,
+);
+typedef _ScanListingC = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Int32,
+  Pointer<Uint32>,
+);
+typedef _ScanListingD = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  int,
   Pointer<Uint32>,
 );
 typedef _ThreeStr = Pointer<Utf8> Function(
@@ -117,6 +133,9 @@ class MyncCoreException implements Exception {
 class _Lib {
   _Lib._(DynamicLibrary lib)
     : scan = lib.lookupFunction<_ScanC, _ScanC>('mync_scan'),
+      scanListing = lib.lookupFunction<_ScanListingC, _ScanListingD>(
+        'mync_scan_listing',
+      ),
       listTracks = lib.lookupFunction<_TwoStr, _TwoStr>('mync_list_tracks'),
       readTags = lib.lookupFunction<_OneStr, _OneStr>('mync_read_tags'),
       writeTags = lib.lookupFunction<_ThreeStr, _ThreeStr>('mync_write_tags'),
@@ -141,6 +160,7 @@ class _Lib {
       version = lib.lookupFunction<_VersionC, _VersionC>('mync_version');
 
   final _ScanC scan;
+  final _ScanListingD scanListing;
   final _TwoStr listTracks;
   final _OneStr readTags;
   final _ThreeStr writeTags;
@@ -229,6 +249,7 @@ class ScanSummary {
     required this.added,
     required this.removed,
     this.errors = const [],
+    this.needed = const [],
   });
 
   ScanSummary.fromJson(Map<String, dynamic> j)
@@ -236,13 +257,17 @@ class ScanSummary {
       hashed = j['hashed'] as int,
       added = j['added'] as int,
       removed = j['removed'] as int,
-      errors = (j['errors'] as List).cast<String>();
+      errors = (j['errors'] as List).cast<String>(),
+      needed = ((j['needed'] as List?) ?? const []).cast<String>();
 
   final int total;
   final int hashed;
   final int added;
   final int removed;
   final List<String> errors;
+
+  /// Nur bei [scanListing]: neu einzulesende Dateien ohne `src`.
+  final List<String> needed;
 }
 
 /// Feldname → Werte, z. B. {"artist": ["A", "B"]}.
@@ -356,6 +381,98 @@ Future<ScanSummary> _scanInIsolate(
   }
 });
 
+/// Gleicht das Manifest [db] mit einer Auflistung ab (siehe
+/// `mync_scan_listing` im Kern). Einträge: `path`, `size`, `mtime_ns` und
+/// optional `src` (`fd:N:<name>`) für Dateien, die eingelesen werden sollen.
+Future<ScanSummary> scanListing({
+  required String db,
+  required List<Map<String, Object>> listing,
+  List<String> excludes = const [],
+  bool last = false,
+}) =>
+    _scanListingInIsolate(db, jsonEncode(listing), jsonEncode(excludes), last);
+
+Future<ScanSummary> _scanListingInIsolate(
+  String db,
+  String listingJson,
+  String excludesJson,
+  bool last,
+) => Isolate.run(() {
+  final lib = _Lib.instance;
+  final a = db.toNativeUtf8();
+  final b = listingJson.toNativeUtf8();
+  final c = excludesJson.toNativeUtf8();
+  try {
+    return ScanSummary.fromJson(
+      lib._result(lib.scanListing(a, b, c, last ? 1 : 0, nullptr))
+          as Map<String, dynamic>,
+    );
+  } finally {
+    malloc.free(a);
+    malloc.free(b);
+    malloc.free(c);
+  }
+});
+
+/// Scan einer Ordnerfreigabe (Android): Kotlin listet auf, der Kern sagt,
+/// was neu einzulesen ist, und bekommt diese Dateien portionsweise als
+/// offene Deskriptoren – nie mehr als [batch] auf einmal.
+Future<ScanSummary> scanTree({
+  required String tree,
+  required String db,
+  List<String> excludes = const [],
+  void Function(int found, int total, int done)? onProgress,
+  int batch = 64,
+}) async {
+  final files = await MusicFs.listFiles(tree);
+  final listing = [for (final f in files) f.toJson()];
+  final first = await scanListing(db: db, listing: listing, excludes: excludes);
+  final needed = first.needed;
+  onProgress?.call(first.total, needed.length, 0);
+  final index = {for (var i = 0; i < files.length; i++) files[i].path: i};
+  var hashed = 0, added = 0;
+  final errors = <String>[...first.errors];
+  for (var start = 0; start < needed.length; start += batch) {
+    final part = needed.sublist(start, min(start + batch, needed.length));
+    final fds = await MusicFs.openFds(tree, part);
+    try {
+      final withSrc = [...listing];
+      for (var i = 0; i < part.length; i++) {
+        if (fds[i] < 0) {
+          errors.add('${part[i]}: nicht lesbar');
+          continue;
+        }
+        final at = index[part[i]]!;
+        withSrc[at] = {...listing[at], 'src': 'fd:${fds[i]}:${part[i]}'};
+      }
+      final r = await scanListing(db: db, listing: withSrc, excludes: excludes);
+      hashed += r.hashed;
+      added += r.added;
+      errors.addAll(r.errors);
+    } finally {
+      await MusicFs.closeFds(fds);
+    }
+    onProgress?.call(
+      first.total,
+      needed.length,
+      min(start + batch, needed.length),
+    );
+  }
+  final done = await scanListing(
+    db: db,
+    listing: listing,
+    excludes: excludes,
+    last: true,
+  );
+  return ScanSummary(
+    total: done.total,
+    hashed: hashed,
+    added: added,
+    removed: done.removed,
+    errors: [...errors, ...done.errors],
+  );
+}
+
 /// Liefert alle Audiodateien aus dem Manifest, sortiert nach Pfad.
 Future<List<TrackInfo>> listTracks({
   required String root,
@@ -366,38 +483,46 @@ Future<List<TrackInfo>> listTracks({
   return [for (final t in list) TrackInfo.fromJson(t as Map<String, dynamic>)];
 });
 
-/// Liest alle Tags der Datei [absPath].
-Future<FileTags> readTags(String absPath) => Isolate.run(() {
+/// Liest alle Tags der Datei am Ort [loc] (Pfad oder Ordnerfreigabe,
+/// siehe `MusicFs`).
+Future<FileTags> readTags(String loc) => MusicFs.withReadPath(loc, _readTagsAt);
+
+Future<FileTags> _readTagsAt(String path) => Isolate.run(() {
   final lib = _Lib.instance;
   return FileTags.fromJson(
-    lib.call1(lib.readTags, absPath) as Map<String, dynamic>,
+    lib.call1(lib.readTags, path) as Map<String, dynamic>,
   );
 });
 
-/// Ersetzt die Tags der Datei [absPath] durch [fields] (fehlende Felder
-/// werden entfernt). Nur MP3 und FLAC.
+/// Ersetzt die Tags der Datei am Ort [loc] durch [fields] (fehlende Felder
+/// werden entfernt). In einer Ordnerfreigabe über eine Arbeitskopie.
 ///
 /// Cover: [coverFile] (JPEG/PNG) ersetzt alle eingebetteten Bilder,
 /// [removeCover] entfernt sie; sonst bleiben sie unverändert.
 Future<FileTags> writeTags(
-  String absPath,
+  String loc,
   TagFields fields, {
   String? coverFile,
   bool removeCover = false,
-}) => Isolate.run(() {
-  final lib = _Lib.instance;
+}) {
   final json = jsonEncode(fields);
   final cover = coverFile ?? (removeCover ? '-' : '');
-  return FileTags.fromJson(
-    lib.call3(lib.writeTags, absPath, json, cover) as Map<String, dynamic>,
-  );
-});
+  return MusicFs.withWritePath(loc, (p) => _writeTagsAt(p, json, cover));
+}
 
-/// Schreibt das eingebettete Cover von [absPath] nach [outPath].
-/// Liefert false, wenn die Datei kein Cover enthält.
-Future<bool> extractCover(String absPath, String outPath) => Isolate.run(() {
+Future<FileTags> _writeTagsAt(String path, String json, String cover) =>
+    Isolate.run(() {
+      final lib = _Lib.instance;
+      return FileTags.fromJson(
+        lib.call3(lib.writeTags, path, json, cover) as Map<String, dynamic>,
+      );
+    });
+
+/// Schreibt das eingebettete Cover der Datei [path] (Pfad oder `fd:N:…`)
+/// nach [outPath]. Liefert false, wenn die Datei kein Cover enthält.
+Future<bool> extractCover(String path, String outPath) => Isolate.run(() {
   final lib = _Lib.instance;
-  return lib.call2(lib.extractCover, absPath, outPath) as bool;
+  return lib.call2(lib.extractCover, path, outPath) as bool;
 });
 
 /// Prüft eine Ed25519-Signatur (Schlüssel und Signatur hexadezimal).
@@ -411,8 +536,10 @@ Future<bool> verifyEd25519(
       as bool;
 });
 
-/// SHA-256 einer Datei (hex).
-Future<String> sha256File(String path) => Isolate.run(() {
+/// SHA-256 einer Datei (hex), auch in einer Ordnerfreigabe.
+Future<String> sha256File(String loc) => MusicFs.withReadPath(loc, _sha256At);
+
+Future<String> _sha256At(String path) => Isolate.run(() {
   final lib = _Lib.instance;
   return lib.call1(lib.sha256File, path) as String;
 });

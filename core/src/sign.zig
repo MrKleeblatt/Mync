@@ -52,7 +52,7 @@ pub fn verify(public_hex: []const u8, msg: []const u8, sig_hex: []const u8) bool
 
 /// SHA-256 einer Datei (hex).
 pub fn sha256File(io: Io, dir: Io.Dir, path: []const u8) ![64]u8 {
-    const f = try dir.openFile(io, path, .{});
+    const f = try @import("source.zig").openInput(io, dir, path);
     defer f.close(io);
     var h = Sha256.init(.{});
     var buf: [64 * 1024]u8 = undefined;

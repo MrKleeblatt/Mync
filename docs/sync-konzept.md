@@ -216,15 +216,17 @@ Technik:
   Schlüsseln. Darin läuft gewöhnliches HTTP/1.1 (`std.http`).
 - **Geräteerkennung:** mDNS (`_mync._tcp`), schlanke eigene Implementierung
   über UDP-Multicast (`std.Io.net`).
-- **Android-Speicherzugriff:** Für Umbenennen/Löschen/Tag-Schreiben beliebiger
-  Audiodateien ist `MANAGE_EXTERNAL_STORAGE` („Zugriff auf alle Dateien“,
-  über einen kleinen Platform-Channel in `MainActivity.kt`) am einfachsten – unproblematisch, da die App
-  nicht über den Play Store verteilt werden muss (Sideload/F-Droid). Dann
-  kann der Zig-Kern direkt mit normalen Dateipfaden arbeiten.
+- **Android-Speicherzugriff:** nur über die **Ordnerfreigabe** (Storage
+  Access Framework) – mync sieht ausschließlich die Musikordner, die der
+  Nutzer auswählt, und braucht keine Speicherberechtigung. Die Freigabe
+  (`content://…/tree/…`) wird dauerhaft gemerkt. Kotlin (`MusicFs.kt`,
+  Kanal `mync/fs`) listet auf, liest, schreibt, benennt um und öffnet
+  Dateideskriptoren; der Zig-Kern liest sie als `fd:N:<name>`. Der Scan
+  läuft über `mync_scan_listing` in Portionen (je höchstens 64 offene
+  Dateien), Tags werden über eine Arbeitskopie im Cache geschrieben.
 - **Foreground-Service** während des Syncs: `flutter_foreground_task`.
-- **Nach dem Anwenden:** Android-MediaScanner für alle geänderten Pfade
-  anstoßen (kleiner Platform-Channel zu `MediaScannerConnection.scanFile`),
-  damit Musicolet die Änderungen sieht. In Musicolet ggf. „Bibliothek neu
+- **Nach dem Anwenden:** Änderungen über die Ordnerfreigabe sieht die
+  Mediendatenbank von Android selbst; in Musicolet ggf. „Bibliothek neu
   scannen“.
 
 Verworfene Alternativen: Sync-Kern in Termux (umständlich für den Alltag);

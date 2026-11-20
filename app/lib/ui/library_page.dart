@@ -1,8 +1,10 @@
-import 'package:file_selector/file_selector.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
-import '../core/storage_access.dart';
+import '../core/music_fs.dart';
 import '../library/track.dart';
+import 'folder_picker.dart';
 import 'global_shortcuts.dart';
 import 'scope.dart';
 import 'status_line.dart';
@@ -52,21 +54,20 @@ class LibraryPageState extends State<LibraryPage>
   void focusSearch() => searchFocus.requestFocus();
 
   Future<void> _scan() async {
-    if (!await StorageAccess.granted()) {
-      await StorageAccess.request();
-      return;
-    }
-    if (mounted) await context.library.refresh();
+    if (context.settings.musicDir.isEmpty) return _pickFolder();
+    await context.library.refresh();
   }
 
   Future<void> _pickFolder() async {
     final s = context.settings;
-    final path = await getDirectoryPath(
-      initialDirectory: s.musicDir,
-      confirmButtonText: 'Musikordner wählen',
+    final old = s.musicDir;
+    final path = await pickMusicFolder(
+      initial: old,
+      confirm: 'Musikordner wählen',
     );
-    if (path == null || path.isEmpty) return;
+    if (path == null || path == old) return;
     await s.setMusicDir(path);
+    if (!s.extraMusicDirs.contains(old)) await MusicFs.release(old);
   }
 
   @override
@@ -186,10 +187,21 @@ class _EmptyLibrary extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Keine Titel gefunden in',
+            context.settings.musicDir.isEmpty
+                ? 'Wählen Sie Ihren Musikordner'
+                : 'Keine Titel gefunden in',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          Text(context.settings.musicDir),
+          if (context.settings.musicDir.isNotEmpty)
+            Text(folderLabel(context.settings.musicDir))
+          else if (Platform.isAndroid)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                'mync bekommt nur Zugriff auf diesen Ordner.',
+                textAlign: TextAlign.center,
+              ),
+            ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,

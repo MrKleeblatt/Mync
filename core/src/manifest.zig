@@ -63,6 +63,8 @@ pub const ScanReport = struct {
     added: u32 = 0,
     removed: u32 = 0,
     errors: []const ScanError = &.{},
+    /// Neu einzulesende Dateien ohne `Listed.src` (siehe `scanEntries`).
+    needed: []const []const u8 = &.{},
 };
 
 pub const Manifest = struct {
@@ -146,17 +148,8 @@ pub const Manifest = struct {
     /// `gpa` sollte eine Arena sein; der Bericht lebt in ihr.
     pub fn scan(m: Manifest, gpa: Allocator) !ScanReport {
         const io = m.io;
-        var report: ScanReport = .{};
         var errors: std.ArrayList(ScanError) = .empty;
-
-        var known: std.StringHashMapUnmanaged(FileRow) = .empty;
-        for (try m.files(gpa)) |f| try known.put(gpa, f.entry.path, f);
-        var seen: std.StringHashMapUnmanaged(void) = .empty;
-
-        const Fresh = struct { row: FileRow };
-        var fresh: std.ArrayList(Fresh) = .empty;
-        var jobs: std.ArrayList(HashJob) = .empty;
-        const prog = m.progress;
+        var listed: std.ArrayList(Listed) = .empty;
 
         var root_dir = try Io.Dir.cwd().openDir(io, m.root, .{ .iterate = true });
         defer root_dir.close(io);
@@ -188,19 +181,59 @@ pub const Manifest = struct {
                 continue;
             };
             if (st.kind != .file) continue;
+            try listed.append(gpa, .{ .path = rel, .size = st.size, .mtime_ns = @intCast(st.mtime.nanoseconds), .src = rel });
+        }
+
+        var report = try m.scanEntries(gpa, root_dir, listed.items, true);
+        try errors.appendSlice(gpa, report.errors);
+        report.errors = errors.items;
+        return report;
+    }
+
+    /// Gleicht das Manifest mit einer Auflistung ab (aus `scan` oder von
+    /// außen, z. B. aus der Ordnerfreigabe unter Android, wo es keine Pfade
+    /// gibt). Neue oder geänderte Dateien werden über `Listed.src` relativ
+    /// zu `dir` geöffnet (auch `fd:N:<name>`, siehe `source.openInput`);
+    /// ohne `src` landen sie in `needed` und werden nicht eingelesen.
+    ///
+    /// Mit `final = false` werden verschwundene Dateien nur für erkannte
+    /// Umbenennungen verwendet, aber noch nicht gelöscht – so lässt sich ein
+    /// Scan in Portionen ausführen (je Portion nur wenige offene Dateien)
+    /// und mit einem letzten Aufruf mit `final = true` abschließen.
+    pub fn scanEntries(m: Manifest, gpa: Allocator, dir: Io.Dir, listed: []const Listed, final: bool) !ScanReport {
+        const io = m.io;
+        var report: ScanReport = .{};
+        var errors: std.ArrayList(ScanError) = .empty;
+        var needed: std.ArrayList([]const u8) = .empty;
+
+        var known: std.StringHashMapUnmanaged(FileRow) = .empty;
+        for (try m.files(gpa)) |f| try known.put(gpa, f.entry.path, f);
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
+
+        const Fresh = struct { row: FileRow };
+        var fresh: std.ArrayList(Fresh) = .empty;
+        var jobs: std.ArrayList(HashJob) = .empty;
+        const prog = m.progress;
+
+        for (listed) |l| {
+            if (!hasKnownExt(l.path) or pathExcluded(m.excludes, l.path)) continue;
+            if (seen.contains(l.path)) continue;
             report.total += 1;
             if (prog) |p| _ = @atomicRmw(u32, &p.found, .Add, 1, .monotonic);
-            try seen.put(gpa, rel, {});
-            const mtime_ns: i64 = @intCast(st.mtime.nanoseconds);
-            if (known.get(rel)) |k| {
-                if (k.size == st.size and k.mtime_ns == mtime_ns and k.duration_ms != not_computed) continue; // unverändert
+            try seen.put(gpa, l.path, {});
+            if (known.get(l.path)) |k| {
+                if (k.size == l.size and k.mtime_ns == l.mtime_ns and k.duration_ms != not_computed) continue; // unverändert
             }
+            const src = l.src orelse {
+                try needed.append(gpa, l.path);
+                continue;
+            };
             report.hashed += 1;
-            try jobs.append(gpa, .{ .rel = rel, .size = st.size, .mtime_ns = mtime_ns });
+            try jobs.append(gpa, .{ .rel = l.path, .src = src, .size = l.size, .mtime_ns = l.mtime_ns });
         }
 
         // Neue/geänderte Dateien parallel hashen (ein Thread je CPU-Kern)
-        var pool: HashPool = .{ .root = root_dir, .jobs = jobs.items, .progress = prog };
+        var pool: HashPool = .{ .root = dir, .jobs = jobs.items, .progress = prog };
         defer pool.deinit();
         if (prog) |p| @atomicStore(u32, &p.total, @intCast(jobs.items.len), .release);
         try pool.run(io);
@@ -226,9 +259,6 @@ pub const Manifest = struct {
 
         try m.db.exec("BEGIN");
         errdefer m.db.exec("ROLLBACK") catch {};
-        const del = try m.db.prepare("DELETE FROM file WHERE file_id=?1");
-        defer del.deinit();
-        for (vanished.items) |v| try del.run(.{v.file_id});
 
         const ins = try m.db.prepare(
             \\INSERT INTO file(file_id,path,size,mtime_ns,audio_hash,tag_hash,tags_json,seq,duration_ms,added_ms)
@@ -258,12 +288,52 @@ pub const Manifest = struct {
                 r.duration_ms,       now_ms,
             });
         }
+        if (final) {
+            const del = try m.db.prepare("DELETE FROM file WHERE file_id=?1");
+            defer del.deinit();
+            for (vanished.items) |v| try del.run(.{v.file_id});
+            report.removed = @intCast(vanished.items.len);
+        }
         try m.db.exec("COMMIT");
-        report.removed = @intCast(vanished.items.len);
         report.errors = errors.items;
+        report.needed = needed.items;
         return report;
     }
 };
+
+/// Eine Datei einer Auflistung (siehe `Manifest.scanEntries`).
+pub const Listed = struct {
+    /// Pfad ab dem Musikordner, mit `/`.
+    path: []const u8,
+    size: u64,
+    mtime_ns: i64,
+    /// Zum Öffnen, falls die Datei eingelesen werden muss; null = später.
+    src: ?[]const u8 = null,
+};
+
+/// Wie `isExcluded`, aber für einen ganzen Pfad: auch jeder Ordner auf dem
+/// Weg zählt (und versteckte Ordner wie `.mync-trash`).
+pub fn pathExcluded(excludes: []const []const u8, rel: []const u8) bool {
+    var i: usize = 0;
+    while (i <= rel.len) {
+        const end = std.mem.indexOfScalarPos(u8, rel, i, '/') orelse rel.len;
+        const name = rel[i..end];
+        if (end < rel.len and name.len > 0 and name[0] == '.') return true;
+        if (isExcluded(excludes, rel[0..end], name)) return true;
+        i = end + 1;
+    }
+    return false;
+}
+
+test "Ausschluss für ganze Pfade" {
+    const t = std.testing;
+    const ex = [_][]const u8{ "Hörproben", "Podcasts/Alt" };
+    try t.expect(pathExcluded(&ex, "a/Hörproben/x.mp3"));
+    try t.expect(pathExcluded(&ex, "Podcasts/Alt/2020/x.mp3"));
+    try t.expect(pathExcluded(&ex, ".mync-trash/2024-01-01/x.mp3"));
+    try t.expect(!pathExcluded(&ex, "Podcasts/Neu/x.mp3"));
+    try t.expect(!pathExcluded(&ex, ".x.mp3"));
+}
 
 /// Ausschlussmuster: `*` (ohne `/`), `**` (beliebig), `?`; Groß-/Klein-
 /// schreibung egal. Ein Muster ohne `/` gilt für jeden Datei- oder
@@ -349,6 +419,8 @@ pub const ScanProgress = extern struct {
 
 const HashJob = struct {
     rel: []const u8,
+    /// Zum Öffnen relativ zu `HashPool.root` (auch `fd:N:<name>`).
+    src: []const u8,
     size: u64,
     mtime_ns: i64,
     audio_hash: []const u8 = "",
@@ -403,11 +475,11 @@ const HashPool = struct {
             const j = &p.jobs[i];
             _ = tmp.reset(.retain_capacity);
             const a = tmp.allocator();
-            if (hashFile(a, io, p.root, j.rel)) |h| {
+            if (hashFile(a, io, p.root, j.src)) |h| {
                 j.audio_hash = keep.dupe(u8, h.audio_hash) catch "";
                 j.tag_hash = keep.dupe(u8, h.tag_hash) catch "";
                 j.tags_json = keep.dupe(u8, h.tags_json) catch "";
-                j.duration_ms = if (duration.ofFile(io, p.root, j.rel)) |d| @intCast(d) else -1;
+                j.duration_ms = if (duration.ofFile(io, p.root, j.src)) |d| @intCast(d) else -1;
                 if (j.audio_hash.len == 0 or j.tags_json.len == 0) j.err = "OutOfMemory";
             } else |err| {
                 j.err = @errorName(err);

@@ -88,6 +88,37 @@ export fn mync_scan(root: [*:0]const u8, db: [*:0]const u8, excludes_json: [*:0]
     return call(scan, .{ std.mem.span(root), std.mem.span(db), std.mem.span(excludes_json), progress });
 }
 
+const ListingSummary = struct {
+    total: u32,
+    hashed: u32,
+    added: u32,
+    removed: u32,
+    errors: []const []const u8,
+    needed: []const []const u8,
+};
+
+fn scanListing(a: std.mem.Allocator, io: Io, db: [:0]const u8, listing_json: []const u8, excludes_json: []const u8, final: bool, progress: ?*core.manifest.ScanProgress) !ListingSummary {
+    if (std.fs.path.dirname(db)) |d| try Io.Dir.cwd().createDirPath(io, d);
+    var m = try core.manifest.Manifest.open(io, db, "");
+    defer m.close();
+    m.progress = progress;
+    if (excludes_json.len > 0) m.excludes = try std.json.parseFromSliceLeaky([]const []const u8, a, excludes_json, .{});
+    const listed = try std.json.parseFromSliceLeaky([]core.manifest.Listed, a, listing_json, .{ .ignore_unknown_fields = true });
+    const r = try m.scanEntries(a, Io.Dir.cwd(), listed, final);
+    const errs = try a.alloc([]const u8, r.errors.len);
+    for (r.errors, errs) |e, *o| o.* = try std.fmt.allocPrint(a, "{s}: {s}", .{ e.path, e.message });
+    return .{ .total = r.total, .hashed = r.hashed, .added = r.added, .removed = r.removed, .errors = errs, .needed = r.needed };
+}
+
+/// Wie `mync_scan`, aber mit einer Auflistung statt eines Ordners (Android:
+/// Ordnerfreigabe ohne Pfade). `listing_json`: Liste von
+/// `{"path","size","mtime_ns","src"?}`; `src` öffnet die Datei (`fd:N:<name>`).
+/// Neu einzulesende Dateien ohne `src` stehen in `needed`. `final != 0`
+/// schließt ab und entfernt verschwundene Dateien (siehe `scanEntries`).
+export fn mync_scan_listing(db: [*:0]const u8, listing_json: [*:0]const u8, excludes_json: [*:0]const u8, final: c_int, progress: ?*core.manifest.ScanProgress) ?[*:0]u8 {
+    return call(scanListing, .{ std.mem.span(db), std.mem.span(listing_json), std.mem.span(excludes_json), final != 0, progress });
+}
+
 const Fields = std.json.ArrayHashMap([]const []const u8);
 const TagsJson = struct { fields: Fields };
 

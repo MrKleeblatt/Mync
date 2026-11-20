@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -17,6 +15,7 @@ import 'global_shortcuts.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
 import 'track_actions.dart';
+import '../core/music_fs.dart';
 
 /// Spul-Knopf passend zur eingestellten Schrittweite.
 class SeekButton extends StatelessWidget {
@@ -850,11 +849,11 @@ class _LyricsViewState extends State<LyricsView> {
 
   Future<Lyrics?> _load(Track t) async {
     final lib = context.library;
-    final lrc = File(
+    final lrc = await MusicFs.tryReadString(
       lib.abs('${t.folder.isEmpty ? '' : '${t.folder}/'}${t.baseName}.lrc'),
     );
-    if (await lrc.exists()) {
-      final l = Lyrics.parse(await lrc.readAsString());
+    if (lrc != null) {
+      final l = Lyrics.parse(lrc);
       if (l != null) return l;
     }
     try {

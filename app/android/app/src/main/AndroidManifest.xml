@@ -1,9 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Musikdateien lesen, umbenennen, löschen und Tags schreiben -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Keine Speicherberechtigung: mync liest und schreibt nur in den
+         Musikordnern, die der Nutzer über die Ordnerauswahl freigibt -->
     <!-- Sync im lokalen Netz -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Wiedergabe im Hintergrund mit Mediensitzung (Benachrichtigung,

@@ -8,6 +8,7 @@ import '../log.dart';
 import 'channel.dart';
 import 'sync_session.dart';
 import 'sync_store.dart';
+import '../core/music_fs.dart';
 
 /// Ein im WLAN gefundenes Gerät.
 class Discovered {
@@ -342,15 +343,18 @@ class SyncService extends ChangeNotifier {
 
   /// Papierkorb-Einträge älter als 30 Tage löschen.
   Future<void> _cleanupTrash() async {
-    final trash = Directory('${host.root}/.mync-trash');
-    if (!await trash.exists()) return;
+    final trash = '${host.root}/.mync-trash';
+    if (host.root.isEmpty || !await MusicFs.isDir(trash)) return;
     final limit = DateTime.now().subtract(const Duration(days: 30));
-    await for (final d in trash.list()) {
-      final name = d.uri.pathSegments.where((s) => s.isNotEmpty).last;
-      final day = DateTime.tryParse(name);
-      if (d is Directory && day != null && day.isBefore(limit)) {
+    for (final d in await MusicFs.list(trash)) {
+      final day = DateTime.tryParse(d.name);
+      if (d.isDir && day != null && day.isBefore(limit)) {
         try {
-          await d.delete(recursive: true);
+          if (MusicFs.isTree(trash)) {
+            await MusicFs.delete('$trash/${d.name}'); // löscht samt Inhalt
+          } else {
+            await Directory('$trash/${d.name}').delete(recursive: true);
+          }
         } catch (_) {}
       }
     }

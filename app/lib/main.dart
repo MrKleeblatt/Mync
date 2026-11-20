@@ -20,6 +20,7 @@ import 'sync/library_sync_host.dart';
 import 'sync/sync_service.dart';
 import 'ui/sync_page.dart';
 import 'update/update_service.dart';
+import 'core/music_fs.dart';
 
 bool? _lastUpdateCheck;
 
@@ -29,6 +30,7 @@ Future<void> main() async {
   logInfo('mync startet (${Platform.operatingSystem})');
   MediaKit.ensureInitialized();
   final settings = await AppSettings.load();
+  MusicFs.tempDir = settings.cacheDir;
   final library = Library(settings);
   final player = PlayerController(settings, library);
   await library.load();

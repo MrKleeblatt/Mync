@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import '../core/mync_core.dart';
 import 'track.dart';
+import '../core/music_fs.dart';
 
 /// Ein Kapitel innerhalb eines Titels.
 class Chapter {
@@ -132,12 +131,8 @@ Future<ChapterList> loadChapters(Track t, String absPath) async {
       ? absPath.substring(0, absPath.lastIndexOf('.'))
       : absPath;
   for (final ext in ['.description', '.chapters.txt', '.txt']) {
-    final f = File('$base$ext');
-    try {
-      if (await f.exists() && await f.length() < 512 * 1024) {
-        texts.add(await f.readAsString());
-      }
-    } catch (_) {}
+    final text = await MusicFs.tryReadString('$base$ext');
+    if (text != null && text.length < 512 * 1024) texts.add(text);
   }
   for (final text in texts) {
     final c = parseTextChapters(text, duration: duration);

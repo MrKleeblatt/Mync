@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../core/mync_core.dart';
+import '../core/music_fs.dart';
 import '../log.dart';
 import '../settings.dart';
 import 'track.dart';
@@ -96,12 +97,12 @@ class Library extends ChangeNotifier {
 
   /// Ordnet weiteren Musikordnern eindeutige Namen zu (kollidiert ein Name
   /// mit einem Ordner im Hauptordner oder einem anderen, wird „ (2)“ angehängt).
-  void _computeRoots() {
+  Future<void> _computeRoots() async {
     final used = <String>{};
     try {
-      for (final e in Directory(root).listSync()) {
-        if (e is Directory) {
-          used.add(e.uri.pathSegments.where((s) => s.isNotEmpty).last);
+      if (root.isNotEmpty) {
+        for (final e in await MusicFs.list(root)) {
+          if (e.isDir) used.add(e.name);
         }
       }
     } catch (_) {}
@@ -112,7 +113,11 @@ class Library extends ChangeNotifier {
           : d;
       if (clean == root) continue;
       final base =
-          clean.split('/').where((s) => s.isNotEmpty).lastOrNull ?? 'Ordner';
+          MusicFs.describe(clean)
+              .split('/')
+              .where((s) => s.isNotEmpty)
+              .lastOrNull ??
+          'Ordner';
       var name = base;
       for (var i = 2; used.contains(name); i++) {
         name = '$base ($i)';
@@ -126,8 +131,9 @@ class Library extends ChangeNotifier {
   /// Liest alle Manifeste und setzt die Präfixe der weiteren Ordner.
   Future<List<Track>> _listAll() async {
     final out = <Track>[
-      for (final i in await listTracks(root: root, db: settings.manifestDb))
-        Track(i),
+      if (root.isNotEmpty)
+        for (final i in await listTracks(root: root, db: settings.manifestDb))
+          Track(i),
     ];
     for (final r in _extra) {
       if (!File(r.db).existsSync()) continue;
@@ -151,7 +157,7 @@ class Library extends ChangeNotifier {
   Future<void> load() async {
     _config = _currentConfig;
     _hide = settings.hideShorterThan;
-    _computeRoots();
+    await _computeRoots();
     try {
       _set(await _listAll());
       logInfo('Bibliothek geladen: ${_all.length} Titel');
@@ -166,43 +172,40 @@ class Library extends ChangeNotifier {
   /// Scannt den Musikordner und lädt danach neu.
   Future<ScanSummary?> refresh() async {
     if (scanning) return null;
-    if (!Directory(root).existsSync()) {
-      logWarning('Musikordner nicht gefunden: $root');
+    if (root.isEmpty) {
+      status = const OpStatus.error('Noch kein Musikordner gewählt');
+      notifyListeners();
+      return null;
+    }
+    // vor dem ersten await sperren, sonst laufen zwei Scans gleichzeitig
+    scanning = true;
+    if (!await _rootReadable(root)) {
+      logWarning('Musikordner nicht gefunden: ${MusicFs.describe(root)}');
+      scanning = false;
       status = const OpStatus.error('Musikordner nicht gefunden');
       notifyListeners();
       return null;
     }
-    scanning = true;
     status = const OpStatus.busy('Lese ein …');
     logInfo('Einlesen gestartet: $root');
     final watch = Stopwatch()..start();
     notifyListeners();
     try {
-      _computeRoots();
+      await _computeRoots();
       final before = {for (final t in _all) t.fileId: t.path};
       scanProgress = (0, 0, 0);
-      final r = await scanLibrary(
-        root: root,
-        db: settings.manifestDb,
-        excludes: settings.excludes,
-        onProgress: _onScanProgress,
-      );
+      final r = await _scan(root, settings.manifestDb);
       var total = r.total, hashed = r.hashed;
       var added = r.added, removed = r.removed;
       final errors = [...r.errors];
       final missing = <String>[];
       for (final x in _extra) {
-        if (!Directory(x.dir).existsSync()) {
-          missing.add(x.dir);
+        if (!await _rootReadable(x.dir)) {
+          missing.add(MusicFs.describe(x.dir));
           continue;
         }
         try {
-          final s = await scanLibrary(
-            root: x.dir,
-            db: x.db,
-            excludes: settings.excludes,
-            onProgress: _onScanProgress,
-          );
+          final s = await _scan(x.dir, x.db);
           total += s.total;
           hashed += s.hashed;
           added += s.added;
@@ -254,6 +257,30 @@ class Library extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<bool> _rootReadable(String dir) async {
+    try {
+      return await MusicFs.isDir(dir);
+    } catch (e) {
+      logWarning('Kein Zugriff auf ${MusicFs.describe(dir)}: $e');
+      return false;
+    }
+  }
+
+  /// Ordner (Linux) oder Ordnerfreigabe (Android) einlesen.
+  Future<ScanSummary> _scan(String dir, String db) => MusicFs.isTree(dir)
+      ? scanTree(
+          tree: dir,
+          db: db,
+          excludes: settings.excludes,
+          onProgress: _onScanProgress,
+        )
+      : scanLibrary(
+          root: dir,
+          db: db,
+          excludes: settings.excludes,
+          onProgress: _onScanProgress,
+        );
 
   void _set(List<Track> all) {
     _all = all;
@@ -396,22 +423,35 @@ class Library extends ChangeNotifier {
     final out = _coverCachePath(t);
     if (File(out).existsSync()) return out;
     try {
-      if (await extractCover(abs(t.path), out)) return out;
+      if (await MusicFs.withReadPath(
+        abs(t.path),
+        (p) => extractCover(p, out),
+      )) {
+        return out;
+      }
     } catch (_) {}
     // 2. Bilddatei im Ordner
-    final dir = Directory(abs(t.folder));
+    final dir = abs(t.folder);
     try {
-      final files = dir.listSync().whereType<File>().toList();
+      final names = [
+        for (final c in await MusicFs.list(dir))
+          if (!c.isDir) c.name,
+      ];
+      String? pick;
       for (final base in _folderCovers) {
-        for (final f in files) {
-          final n = f.uri.pathSegments.last.toLowerCase();
-          if (_imageExt.any((e) => n == '$base.$e')) return f.path;
-        }
+        pick ??= names
+            .where((n) => _imageExt.any((e) => n.toLowerCase() == '$base.$e'))
+            .firstOrNull;
       }
-      for (final f in files) {
-        final n = f.uri.pathSegments.last.toLowerCase();
-        if (_imageExt.any((e) => n.endsWith('.$e'))) return f.path;
-      }
+      pick ??= names
+          .where((n) => _imageExt.any((e) => n.toLowerCase().endsWith('.$e')))
+          .firstOrNull;
+      if (pick == null) return null;
+      final loc = '$dir/$pick';
+      if (!MusicFs.isTree(loc)) return loc;
+      // Ordnerfreigabe: Bild in den Cache holen (Image.file, Benachrichtigung)
+      await MusicFs.copyOut(loc, out);
+      return out;
     } catch (_) {}
     return null;
   }

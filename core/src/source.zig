@@ -9,7 +9,7 @@ pub const Source = struct {
     len: u64,
 
     pub fn open(io: Io, dir: Io.Dir, path: []const u8) !Source {
-        const file = try dir.openFile(io, path, .{});
+        const file = try openInput(io, dir, path);
         errdefer file.close(io);
         const len = try file.length(io);
         return .{ .file = file, .io = io, .len = len };
@@ -39,6 +39,49 @@ pub const Source = struct {
         return buf;
     }
 };
+
+/// Öffnet `path` zum Lesen. `fd:N:<name>` steht für einen schon offenen
+/// Dateideskriptor N (Android: Datei aus der Ordnerfreigabe, dort gibt es
+/// keine Pfade); `<name>` liefert nur die Endung für die Formaterkennung.
+/// Der Deskriptor wird dupliziert – der Aufrufer schließt seinen selbst.
+pub fn openInput(io: Io, dir: Io.Dir, path: []const u8) !Io.File {
+    if (fdOf(path)) |fd| {
+        const d = std.c.dup(fd);
+        if (d < 0) return error.BadFileDescriptor;
+        return .{ .handle = d, .flags = .{ .nonblocking = false } };
+    }
+    return dir.openFile(io, path, .{});
+}
+
+/// Deskriptor aus `fd:N:<name>`, sonst null.
+pub fn fdOf(path: []const u8) ?std.posix.fd_t {
+    if (!std.mem.startsWith(u8, path, "fd:")) return null;
+    const rest = path[3..];
+    const end = std.mem.indexOfScalar(u8, rest, ':') orelse rest.len;
+    return std.fmt.parseInt(std.posix.fd_t, rest[0..end], 10) catch null;
+}
+
+test "fd:N:<name>" {
+    try std.testing.expectEqual(@as(?std.posix.fd_t, 12), fdOf("fd:12:A/x.mp3"));
+    try std.testing.expectEqual(@as(?std.posix.fd_t, 3), fdOf("fd:3"));
+    try std.testing.expectEqual(@as(?std.posix.fd_t, null), fdOf("fd/x.mp3"));
+    try std.testing.expectEqual(@as(?std.posix.fd_t, null), fdOf("A/x.mp3"));
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.testing.io;
+    try tmp.dir.writeFile(io, .{ .sub_path = "a.bin", .data = "hallo" });
+    const f = try tmp.dir.openFile(io, "a.bin", .{});
+    defer f.close(io);
+    var buf: [32]u8 = undefined;
+    const name = try std.fmt.bufPrint(&buf, "fd:{d}:a.bin", .{f.handle});
+    const s = try Source.open(io, std.Io.Dir.cwd(), name);
+    var got: [5]u8 = undefined;
+    try s.readExactAt(&got, 0);
+    s.close(); // schließt nur das Duplikat
+    try std.testing.expectEqualStrings("hallo", &got);
+    try std.testing.expectEqual(@as(u64, 5), try f.length(io));
+}
 
 pub fn readU32Be(b: []const u8) u32 {
     return std.mem.readInt(u32, b[0..4], .big);

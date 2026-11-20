@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 
 import '../backup/backup.dart';
+import '../core/music_fs.dart';
 import '../core/mync_core.dart';
 import '../log.dart';
+import 'folder_picker.dart';
 import 'global_shortcuts.dart';
 import 'scope.dart';
 import 'log_page.dart';
@@ -34,40 +36,46 @@ class SettingsPage extends StatelessWidget {
             leading: const Icon(Icons.folder),
             title: const Text('Musikordner'),
             subtitle: Text(
-              '${s.musicDir}\nHauptordner, wird mit dem Handy abgeglichen',
+              '${folderLabel(s.musicDir)}\nHauptordner, wird mit dem Handy abgeglichen',
             ),
             isThreeLine: true,
             onTap: () async {
-              final p = await getDirectoryPath(
-                initialDirectory: s.musicDir,
-                confirmButtonText: 'Wählen',
-              );
-              if (p != null && p.isNotEmpty) await s.setMusicDir(p);
+              final old = s.musicDir;
+              final p = await pickMusicFolder(initial: old);
+              if (p == null || p == old) return;
+              await s.setMusicDir(p);
+              if (!s.extraMusicDirs.contains(old)) await MusicFs.release(old);
             },
           ),
           for (final d in s.extraMusicDirs)
             ListTile(
               leading: const Icon(Icons.folder_outlined),
               title: Text(
-                d.split('/').where((x) => x.isNotEmpty).lastOrNull ?? d,
+                folderLabel(d)
+                        .split('/')
+                        .where((x) => x.isNotEmpty)
+                        .lastOrNull ??
+                    d,
               ),
               subtitle: Text(
-                '$d\nWeiterer Ordner, erscheint in der Bibliothek als eigener Ordner',
+                '${folderLabel(d)}\nWeiterer Ordner, erscheint in der Bibliothek als eigener Ordner',
               ),
               isThreeLine: true,
               trailing: IconButton(
                 tooltip: 'Ordner entfernen (Dateien bleiben erhalten)',
                 icon: const Icon(Icons.remove_circle_outline),
-                onPressed: () =>
-                    s.setExtraMusicDirs([...s.extraMusicDirs]..remove(d)),
+                onPressed: () async {
+                  await s.setExtraMusicDirs([...s.extraMusicDirs]..remove(d));
+                  if (d != s.musicDir) await MusicFs.release(d);
+                },
               ),
             ),
           ListTile(
             leading: const Icon(Icons.create_new_folder_outlined),
             title: const Text('Weiteren Musikordner hinzufügen …'),
             onTap: () async {
-              final p = await getDirectoryPath(confirmButtonText: 'Hinzufügen');
-              if (p == null || p.isEmpty) return;
+              final p = await pickMusicFolder(confirm: 'Hinzufügen');
+              if (p == null) return;
               if (p == s.musicDir || s.extraMusicDirs.contains(p)) return;
               await s.setExtraMusicDirs([...s.extraMusicDirs, p]);
             },
@@ -458,10 +466,35 @@ Future<void> _createBackup(
   final d = DateTime.now();
   final name =
       'mync-${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}.${Backup.extension}';
-  String? path;
   if (Platform.isAndroid) {
-    path = '/storage/emulated/0/Download/$name';
-  } else {
+    // Ohne Speicherberechtigung: erst in den Cache, dann „Speichern unter“
+    // des Systems (Downloads, Drive, …)
+    await runStatus<int?>(
+      report,
+      () async {
+        await player.saveNow();
+        final tmp = await Backup.create(
+          settings,
+          '${settings.cacheDir}/$name',
+          pairings: pairings,
+        );
+        try {
+          final bytes = await tmp.readAsBytes();
+          final uri = await MusicFs.saveDocument(name, bytes);
+          return uri == null ? null : bytes.length;
+        } finally {
+          await tmp.delete();
+        }
+      },
+      busy: 'Sichere …',
+      ok: (n) => n == null ? 'Abgebrochen' : 'Gesichert (${formatSize(n)})',
+      failText: 'Sicherung fehlgeschlagen',
+      logWhat: 'Sicherung',
+    );
+    return;
+  }
+  String? path;
+  {
     final loc = await getSaveLocation(
       suggestedName: name,
       acceptedTypeGroups: const [

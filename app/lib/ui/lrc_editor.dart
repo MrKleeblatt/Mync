@@ -10,6 +10,7 @@ import '../library/track.dart';
 import 'global_shortcuts.dart';
 import 'scope.dart';
 import 'status_line.dart';
+import '../core/music_fs.dart';
 
 Future<void> showLrcEditor(BuildContext context, Track track) =>
     showDialog<void>(
@@ -65,12 +66,10 @@ class _LrcEditorState extends State<LrcEditor> {
   Future<void> _load() async {
     String? text;
     var fromFile = false;
-    final lrc = File(lrcPathFor(context, widget.track));
+    final lrc = lrcPathFor(context, widget.track);
     final abs = context.library.abs(widget.track.path);
-    if (await lrc.exists()) {
-      text = await lrc.readAsString();
-      fromFile = true;
-    }
+    text = await MusicFs.tryReadString(lrc);
+    if (text != null) fromFile = true;
     try {
       final tags = await readTags(abs);
       _writable = tags.writable;
@@ -209,7 +208,7 @@ class _LrcEditorState extends State<LrcEditor> {
       _status = const OpStatus.busy('Speichere …');
     });
     try {
-      final lrc = File(lrcPathFor(context, t));
+      final lrc = lrcPathFor(context, t);
       if (_toTags) {
         final abs = lib.abs(t.path);
         final tags = await readTags(abs);
@@ -218,10 +217,10 @@ class _LrcEditorState extends State<LrcEditor> {
           'lyrics': [text.trimRight()],
         });
         // eine alte .lrc hätte Vorrang – entfernen
-        if (await lrc.exists()) await lrc.delete();
+        if (await MusicFs.exists(lrc)) await MusicFs.delete(lrc);
         await lib.refresh();
       } else {
-        await lrc.writeAsString(text, flush: true);
+        await MusicFs.writeString(lrc, text);
       }
       lib.lyricsChanged();
       logInfo(
