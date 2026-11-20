@@ -1,6 +1,7 @@
 // Braucht den Zig-Kern (LD_LIBRARY_PATH=../core/zig-out/lib).
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mync/library/library.dart';
@@ -41,6 +42,11 @@ void main() {
     await s.setExtraMusicDirs(['${tmp.path}/Platte2/Hörbücher']);
     await s.setExcludes(['*.wav', 'Hörproben']);
     final lib = Library(s);
+    // Wie in der App hängt etwas Unübertragbares an der Bibliothek (dort der
+    // Player); der Scan im Hintergrund-Isolate darf es nicht mitnehmen.
+    final port = ReceivePort();
+    addTearDown(port.close);
+    lib.onRenamed = (_) => port.sendPort.send(1);
     await lib.load();
     await lib.refresh();
 

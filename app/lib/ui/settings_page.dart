@@ -5,7 +5,6 @@ import 'dart:io';
 
 import '../backup/backup.dart';
 import '../core/mync_core.dart';
-import 'app_theme.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
 import 'update_widgets.dart';
@@ -197,21 +196,6 @@ class SettingsPage extends StatelessWidget {
             ),
           ),
           const _Section('Darstellung'),
-          ListTile(
-            leading: const Icon(Icons.dark_mode),
-            title: const Text('Design'),
-            subtitle: s.design == AppDesign.graphite
-                ? const Text('Dunkel, warme Grautöne, Kupfer-Akzent')
-                : null,
-            trailing: SegmentedButton<AppDesign>(
-              segments: [
-                for (final d in AppDesign.values)
-                  ButtonSegment(value: d, label: Text(d.label)),
-              ],
-              selected: {s.design},
-              onSelectionChanged: (v) => s.setDesign(v.first),
-            ),
-          ),
           SwitchListTile(
             secondary: const Icon(Icons.graphic_eq),
             title: const Text('Visualisierung'),

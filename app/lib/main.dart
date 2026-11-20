@@ -89,11 +89,9 @@ class MyncApp extends StatelessWidget {
       builder: (context, _) => MaterialApp(
         title: 'mync',
         debugShowCheckedModeBanner: false,
-        theme: standardTheme(Brightness.light),
-        darkTheme: settings.design == AppDesign.graphite
-            ? graphiteTheme()
-            : standardTheme(Brightness.dark),
-        themeMode: settings.themeMode,
+        // ein einziges Design: „Graphit“
+        theme: graphiteTheme(),
+        themeMode: ThemeMode.dark,
         builder: (context, child) => GlobalShortcuts(
           player: player,
           child: ListenableBuilder(

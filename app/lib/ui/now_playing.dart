@@ -593,39 +593,49 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
               ),
             ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  tooltip: 'Warteschlange mischen',
-                  onPressed: player.shuffleQueue,
-                  icon: const Icon(Icons.shuffle),
+            // Passt sich der Breite an: auf dem Handy werden alle Knöpfe
+            // gleichmäßig kleiner, statt über den Rand zu ragen
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Warteschlange mischen',
+                      onPressed: player.shuffleQueue,
+                      icon: const Icon(Icons.shuffle),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      iconSize: 36,
+                      tooltip: 'Vorheriger Titel',
+                      onPressed: player.previous,
+                      icon: const Icon(Icons.skip_previous),
+                    ),
+                    const SeekButton(forward: false, size: 30),
+                    const SizedBox(width: 4),
+                    IconButton.filled(
+                      iconSize: 48,
+                      onPressed: player.queue.isEmpty ? null : player.playPause,
+                      icon: Icon(
+                        player.playing ? Icons.pause : Icons.play_arrow,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const SeekButton(forward: true, size: 30),
+                    IconButton(
+                      iconSize: 36,
+                      tooltip: 'Nächster Titel',
+                      onPressed: player.next,
+                      icon: const Icon(Icons.skip_next),
+                    ),
+                    const SizedBox(width: 8),
+                    _RepeatButton(player: player),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  iconSize: 36,
-                  tooltip: 'Vorheriger Titel',
-                  onPressed: player.previous,
-                  icon: const Icon(Icons.skip_previous),
-                ),
-                const SeekButton(forward: false, size: 30),
-                const SizedBox(width: 4),
-                IconButton.filled(
-                  iconSize: 48,
-                  onPressed: player.queue.isEmpty ? null : player.playPause,
-                  icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
-                ),
-                const SizedBox(width: 4),
-                const SeekButton(forward: true, size: 30),
-                IconButton(
-                  iconSize: 36,
-                  tooltip: 'Nächster Titel',
-                  onPressed: player.next,
-                  icon: const Icon(Icons.skip_next),
-                ),
-                const SizedBox(width: 8),
-                _RepeatButton(player: player),
-              ],
+              ),
             ),
             const SizedBox(height: 8),
             Wrap(

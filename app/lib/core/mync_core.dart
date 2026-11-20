@@ -319,27 +319,37 @@ Future<ScanSummary> scanLibrary({
     });
   }
   try {
-    return await Isolate.run(() {
-      final lib = _Lib.instance;
-      final a = root.toNativeUtf8();
-      final b = db.toNativeUtf8();
-      final c = jsonEncode(excludes).toNativeUtf8();
-      try {
-        return ScanSummary.fromJson(
-          lib._result(lib.scan(a, b, c, Pointer<Uint32>.fromAddress(address)))
-              as Map<String, dynamic>,
-        );
-      } finally {
-        malloc.free(a);
-        malloc.free(b);
-        malloc.free(c);
-      }
-    });
+    return await _scanInIsolate(root, db, jsonEncode(excludes), address);
   } finally {
     timer?.cancel();
     calloc.free(counters);
   }
 }
+
+/// Eigene Funktion, damit die Closure für den Isolate nur diese einfachen
+/// Werte mitnimmt (nicht den Fortschritts-Callback und was an ihm hängt).
+Future<ScanSummary> _scanInIsolate(
+  String root,
+  String db,
+  String excludesJson,
+  int progressAddress,
+) => Isolate.run(() {
+  final lib = _Lib.instance;
+  final a = root.toNativeUtf8();
+  final b = db.toNativeUtf8();
+  final c = excludesJson.toNativeUtf8();
+  try {
+    return ScanSummary.fromJson(
+      lib._result(
+        lib.scan(a, b, c, Pointer<Uint32>.fromAddress(progressAddress)),
+      ) as Map<String, dynamic>,
+    );
+  } finally {
+    malloc.free(a);
+    malloc.free(b);
+    malloc.free(c);
+  }
+});
 
 /// Liefert alle Audiodateien aus dem Manifest, sortiert nach Pfad.
 Future<List<TrackInfo>> listTracks({

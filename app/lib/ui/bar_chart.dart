@@ -1,19 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'app_theme.dart';
-
-/// Säulenfarbe (eine Reihe, daher keine Legende – der Titel benennt sie).
-/// Geprüft mit dem Palette-Validator: hell #00876A auf #F5FBF7,
-/// dunkel #22A884 auf #0F1513 (Helligkeit, Sättigung, Kontrast ≥ 3:1).
-Color barColor(BuildContext context) {
-  final scheme = Theme.of(context).colorScheme;
-  // Graphit: Kupfer, für Flächen auf Dunkel abgedunkelt (geprüft:
-  // Helligkeitsband und Kontrast ≥ 3:1 gegen #16171A)
-  if (scheme.primary == graphiteCopper) return const Color(0xFFBD8340);
-  return scheme.brightness == Brightness.dark
-      ? const Color(0xFF22A884)
-      : const Color(0xFF00876A);
-}
+/// Säulenfarbe (eine Reihe, daher keine Legende – der Titel benennt sie):
+/// Kupfer, für Flächen auf Dunkel abgedunkelt. Geprüft mit dem
+/// Palette-Validator gegen #16171A (Helligkeitsband, Kontrast ≥ 3:1).
+Color barColor(BuildContext context) => const Color(0xFFBD8340);
 
 /// Schlichtes Säulendiagramm: schmale Säulen mit 4-px-Rundung oben, 2 px
 /// Abstand, zurückhaltende Grundlinie, Tooltip beim Überfahren (Trefferfläche

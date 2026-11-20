@@ -1,27 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Wählbare Designs.
-enum AppDesign {
-  system('System'),
-  light('Hell'),
-  dark('Dunkel'),
-  graphite('Graphit');
-
-  const AppDesign(this.label);
-  final String label;
-}
-
 /// Akzentfarbe von „Graphit“.
 const graphiteCopper = Color(0xFFD9A35B);
-
-/// Standard-Design (Material 3 aus einer Grundfarbe).
-ThemeData standardTheme(Brightness b) => ThemeData(
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: const Color(0xFF2E7D6B),
-    brightness: b,
-  ),
-  useMaterial3: true,
-);
 
 /// „Graphit“: fast schwarz, warme Grautöne, Kupfer als Akzent, flache
 /// Formen. Bewusst kein automatisch erzeugtes Farbschema und keine
