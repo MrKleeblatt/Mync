@@ -22,6 +22,14 @@ class Library extends ChangeNotifier {
   Map<String, Track> _byPath = const {};
   Map<String, Track> _byId = const {};
   bool scanning = false;
+
+  /// Fortschritt des laufenden Scans: gefunden, davon neu einzulesen, fertig.
+  (int found, int total, int done) scanProgress = (0, 0, 0);
+  void _onScanProgress(int found, int total, int done) {
+    scanProgress = (found, total, done);
+    notifyListeners();
+  }
+
   bool loaded = false;
   String? message;
 
@@ -164,10 +172,12 @@ class Library extends ChangeNotifier {
     try {
       _computeRoots();
       final before = {for (final t in _all) t.fileId: t.path};
+      scanProgress = (0, 0, 0);
       final r = await scanLibrary(
         root: root,
         db: settings.manifestDb,
         excludes: settings.excludes,
+        onProgress: _onScanProgress,
       );
       var total = r.total, hashed = r.hashed;
       var added = r.added, removed = r.removed;
@@ -183,6 +193,7 @@ class Library extends ChangeNotifier {
             root: x.dir,
             db: x.db,
             excludes: settings.excludes,
+            onProgress: _onScanProgress,
           );
           total += s.total;
           hashed += s.hashed;

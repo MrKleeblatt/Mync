@@ -118,7 +118,8 @@ class LibraryPageState extends State<LibraryPage>
                 ],
               ),
             ),
-            if (lib.message != null)
+            if (lib.scanning) _ScanStatus(progress: lib.scanProgress),
+            if (lib.message != null && !lib.scanning)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Align(
@@ -434,6 +435,35 @@ class _AllTracksViewState extends State<AllTracksView> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Fortschritt beim Einlesen: erst Dateien suchen, dann neue einlesen.
+class _ScanStatus extends StatelessWidget {
+  const _ScanStatus({required this.progress});
+  final (int, int, int) progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final (found, total, done) = progress;
+    final theme = Theme.of(context);
+    final text = total == 0
+        ? 'Suche Musik … $found Dateien gefunden'
+        : 'Lese ein … $done von $total neuen Dateien';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(text, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 4),
+          LinearProgressIndicator(
+            value: total == 0 ? null : done / total,
+            minHeight: 3,
+          ),
+        ],
       ),
     );
   }
