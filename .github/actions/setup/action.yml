@@ -48,6 +48,22 @@ runs:
         distribution: temurin
         java-version: "21"
 
+    - if: inputs.android == 'true'
+      name: Gradle robuster gegen Download-Störungen
+      shell: bash
+      run: |
+        mkdir -p ~/.gradle/init.d
+        cp "$GITHUB_WORKSPACE/.github/gradle/mirror.init.gradle" ~/.gradle/init.d/
+        # Bricht ein Download ab, sperrt Gradle die Quelle für den Rest des
+        # Builds („Could not find“ für alles Weitere). Mehr Versuche mit
+        # wachsender Pause verhindern das bei kurzen Aussetzern.
+        cat >> ~/.gradle/gradle.properties <<'PROPS'
+        systemProp.org.gradle.internal.repository.max.tentatives=8
+        systemProp.org.gradle.internal.repository.initial.backoff=1000
+        systemProp.org.gradle.internal.http.connectionTimeout=60000
+        systemProp.org.gradle.internal.http.socketTimeout=60000
+        PROPS
+
     # Gradle-Abhängigkeiten zwischenspeichern: schneller und unabhängiger von
     # kurzen Störungen der Maven-/Plugin-Server
     - if: inputs.android == 'true'

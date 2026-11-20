@@ -1,0 +1,25 @@
+// Zusätzlicher Spiegel von Maven Central (Google), falls repo.maven.apache.org
+// oder plugins.gradle.org vom GitHub-Runner aus kurz nicht liefern. Gradle
+// fragt ihn erst, wenn die eigentlichen Quellen nichts gefunden haben.
+// Nur buildscript- und Settings-Repositories: Projekt-Repositories zu ergänzen
+// verbietet Flutters Gradle-Build (RepositoriesMode.FAIL_ON_PROJECT_REPOS).
+def mirror = 'https://maven-central.storage-download.googleapis.com/maven2/'
+
+// Erst nach dem Settings-Skript anhängen, damit dessen Quellen zuerst
+// gefragt werden. Hat ein Build keine eigenen Plugin-Quellen, gilt sonst
+// nur das Gradle Plugin Portal – das bleibt dann vorn erhalten.
+settingsEvaluated { settings ->
+    def plugins = settings.pluginManagement.repositories
+    if (plugins.isEmpty()) plugins.gradlePluginPortal()
+    plugins.maven { url = mirror }
+    def deps = settings.dependencyResolutionManagement.repositories
+    if (!deps.isEmpty()) deps.maven { url = mirror }
+}
+
+allprojects {
+    buildscript {
+        repositories {
+            maven { url = mirror }
+        }
+    }
+}
