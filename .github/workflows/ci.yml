@@ -7,10 +7,14 @@ name: Prüfen und bauen
 on:
   pull_request:
     branches: [master]
+    # synchronize = neuer Push auf die Branch des Pull Requests
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
+# Ein neuer Push auf die Branch bricht den laufenden Lauf desselben Pull
+# Requests ab; der neue Lauf prüft den neuen Stand.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
