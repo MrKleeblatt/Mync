@@ -104,7 +104,16 @@ class UpdateService extends ChangeNotifier {
   Timer? _timer;
 
   /// Nur Linux-Desktop (auf Android aktualisiert man über die APK).
-  bool get supported => Platform.isLinux;
+  /// Selbst-Update möglich? Nicht, wenn eine Paketverwaltung zuständig ist:
+  /// Der Nix-Wrapper setzt MYNC_NO_SELF_UPDATE (geladene Dateien wären dort
+  /// nicht lauffähig, und Nix soll den Stand bestimmen).
+  bool get supported =>
+      Platform.isLinux && Platform.environment['MYNC_NO_SELF_UPDATE'] == null;
+
+  /// Begründung, falls [supported] false ist.
+  String get unsupportedReason => Platform.isLinux
+      ? 'Diese Installation wird über Nix aktualisiert (z. B. nix profile upgrade).'
+      : 'Updates kommen auf Android als neue APK aus dem GitHub-Release.';
 
   String get platform => switch (Abi.current()) {
     Abi.linuxArm64 => 'linux-aarch64',

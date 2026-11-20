@@ -2,8 +2,8 @@ name: Prüfen und bauen
 
 # Jeder Pull Request nach master (Voraussetzung für den Merge, siehe
 # docs/updates.md): Jeder Merge wird ein Release, deshalb muss die Version in
-# app/pubspec.yaml höher sein als der letzte Tag. Danach Kern und App testen
-# und für Linux und Android bauen.
+# app/pubspec.yaml höher sein als der letzte Tag. Danach Kern und App testen,
+# für Linux und Android bauen und die mitgelieferte Nix-Flake prüfen.
 on:
   pull_request:
     branches: [master]
@@ -49,6 +49,14 @@ jobs:
       - name: Linux-App bauen
         working-directory: app
         run: flutter build linux --release
+
+      # Die Flake, die jedem Release beiliegt, gegen diesen Stand prüfen
+      - uses: cachix/install-nix-action@v31
+      - name: Nix-Flake prüfen
+        run: |
+          version=$(sed -n 's/^version: \([0-9.]*\).*/\1/p' app/pubspec.yaml)
+          tools/release/stage_linux.sh app/build/linux/x64/release/bundle "$version" stage
+          (cd stage && nix flake check -L path:.)
 
   android:
     name: Android (APK)

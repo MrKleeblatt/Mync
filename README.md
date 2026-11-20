@@ -25,6 +25,26 @@ Sleeptimer, Mini-Player, mehrere Musikordner, Sicherung, Medientasten (MPRIS),
 **Teil-Updates** direkt aus den GitHub-Releases. Ohne Konto, ohne Werbung.
 Details: [docs/funktionen.md](docs/funktionen.md), Updates: [docs/updates.md](docs/updates.md).
 
+## Installation mit Nix
+
+Jedem Release liegt eine Flake bei (im Linux-Tarball, mit festgelegtem
+nixpkgs in `flake.lock`, beim Release geprüft):
+
+```bash
+nix run https://github.com/MrKleeblatt/mync/releases/latest/download/mync-linux-x86_64.tar.gz
+```
+
+Dauerhaft installieren (mit Eintrag im Anwendungsmenü):
+
+```bash
+nix profile install https://github.com/MrKleeblatt/mync/releases/latest/download/mync-linux-x86_64.tar.gz
+```
+
+Aktualisiert wird dann über Nix (`nix profile upgrade`); das Selbst-Update
+der App ist in dieser Variante abgeschaltet. Auf NixOS braucht es
+`hardware.graphics.enable = true;`, auf anderen Distributionen startet man
+Nix-Grafikprogramme wie üblich über [nixGL](https://github.com/nix-community/nixGL).
+
 ## Installation unter Arch Linux
 
 ```bash

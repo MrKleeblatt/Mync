@@ -148,11 +148,12 @@ class UpdateSettings extends StatelessWidget {
     final u = UpdateService.instance;
     final s = context.settings;
     if (u == null || !u.supported) {
-      return const ListTile(
-        leading: Icon(Icons.system_update),
-        title: Text('Updates'),
+      return ListTile(
+        leading: const Icon(Icons.system_update),
+        title: const Text('Updates'),
         subtitle: Text(
-          'Auf diesem Gerät über die APK aus den GitHub-Releases.',
+          u?.unsupportedReason ??
+              'Auf diesem Gerät über die APK aus den GitHub-Releases.',
         ),
       );
     }

@@ -57,11 +57,13 @@ Wie bei Kassenbon ist **jeder Merge nach `master` ein Release**:
      `v<version>` darf es noch nicht geben, und die Version muss höher sein
      als der letzte Tag.
    - **Linux:** `zig build test`, Format-Prüfung, `flutter analyze`,
-     `flutter test` (gegen den gebauten Kern), `flutter build linux`.
+     `flutter test` (gegen den gebauten Kern), `flutter build linux`,
+     `nix flake check` der mitgelieferten Flake (`packaging/nix/flake.nix`).
    - **Android:** `flutter build apk` (baut den Zig-Kern über Gradle mit).
 4. Nach dem Merge startet **„Release“** (`.github/workflows/release.yml`):
    Version noch einmal prüfen, Linux-App mit Teil-Update und signierte
-   APK bauen, Tag `v<version>` auf den Merge-Commit setzen und das Release
+   APK bauen, die mitgelieferte Nix-Flake festlegen (`flake.lock`) und mit
+   `nix flake check` prüfen, Tag `v<version>` auf den Merge-Commit setzen und das Release
    anlegen. Die Änderungsnotizen sind die Commit-Betreffs seit dem letzten
    Tag.
 
@@ -70,7 +72,7 @@ Dateien eines Releases:
 | Datei | Inhalt |
 |---|---|
 | `mync-vX.Y.Z-android-arm64.apk` | Android-App |
-| `mync-linux-x86_64.tar.gz` | Linux-Programm komplett |
+| `mync-linux-x86_64.tar.gz` | Linux-Programm komplett, mit `flake.nix` + `flake.lock` für Nix (`nix run <URL des Tarballs>`) |
 | `update-linux-x86_64.json` (+ `.sig`) | Manifest für Teil-Updates |
 | `f-….gz` | nur die geänderten Programmdateien |
 | `SHA256SUMS` | Prüfsummen |

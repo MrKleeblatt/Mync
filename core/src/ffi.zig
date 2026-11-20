@@ -55,7 +55,7 @@ export fn mync_free(p: ?[*:0]u8) void {
 }
 
 export fn mync_version() [*:0]const u8 {
-    return "0.4.0";
+    return "0.5.0";
 }
 
 // ───────────────────────────── Bibliothek ──────────────────────────────────

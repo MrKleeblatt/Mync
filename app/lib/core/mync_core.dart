@@ -162,10 +162,15 @@ class _Lib {
   static _Lib get instance => _instance ??= _Lib._(_open());
 
   static DynamicLibrary _open() {
-    if (Platform.isLinux || Platform.isAndroid) {
-      // Linux: liegt im Bundle unter lib/ (RPATH $ORIGIN/lib), Android: jniLibs
-      return DynamicLibrary.open('libmync_core.so');
+    if (Platform.isLinux) {
+      // Zuerst neben dem Programm (Bundle: lib/), unabhängig davon, wie der
+      // Suchpfad gesetzt ist (z. B. von Nix' autoPatchelf umgeschrieben)
+      final dir = File(Platform.resolvedExecutable).parent.path;
+      final bundled = File('$dir/lib/libmync_core.so');
+      if (bundled.existsSync()) return DynamicLibrary.open(bundled.path);
+      return DynamicLibrary.open('libmync_core.so'); // Tests, Entwicklung
     }
+    if (Platform.isAndroid) return DynamicLibrary.open('libmync_core.so');
     throw UnsupportedError('mync läuft auf Linux und Android');
   }
 
