@@ -5,6 +5,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
+import '../log.dart';
 import 'applause.dart';
 import 'pcm.dart';
 import 'waveform.dart';
@@ -88,7 +89,7 @@ class AnalysisService extends ChangeNotifier {
           await _analyse(r, path, Duration(milliseconds: durationMs));
           await _save(key, r);
         } catch (e) {
-          debugPrint('mync: Analyse fehlgeschlagen ($path): $e');
+          logWarning('Analyse fehlgeschlagen ($path): $e');
         }
         version++;
         notifyListeners();

@@ -13,6 +13,7 @@ import 'cover_art.dart';
 import 'compact_window.dart';
 import 'lrc_editor.dart';
 import 'visualizer.dart';
+import 'global_shortcuts.dart';
 import 'scope.dart';
 import 'sound_sheets.dart';
 import 'track_actions.dart';
@@ -43,8 +44,8 @@ class SeekButton extends StatelessWidget {
     return IconButton(
       iconSize: size,
       tooltip: forward
-          ? '$step s vor (→, Umschalt+→: 1 min)'
-          : '$step s zurück (←, Umschalt+←: 1 min)',
+          ? '$step s vor${keyHint('→, Umschalt+→: 1 min')}'
+          : '$step s zurück${keyHint('←, Umschalt+←: 1 min')}',
       onPressed: p.queue.isEmpty ? null : () => p.skipBy(forward ? 1 : -1),
       icon: Icon(icon),
     );
@@ -135,19 +136,19 @@ class MiniPlayer extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              tooltip: 'Vorheriger (Strg+←)',
+              tooltip: 'Vorheriger${keyHint('Strg+←')}',
               onPressed: player.previous,
               icon: const Icon(Icons.skip_previous),
             ),
             if (wide) const SeekButton(forward: false),
             IconButton.filled(
-              tooltip: 'Abspielen/Pause (Leertaste)',
+              tooltip: 'Abspielen/Pause${keyHint('Leertaste')}',
               onPressed: player.queue.isEmpty ? null : player.playPause,
               icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
             ),
             if (wide) const SeekButton(forward: true),
             IconButton(
-              tooltip: 'Nächster (Strg+→)',
+              tooltip: 'Nächster${keyHint('Strg+→')}',
               onPressed: player.next,
               icon: const Icon(Icons.skip_next),
             ),
@@ -187,7 +188,7 @@ class MiniPlayer extends StatelessWidget {
                           ),
                           if (CompactWindow.instance.supported)
                             IconButton(
-                              tooltip: 'Mini-Player (Strg+M)',
+                              tooltip: 'Mini-Player${keyHint('Strg+M')}',
                               onPressed: CompactWindow.instance.toggle,
                               icon: const Icon(Icons.picture_in_picture_alt),
                             ),
@@ -553,7 +554,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         IconButton(
-                          tooltip: 'Vorheriges Kapitel (Bild ↑)',
+                          tooltip: 'Vorheriges Kapitel${keyHint('Bild ↑')}',
                           onPressed: player.previousChapter,
                           icon: const Icon(Icons.keyboard_double_arrow_left),
                         ),
@@ -571,7 +572,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                           ),
                         ),
                         IconButton(
-                          tooltip: 'Nächstes Kapitel (Bild ↓)',
+                          tooltip: 'Nächstes Kapitel${keyHint('Bild ↓')}',
                           onPressed: player.nextChapter,
                           icon: const Icon(Icons.keyboard_double_arrow_right),
                         ),
@@ -724,7 +725,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
             child: Scaffold(
               appBar: AppBar(
                 leading: IconButton(
-                  tooltip: 'Schließen (Esc)',
+                  tooltip: 'Schließen${keyHint('Esc')}',
                   icon: const Icon(Icons.expand_more),
                   onPressed: () => Navigator.pop(context),
                 ),

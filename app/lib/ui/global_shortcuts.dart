@@ -1,9 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'compact_window.dart';
 
 import '../player/player_controller.dart';
+
+/// Tastenkürzel-Hinweis für Tooltips, z. B. „ (Strg+M)“ – auf dem Handy
+/// leer (keine Tastatur, die Kürzel gibt es dort nicht).
+String keyHint(String keys) => Platform.isAndroid ? '' : ' ($keys)';
 
 /// Tastenkürzel für die Wiedergabe – gelten auf allen Seiten der App,
 /// aber nicht, solange in einem Textfeld getippt wird (sonst würde z. B. die

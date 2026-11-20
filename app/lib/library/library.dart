@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../core/mync_core.dart';
+import '../log.dart';
 import '../settings.dart';
 import 'track.dart';
 
@@ -31,7 +32,9 @@ class Library extends ChangeNotifier {
   }
 
   bool loaded = false;
-  String? message;
+
+  /// Zustand des letzten Ladens/Einlesens (Details im Logbuch).
+  OpStatus? status;
 
   /// Wird bei erkannten Umbenennungen aufgerufen (alter → neuer Pfad).
   void Function(Map<String, String> renames)? onRenamed;
@@ -151,8 +154,10 @@ class Library extends ChangeNotifier {
     _computeRoots();
     try {
       _set(await _listAll());
-    } catch (e) {
-      message = 'Fehler beim Laden: $e';
+      logInfo('Bibliothek geladen: ${_all.length} Titel');
+    } catch (e, st) {
+      logError('Bibliothek laden fehlgeschlagen', e, st);
+      status = const OpStatus.error('Bibliothek konnte nicht geladen werden');
     }
     loaded = true;
     notifyListeners();
@@ -162,12 +167,15 @@ class Library extends ChangeNotifier {
   Future<ScanSummary?> refresh() async {
     if (scanning) return null;
     if (!Directory(root).existsSync()) {
-      message = 'Musikordner nicht gefunden: $root';
+      logWarning('Musikordner nicht gefunden: $root');
+      status = const OpStatus.error('Musikordner nicht gefunden');
       notifyListeners();
       return null;
     }
     scanning = true;
-    message = null;
+    status = const OpStatus.busy('Lese ein …');
+    logInfo('Einlesen gestartet: $root');
+    final watch = Stopwatch()..start();
     notifyListeners();
     try {
       _computeRoots();
@@ -200,7 +208,8 @@ class Library extends ChangeNotifier {
           added += s.added;
           removed += s.removed;
           errors.addAll(s.errors);
-        } catch (e) {
+        } catch (e, st) {
+          logError('Einlesen von ${x.dir} fehlgeschlagen', e, st);
           errors.add('${x.dir}: $e');
         }
       }
@@ -212,10 +221,22 @@ class Library extends ChangeNotifier {
       }
       _set(tracks);
       if (renames.isNotEmpty) onRenamed?.call(renames);
-      message =
-          '$total Dateien · $added neu · $removed entfernt'
-          '${errors.isEmpty ? '' : ' · ${errors.length} Fehler'}'
-          '${missing.isEmpty ? '' : ' · nicht gefunden: ${missing.join(', ')}'}';
+      for (final e in errors) {
+        logWarning('Nicht lesbar: $e');
+      }
+      for (final m in missing) {
+        logWarning('Weiterer Musikordner nicht gefunden: $m');
+      }
+      final summary = '$total Dateien · $added neu · $removed entfernt';
+      logInfo(
+        'Einlesen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s: '
+        '$summary, $hashed neu eingelesen, ${errors.length} Fehler',
+      );
+      status = errors.isEmpty && missing.isEmpty
+          ? OpStatus.ok(summary)
+          : OpStatus.error(
+              '$summary · ${errors.length + missing.length} nicht lesbar',
+            );
       return ScanSummary(
         total: total,
         hashed: hashed,
@@ -223,8 +244,9 @@ class Library extends ChangeNotifier {
         removed: removed,
         errors: errors,
       );
-    } catch (e) {
-      message = e is MyncCoreException ? e.userMessage : 'Fehler: $e';
+    } catch (e, st) {
+      logError('Einlesen fehlgeschlagen', e, st);
+      status = const OpStatus.error('Einlesen fehlgeschlagen');
       return null;
     } finally {
       scanning = false;

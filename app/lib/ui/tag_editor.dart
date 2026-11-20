@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 
 import '../core/mync_core.dart';
 import '../library/track.dart';
+import '../log.dart';
 import 'cover_art.dart';
 import 'scope.dart';
+import 'status_line.dart';
 
 /// Felder des Editors: (Schlüssel, Beschriftung, mehrwertig mit „;“).
 const _editorFields = <(String, String, bool)>[
@@ -52,7 +54,9 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
   final _mixed = <String>{};
   final _dirty = <String>{};
   List<FileTags>? _loaded;
-  String? _error;
+
+  /// Zustand (lädt / gespeichert / fehlgeschlagen); Details im Logbuch.
+  OpStatus? _status;
   bool _saving = false;
 
   /// Neues Cover (Bilddatei) bzw. Cover entfernen; beides aus = unverändert.
@@ -91,8 +95,11 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
       }
       _dirty.clear();
       setState(() => _loaded = all);
-    } catch (e) {
-      setState(() => _error = e is MyncCoreException ? e.userMessage : '$e');
+    } catch (e, st) {
+      logError('Tags lesen fehlgeschlagen', e, st);
+      setState(
+        () => _status = OpStatus.error(shortError(e, 'Tags nicht lesbar')),
+      );
     }
   }
 
@@ -103,7 +110,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     setState(() {
       _saving = true;
       _done = 0;
-      _error = null;
+      _status = OpStatus.busy('Speichere 0 von ${widget.tracks.length} …');
     });
     try {
       for (var i = 0; i < widget.tracks.length; i++) {
@@ -137,14 +144,24 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
           removeCover: _removeCover,
         );
         lib.invalidateCover(widget.tracks[i]);
-        setState(() => _done = i + 1);
+        logInfo('Tags geschrieben: ${widget.tracks[i].path}');
+        setState(() {
+          _done = i + 1;
+          _status = OpStatus.busy(
+            'Speichere $_done von ${widget.tracks.length} …',
+          );
+        });
       }
       await lib.refresh();
       if (mounted) Navigator.pop(context);
-    } catch (e) {
+    } catch (e, st) {
+      final which = _done < widget.tracks.length
+          ? widget.tracks[_done].path
+          : '';
+      logError('Tags schreiben fehlgeschlagen: $which', e, st);
       setState(() {
         _saving = false;
-        _error = e is MyncCoreException ? e.userMessage : '$e';
+        _status = OpStatus.error(shortError(e, 'Speichern fehlgeschlagen'));
       });
     }
   }
@@ -286,7 +303,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         ? 'Tags von ${widget.tracks.length} Titeln'
         : 'Tags bearbeiten';
     Widget body;
-    if (_loaded == null && _error == null) {
+    if (_loaded == null && _status == null) {
       body = const SizedBox(
         height: 200,
         child: Center(child: CircularProgressIndicator()),
@@ -354,13 +371,10 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
               'Mehrere Künstler/Genres mit „;“ trennen.',
               style: theme.textTheme.bodySmall,
             ),
-            if (_error != null)
+            if (_status != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
+                child: StatusLine(_status),
               ),
           ],
         ),
@@ -370,11 +384,6 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
       title: Text(title),
       content: SizedBox(width: 580, child: body),
       actions: [
-        if (_saving)
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Text('$_done / ${widget.tracks.length}'),
-          ),
         TextButton(
           onPressed: _saving ? null : () => Navigator.pop(context),
           child: const Text('Abbrechen'),

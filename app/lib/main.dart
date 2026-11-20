@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'library/library.dart';
+import 'log.dart';
 import 'player/android_media.dart';
 import 'player/mpris.dart';
 import 'player/player_controller.dart';
@@ -24,6 +25,8 @@ bool? _lastUpdateCheck;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  captureLogs();
+  logInfo('mync startet (${Platform.operatingSystem})');
   MediaKit.ensureInitialized();
   final settings = await AppSettings.load();
   final library = Library(settings);

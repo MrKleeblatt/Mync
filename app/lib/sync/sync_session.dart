@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../core/mync_core.dart';
+import '../log.dart';
 import 'channel.dart';
 import 'sync_store.dart';
 
@@ -68,6 +69,10 @@ class InboxItem {
   bool done = false;
   String? error;
 
+  /// Für das Logbuch: Art und Datei.
+  String get title =>
+      '${remote.kind.name} ${remote.resultPath ?? remote.basePath ?? ''}';
+
   String get ignoreKey =>
       '${remote.kind.name}|${remote.oldEntry?.key ?? ''}|${remote.newEntry?.key ?? ''}';
 }
@@ -122,8 +127,8 @@ class SyncSession extends ChangeNotifier {
         for (final e in remote) SyncEntry.fromJson(e as Map<String, dynamic>),
       ];
       await _computeInbox();
-    } catch (e) {
-      _fail('Sync fehlgeschlagen: $e');
+    } catch (e, st) {
+      _fail('Sync fehlgeschlagen', e, st);
     }
   }
 
@@ -235,7 +240,7 @@ class SyncSession extends ChangeNotifier {
         }
       }
     } catch (e) {
-      if (!closed) _fail('Verbindung unterbrochen: $e');
+      if (!closed) _fail('Verbindung unterbrochen', e);
     }
     for (final c in _pending.values) {
       c.completeError(SyncProtocolException('Verbindung beendet'));
@@ -368,8 +373,14 @@ class SyncSession extends ChangeNotifier {
         changed.addAll(await _makeLocalMatch(localPath, item.remote.newEntry));
         item.done = true;
         item.error = null;
-      } catch (e) {
-        item.error = '$e';
+        logNetwork('Sync ${peer.name}: übernommen ${item.title}');
+      } catch (e, st) {
+        logError(
+          'Sync ${peer.name}: Übernehmen fehlgeschlagen – ${item.title}',
+          e,
+          st,
+        );
+        item.error = 'fehlgeschlagen';
       }
       n++;
       progress = n / todo.length;
@@ -553,8 +564,8 @@ class SyncSession extends ChangeNotifier {
             : 'Abgeschlossen – ${peer.name} entscheidet noch …',
       );
       if (peerFinished) await close();
-    } catch (e) {
-      _fail('Abschluss fehlgeschlagen: $e');
+    } catch (e, st) {
+      _fail('Abschluss fehlgeschlagen', e, st);
     }
   }
 
@@ -567,10 +578,13 @@ class SyncSession extends ChangeNotifier {
 
   void _setStatus(String s) {
     status = s;
+    logNetwork('Sync ${peer.name}: $s');
     notifyListeners();
   }
 
-  void _fail(String msg) {
+  /// Kurze Meldung für die Anzeige, Einzelheiten ins Logbuch.
+  void _fail(String msg, [Object? e, StackTrace? st]) {
+    logError('Sync ${peer.name}: $msg', e, st);
     error = msg;
     status = msg;
     if (!_scanned.isCompleted) _scanned.complete();

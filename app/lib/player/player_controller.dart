@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../analysis/analysis_service.dart';
+import '../log.dart';
 import '../library/chapters.dart';
 import '../library/library.dart';
 import '../library/track.dart';
@@ -225,7 +226,7 @@ class PlayerController extends ChangeNotifier {
       player.stream.playlist.listen(_onPlaylist),
       player.stream.completed.listen(_onCompleted),
       player.stream.error.listen((e) {
-        debugPrint('mpv: $e');
+        logError('Wiedergabe (mpv): $e');
         error = e;
         notifyListeners();
       }),
@@ -256,6 +257,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   static void _debug(String m) {
+    logInfo(m);
     if (Platform.environment['MYNC_DEBUG'] != null) debugPrint('mync: $m');
   }
 

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../core/mync_core.dart';
+import '../log.dart';
 import '../settings.dart';
 import 'update_key.dart';
 
@@ -208,6 +209,7 @@ class UpdateService extends ChangeNotifier {
   }
 
   void _set(UpdateState s, [String? msg]) {
+    if (msg != null && s != UpdateState.error) logInfo('Updates: $msg');
     state = s;
     message = msg;
     notifyListeners();
@@ -220,6 +222,7 @@ class UpdateService extends ChangeNotifier {
 
   Future<List<int>> _get(String url) async {
     final c = _client();
+    final watch = Stopwatch()..start();
     try {
       final req = await c.getUrl(Uri.parse(url));
       req.headers.set(
@@ -231,7 +234,12 @@ class UpdateService extends ChangeNotifier {
         throw const HttpException('nicht gefunden (404)');
       }
       if (res.statusCode != 200) throw HttpException('HTTP ${res.statusCode}');
-      return await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      final body = await res.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      logNetwork(
+        'GET $url → ${res.statusCode}, ${formatBytes(body.length)} in '
+        '${watch.elapsedMilliseconds} ms',
+      );
+      return body;
     } finally {
       c.close();
     }
@@ -360,10 +368,12 @@ class UpdateService extends ChangeNotifier {
       }
       _set(UpdateState.available, 'Version $version verfügbar.');
       if (settings.autoUpdate && !manual) await install();
-    } catch (e) {
+    } catch (e, st) {
+      logError('Update-Prüfung fehlgeschlagen', e, st);
       _set(
         UpdateState.error,
-        'Update-Prüfung fehlgeschlagen: ${e is FormatException ? e.message : e}',
+        // eigene Meldungen (Signatur, Plattform) sind kurz genug
+        e is FormatException ? e.message : 'Update-Prüfung fehlgeschlagen',
       );
     }
   }
@@ -415,13 +425,14 @@ class UpdateService extends ChangeNotifier {
         UpdateState.installed,
         'Version ${info.version} installiert – aktiv nach dem Neustart.',
       );
-    } catch (e) {
+    } catch (e, st) {
+      logError('Update-Installation fehlgeschlagen', e, st);
       try {
         if (await staging.exists()) await staging.delete(recursive: true);
       } catch (_) {}
       _set(
         UpdateState.error,
-        'Update fehlgeschlagen: ${e is FormatException ? e.message : e}',
+        e is FormatException ? e.message : 'Update fehlgeschlagen',
       );
     }
   }

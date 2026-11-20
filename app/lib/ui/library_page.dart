@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../core/storage_access.dart';
 import '../library/track.dart';
+import 'global_shortcuts.dart';
 import 'scope.dart';
+import 'status_line.dart';
 import 'track_actions.dart';
 import 'track_list.dart';
 
@@ -70,7 +72,6 @@ class LibraryPageState extends State<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = context.library;
-    final theme = Theme.of(context);
     return ListenableBuilder(
       listenable: lib,
       builder: (context, _) {
@@ -84,7 +85,7 @@ class LibraryPageState extends State<LibraryPage>
                     child: SearchBar(
                       controller: _search,
                       focusNode: searchFocus,
-                      hintText: 'Bibliothek durchsuchen (Strg+F)',
+                      hintText: 'Bibliothek durchsuchen${keyHint('Strg+F')}',
                       leading: const Icon(Icons.search),
                       trailing: [
                         if (_query.isNotEmpty)
@@ -119,12 +120,12 @@ class LibraryPageState extends State<LibraryPage>
               ),
             ),
             if (lib.scanning) _ScanStatus(progress: lib.scanProgress),
-            if (lib.message != null && !lib.scanning)
+            if (lib.status != null && !lib.scanning)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(lib.message!, style: theme.textTheme.bodySmall),
+                  child: StatusLine(lib.status, dense: true),
                 ),
               ),
             if (_query.isNotEmpty)
@@ -362,7 +363,7 @@ class FolderViewState extends State<FolderView>
         if (subs.isNotEmpty && tracks.isNotEmpty) const Divider(),
       ],
     );
-    return TrackListView(tracks: tracks, header: header);
+    return TrackListView(tracks: tracks, header: header, tapOpensMenu: true);
   }
 
   String _join(String name) => _folder.isEmpty ? name : '$_folder/$name';

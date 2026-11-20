@@ -43,12 +43,16 @@ const groupActions = [
   TrackAction.rename,
 ];
 
+/// Menü beim Antippen eines Titels (Ordneransicht): zuerst Abspielen.
+const tapTrackActions = [TrackAction.play, ...singleTrackActions];
+
 /// Zeigt ein Popup-Menü an [position] und führt die gewählte Aktion aus.
 Future<void> showTrackMenu(
   BuildContext context,
   List<Track> tracks, {
   Offset? position,
   List<TrackAction> actions = singleTrackActions,
+  Future<void> Function()? onPlay,
 }) async {
   final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
   final box = context.findRenderObject() as RenderBox?;
@@ -76,7 +80,9 @@ Future<void> showTrackMenu(
         ),
     ],
   );
-  if (chosen != null && context.mounted) {
+  if (chosen == TrackAction.play && onPlay != null) {
+    await onPlay();
+  } else if (chosen != null && context.mounted) {
     await runTrackAction(context, chosen, tracks);
   }
 }

@@ -6,7 +6,9 @@ import 'scope.dart';
 import 'track_actions.dart';
 
 /// Liste von Titeln. Antippen spielt die Liste ab diesem Titel in der
-/// aktuellen Warteschlange; Rechtsklick/Menü zeigt weitere Aktionen.
+/// aktuellen Warteschlange – oder öffnet mit [tapOpensMenu] das Kontextmenü
+/// (Abspielen ist dort der erste Eintrag); Rechtsklick/Menü zeigt weitere
+/// Aktionen.
 class TrackListView extends StatelessWidget {
   const TrackListView({
     super.key,
@@ -15,7 +17,10 @@ class TrackListView extends StatelessWidget {
     this.showTrackNo = false,
     this.header,
     this.padding = const EdgeInsets.only(bottom: 16),
+    this.tapOpensMenu = false,
   });
+
+  final bool tapOpensMenu;
 
   final List<Track> tracks;
   final bool showCover;
@@ -47,6 +52,7 @@ class TrackListView extends StatelessWidget {
                 tracks.map((e) => e.path).toList(),
                 start: i - offset,
               ),
+              tapOpensMenu: tapOpensMenu,
             );
           },
         );
@@ -65,8 +71,10 @@ class TrackTile extends StatelessWidget {
     this.leadingNumber,
     this.trailing,
     this.subtitle,
+    this.tapOpensMenu = false,
   });
 
+  final bool tapOpensMenu;
   final Track track;
   final VoidCallback onTap;
   final bool selected;
@@ -97,36 +105,52 @@ class TrackTile extends StatelessWidget {
     } else {
       leading = CoverArt(track: track, size: 44);
     }
-    return GestureDetector(
-      onSecondaryTapUp: (d) =>
-          showTrackMenu(context, [track], position: d.globalPosition),
-      onLongPressStart: (d) =>
-          showTrackMenu(context, [track], position: d.globalPosition),
-      child: ListTile(
-        selected: selected,
-        leading: leading,
-        title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis),
-        onTap: onTap,
-        trailing:
-            trailing ??
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(width: 8),
-                Text(
-                  _durationText(context, track),
-                  style: theme.textTheme.bodySmall,
-                ),
-                Builder(
-                  builder: (btnCtx) => IconButton(
-                    tooltip: 'Mehr',
-                    icon: const Icon(Icons.more_vert),
-                    onPressed: () => showTrackMenu(btnCtx, [track]),
+    Offset? tapAt;
+    return Listener(
+      onPointerDown: (e) => tapAt = e.position,
+      child: GestureDetector(
+        onSecondaryTapUp: (d) =>
+            showTrackMenu(context, [track], position: d.globalPosition),
+        onLongPressStart: (d) =>
+            showTrackMenu(context, [track], position: d.globalPosition),
+        child: ListTile(
+          selected: selected,
+          leading: leading,
+          title: Text(
+            track.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis),
+          onTap: tapOpensMenu
+              ? () => showTrackMenu(
+                  context,
+                  [track],
+                  position: tapAt,
+                  actions: tapTrackActions,
+                  onPlay: () async => onTap(),
+                )
+              : onTap,
+          trailing:
+              trailing ??
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 8),
+                  Text(
+                    _durationText(context, track),
+                    style: theme.textTheme.bodySmall,
                   ),
-                ),
-              ],
-            ),
+                  Builder(
+                    builder: (btnCtx) => IconButton(
+                      tooltip: 'Mehr',
+                      icon: const Icon(Icons.more_vert),
+                      onPressed: () => showTrackMenu(btnCtx, [track]),
+                    ),
+                  ),
+                ],
+              ),
+        ),
       ),
     );
   }

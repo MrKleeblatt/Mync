@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../sync/sync_service.dart';
 import '../sync/sync_session.dart';
+import '../log.dart';
 import 'scope.dart';
+import 'status_line.dart';
 import 'track_actions.dart';
 
 /// Die eine Instanz des Sync-Dienstes (in main gesetzt).
@@ -75,11 +77,14 @@ class _OverviewState extends State<_Overview> {
   Future<void> _pair(String host, int port) async {
     try {
       await sync.pairWith(host, port);
-    } catch (e) {
+    } catch (e, st) {
+      logError('Kopplung mit $host:$port fehlgeschlagen', e, st);
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Kopplung fehlgeschlagen: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kopplung fehlgeschlagen – Details im Logbuch'),
+          ),
+        );
       }
     }
   }
@@ -133,10 +138,7 @@ class _OverviewState extends State<_Overview> {
         if (sync.message != null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              sync.message!,
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
+            child: StatusLine(OpStatus.error(sync.message!)),
           ),
         if (p != null) _PairingCard(sync: sync, pairing: p),
         const SizedBox(height: 16),
@@ -502,7 +504,10 @@ class _ItemTile extends StatelessWidget {
       ),
       title: Text(_title(), style: theme.textTheme.bodyMedium),
       subtitle: item.error != null
-          ? Text(item.error!, style: TextStyle(color: theme.colorScheme.error))
+          ? const StatusLine(
+              OpStatus.error('Übernehmen fehlgeschlagen'),
+              dense: true,
+            )
           : subtitle == null
           ? null
           : Text(subtitle),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../player/player_controller.dart';
+import 'global_shortcuts.dart';
 import 'cover_art.dart';
 import 'now_playing.dart';
 
@@ -89,7 +90,7 @@ class CompactPlayerView extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Großes Fenster (Strg+M)',
+                        tooltip: 'Großes Fenster${keyHint('Strg+M')}',
                         onPressed: CompactWindow.instance.toggle,
                         icon: const Icon(Icons.open_in_full),
                       ),
