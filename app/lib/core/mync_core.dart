@@ -5,6 +5,7 @@
 /// Isolate, damit die Oberfläche beim Scannen nicht hängt.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -17,6 +18,12 @@ import '../library/chapters.dart';
 
 typedef _OneStr = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _TwoStr = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef _ScanC = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Uint32>,
+);
 typedef _ThreeStr = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
@@ -109,7 +116,7 @@ class MyncCoreException implements Exception {
 
 class _Lib {
   _Lib._(DynamicLibrary lib)
-    : scan = lib.lookupFunction<_ThreeStr, _ThreeStr>('mync_scan'),
+    : scan = lib.lookupFunction<_ScanC, _ScanC>('mync_scan'),
       listTracks = lib.lookupFunction<_TwoStr, _TwoStr>('mync_list_tracks'),
       readTags = lib.lookupFunction<_OneStr, _OneStr>('mync_read_tags'),
       writeTags = lib.lookupFunction<_ThreeStr, _ThreeStr>('mync_write_tags'),
@@ -133,7 +140,7 @@ class _Lib {
       free = lib.lookupFunction<_FreeC, _FreeDart>('mync_free'),
       version = lib.lookupFunction<_VersionC, _VersionC>('mync_version');
 
-  final _ThreeStr scan;
+  final _ScanC scan;
   final _TwoStr listTracks;
   final _OneStr readTags;
   final _ThreeStr writeTags;
@@ -155,10 +162,15 @@ class _Lib {
   static _Lib get instance => _instance ??= _Lib._(_open());
 
   static DynamicLibrary _open() {
-    if (Platform.isLinux || Platform.isAndroid) {
-      // Linux: liegt im Bundle unter lib/ (RPATH $ORIGIN/lib), Android: jniLibs
-      return DynamicLibrary.open('libmync_core.so');
+    if (Platform.isLinux) {
+      // Zuerst neben dem Programm (Bundle: lib/), unabhängig davon, wie der
+      // Suchpfad gesetzt ist (z. B. von Nix' autoPatchelf umgeschrieben)
+      final dir = File(Platform.resolvedExecutable).parent.path;
+      final bundled = File('$dir/lib/libmync_core.so');
+      if (bundled.existsSync()) return DynamicLibrary.open(bundled.path);
+      return DynamicLibrary.open('libmync_core.so'); // Tests, Entwicklung
     }
+    if (Platform.isAndroid) return DynamicLibrary.open('libmync_core.so');
     throw UnsupportedError('mync läuft auf Linux und Android');
   }
 
@@ -294,15 +306,54 @@ String coreVersion() => _Lib.instance.version().toDartString();
 
 /// Durchsucht den Musikordner [root] und aktualisiert das Manifest [db].
 /// [excludes]: Ausschlussmuster (`*.wav`, `Hörproben`, `Podcasts/**/*.mp3`).
+/// [onProgress]: (gefunden, zu lesen, fertig), etwa dreimal pro Sekunde.
 Future<ScanSummary> scanLibrary({
   required String root,
   required String db,
   List<String> excludes = const [],
-}) => Isolate.run(() {
+  void Function(int found, int total, int done)? onProgress,
+}) async {
+  // Drei Zähler im nativen Speicher: der Kern zählt (aus mehreren Threads),
+  // dieser Isolate liest sie, während der Scan in einem anderen läuft.
+  final counters = calloc<Uint32>(3);
+  final address = counters.address;
+  Timer? timer;
+  if (onProgress != null) {
+    timer = Timer.periodic(const Duration(milliseconds: 300), (_) {
+      onProgress(counters[0], counters[1], counters[2]);
+    });
+  }
+  try {
+    return await _scanInIsolate(root, db, jsonEncode(excludes), address);
+  } finally {
+    timer?.cancel();
+    calloc.free(counters);
+  }
+}
+
+/// Eigene Funktion, damit die Closure für den Isolate nur diese einfachen
+/// Werte mitnimmt (nicht den Fortschritts-Callback und was an ihm hängt).
+Future<ScanSummary> _scanInIsolate(
+  String root,
+  String db,
+  String excludesJson,
+  int progressAddress,
+) => Isolate.run(() {
   final lib = _Lib.instance;
-  return ScanSummary.fromJson(
-    lib.call3(lib.scan, root, db, jsonEncode(excludes)) as Map<String, dynamic>,
-  );
+  final a = root.toNativeUtf8();
+  final b = db.toNativeUtf8();
+  final c = excludesJson.toNativeUtf8();
+  try {
+    return ScanSummary.fromJson(
+      lib._result(
+        lib.scan(a, b, c, Pointer<Uint32>.fromAddress(progressAddress)),
+      ) as Map<String, dynamic>,
+    );
+  } finally {
+    malloc.free(a);
+    malloc.free(b);
+    malloc.free(c);
+  }
 });
 
 /// Liefert alle Audiodateien aus dem Manifest, sortiert nach Pfad.

@@ -50,18 +50,21 @@ Wie bei Kassenbon ist **jeder Merge nach `master` ein Release**:
 
 1. Entwickelt wird auf einem eigenen Branch (z. B. `dev/<thema>`).
 2. Im Branch die Version in `app/pubspec.yaml` erhöhen (z. B.
-   `version: 0.6.0+6`) – die einzige Stelle, an der die Version steht.
+   `version: 0.7.0+7`) und die Adresse in `flake.nix` (`inputs.release.url`)
+   auf dasselbe Release setzen – die Versionsprüfung lehnt Abweichungen ab.
 3. Pull Request nach `master` öffnen. Der Workflow **„Prüfen und bauen“**
    (`.github/workflows/ci.yml`) läuft automatisch:
    - **Version prüfen** (`tools/release/release_check.py`): Den Tag
      `v<version>` darf es noch nicht geben, und die Version muss höher sein
      als der letzte Tag.
    - **Linux:** `zig build test`, Format-Prüfung, `flutter analyze`,
-     `flutter test` (gegen den gebauten Kern), `flutter build linux`.
+     `flutter test` (gegen den gebauten Kern), `flutter build linux`,
+     `nix flake check` der mitgelieferten Flake (`packaging/nix/flake.nix`).
    - **Android:** `flutter build apk` (baut den Zig-Kern über Gradle mit).
 4. Nach dem Merge startet **„Release“** (`.github/workflows/release.yml`):
    Version noch einmal prüfen, Linux-App mit Teil-Update und signierte
-   APK bauen, Tag `v<version>` auf den Merge-Commit setzen und das Release
+   APK bauen, die mitgelieferte Nix-Flake festlegen (`flake.lock`) und mit
+   `nix flake check` prüfen, Tag `v<version>` auf den Merge-Commit setzen und das Release
    anlegen. Die Änderungsnotizen sind die Commit-Betreffs seit dem letzten
    Tag.
 
@@ -70,7 +73,9 @@ Dateien eines Releases:
 | Datei | Inhalt |
 |---|---|
 | `mync-vX.Y.Z-android-arm64.apk` | Android-App |
-| `mync-linux-x86_64.tar.gz` | Linux-Programm komplett |
+| `mync-linux-x86_64.tar.gz` | Linux-Programm komplett, mit `flake.nix` + `flake.lock` für Nix (`nix run <URL des Tarballs>`) |
+| `mync-x86_64.AppImage` | AppImage (libmpv/FFmpeg enthalten), mit eingebetteter Update-Information |
+| `mync-x86_64.AppImage.zsync` | Blockliste: AppImageUpdate/Gear Lever laden nur geänderte Teile |
 | `update-linux-x86_64.json` (+ `.sig`) | Manifest für Teil-Updates |
 | `f-….gz` | nur die geänderten Programmdateien |
 | `SHA256SUMS` | Prüfsummen |
@@ -84,6 +89,37 @@ python3 tools/release/release_check.py
 **Wichtig:** Alte Releases nicht löschen – neuere Manifeste verweisen auf
 deren unveränderte Dateien (bis zur Umstellung nach
 [teilupdates-plan.md](teilupdates-plan.md)).
+
+## Nix
+
+- **Im Release:** Der Linux-Tarball enthält `flake.nix` (aus
+  `packaging/nix/flake.nix`, Version eingesetzt) und `flake.lock`
+  (nixpkgs festgelegt); der Workflow prüft beides mit `nix flake check`.
+- **Im Repository:** `flake.nix` bindet das Release ihrer Version ein
+  (`nix run github:MrKleeblatt/mync`, Tags = Versionen) und bietet
+  `nixosModules.default` und `overlays.default`. Vor dem Release gibt es
+  dessen Tarball noch nicht – PR- und Release-Workflow prüfen die Flake
+  deshalb mit `--override-input release path:stage`.
+- **Updates:** In der Nix-Variante setzt der Wrapper `MYNC_NO_SELF_UPDATE`.
+  Die App sucht weiter nach neuen Versionen, installiert aber nichts,
+  sondern zeigt `nix profile upgrade --refresh mync` (kopierbar). Geprüft:
+  `nix profile upgrade` holt den neuen Tarball hinter derselben Adresse;
+  `--refresh` umgeht den Zwischenspeicher von bis zu einer Stunde.
+
+## AppImage
+
+`tools/release/make_appimage.sh` legt das Flutter-Bundle unverändert nach
+`usr/lib/mync`, bündelt libmpv mit ihren Abhängigkeiten (linuxdeploy) und
+entfernt danach wieder, was jedes Desktop-System mitbringt (GLib, GTK-Umfeld,
+X11/Wayland, Grafik, D-Bus, Krypto …) – gebündelte Kopien davon kollidieren
+sonst mit dem GTK des Systems. Die Werkzeuge haben feste Versionen und werden
+vor dem Ausführen per SHA-256 geprüft. Gebaut wird auf Ubuntu 24.04, das
+AppImage braucht also ein System mit glibc ≥ 2.39.
+
+Die App erkennt das AppImage (`MYNC_PACKAGED=appimage`) und installiert
+nichts selbst – das Abbild ist schreibgeschützt. Sie meldet neue Versionen
+und bietet „Release öffnen“ an; Teil-Updates übernehmen AppImageUpdate oder
+Gear Lever über die `.zsync`-Datei.
 
 ## Einstellungen auf GitHub (einmalig)
 

@@ -103,8 +103,51 @@ class UpdateService extends ChangeNotifier {
   String? installedVersion;
   Timer? _timer;
 
-  /// Nur Linux-Desktop (auf Android aktualisiert man über die APK).
+  /// Nach Updates suchen: nur Linux-Desktop (Android: APK aus dem Release).
   bool get supported => Platform.isLinux;
+
+  /// Von Nix verwaltet (der Wrapper der Flake setzt MYNC_NO_SELF_UPDATE):
+  /// Dann nur benachrichtigen – geladene Dateien wären dort nicht lauffähig,
+  /// und Nix soll den Stand bestimmen.
+  bool get managedByNix =>
+      Platform.environment['MYNC_NO_SELF_UPDATE'] != null ||
+      Platform.environment['MYNC_PACKAGED'] == 'nix';
+
+  /// Läuft als AppImage (AppRun setzt MYNC_PACKAGED, die AppImage-Laufzeit
+  /// APPIMAGE). Das Abbild ist schreibgeschützt; aktualisiert wird die
+  /// AppImage-Datei selbst (AppImageUpdate/zsync oder neu herunterladen).
+  bool get isAppImage =>
+      Platform.environment['MYNC_PACKAGED'] == 'appimage' ||
+      Platform.environment['APPIMAGE'] != null;
+
+  /// Selbst installieren (Teil-Update) möglich?
+  bool get canInstall => supported && !managedByNix && !isAppImage;
+
+  /// Befehl, mit dem man unter Nix aktualisiert.
+  static const nixUpgradeCommand = 'nix profile upgrade --refresh mync';
+
+  /// Seite des neuesten Releases (für AppImage-Nutzer).
+  static const releasePage =
+      'https://github.com/MrKleeblatt/mync/releases/latest';
+
+  /// Hinweis, wie man aktualisiert, wenn die App es nicht selbst kann.
+  String get externalUpdateHint => isAppImage
+      ? 'neues AppImage aus dem Release laden – AppImageUpdate oder Gear Lever '
+            'holen dabei nur die Änderungen'
+      : 'aktualisieren mit: $nixUpgradeCommand';
+
+  /// Release-Seite im Browser öffnen.
+  Future<void> openReleasePage() async {
+    try {
+      await Process.start('xdg-open', [
+        releasePage,
+      ], mode: ProcessStartMode.detached);
+    } catch (_) {}
+  }
+
+  /// Begründung, falls [supported] false ist.
+  String get unsupportedReason =>
+      'Updates kommen auf Android als neue APK aus dem GitHub-Release.';
 
   String get platform => switch (Abi.current()) {
     Abi.linuxArm64 => 'linux-aarch64',
@@ -151,7 +194,7 @@ class UpdateService extends ChangeNotifier {
 
   void start() {
     if (!supported) return;
-    if (restartPending) {
+    if (canInstall && restartPending) {
       installedVersion = userCurrentVersion;
       _set(
         UpdateState.installed,
@@ -273,7 +316,7 @@ class UpdateService extends ChangeNotifier {
       final version = j['version'] as String;
       final have = [
         currentVersion,
-        ?userCurrentVersion,
+        if (canInstall) ?userCurrentVersion,
       ].reduce((a, b) => compareVersions(a, b) >= 0 ? a : b);
       if (compareVersions(version, have) <= 0) {
         available = null;
@@ -290,7 +333,7 @@ class UpdateService extends ChangeNotifier {
         }
       }
       final missing = <UpdateFile>[];
-      for (final f in files) {
+      for (final f in canInstall ? files : const <UpdateFile>[]) {
         final local = File('$bundleDir/${f.path}');
         if (!await local.exists() ||
             await local.length() != f.size ||
@@ -308,6 +351,13 @@ class UpdateService extends ChangeNotifier {
         missing: missing,
         signed: signed,
       );
+      if (!canInstall) {
+        _set(
+          UpdateState.available,
+          'Version $version verfügbar – $externalUpdateHint',
+        );
+        return;
+      }
       _set(UpdateState.available, 'Version $version verfügbar.');
       if (settings.autoUpdate && !manual) await install();
     } catch (e) {
@@ -321,7 +371,9 @@ class UpdateService extends ChangeNotifier {
   /// Lädt die fehlenden Dateien, prüft alles und schaltet auf die neue Version um.
   Future<void> install() async {
     final info = available;
-    if (info == null || state == UpdateState.downloading) return;
+    if (info == null || state == UpdateState.downloading || !canInstall) {
+      return;
+    }
     _set(UpdateState.downloading, 'Lade ${info.missing.length} Datei(en) …');
     progress = 0;
     final versions = Directory('${userRoot.path}/versions');

@@ -10,3 +10,13 @@ zig-out/
 
 # Android-Build-Ausgaben
 app/android/build/
+
+# Nix: zusammengestelltes Release, Build-Links. flake.lock bewusst nicht
+# einchecken – sie könnte das Release dieser Version erst nach dem Merge
+# festhalten; nixpkgs legt die flake.lock im Release-Tarball fest.
+/stage/
+result
+result-*
+/flake.lock
+/.appimage-tools/
+/appimage/

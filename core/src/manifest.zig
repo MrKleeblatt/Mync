@@ -71,6 +71,8 @@ pub const Manifest = struct {
     root: []const u8,
     /// Ausschlussmuster (siehe `isExcluded`), vor `scan` setzen.
     excludes: []const []const u8 = &.{},
+    /// Fortschritt (wird während `scan` aus anderen Threads gelesen).
+    progress: ?*ScanProgress = null,
 
     pub fn open(io: Io, db_path: [:0]const u8, root: []const u8) !Manifest {
         const db = try sqlite.Db.open(db_path);
@@ -153,6 +155,8 @@ pub const Manifest = struct {
 
         const Fresh = struct { row: FileRow };
         var fresh: std.ArrayList(Fresh) = .empty;
+        var jobs: std.ArrayList(HashJob) = .empty;
+        const prog = m.progress;
 
         var root_dir = try Io.Dir.cwd().openDir(io, m.root, .{ .iterate = true });
         defer root_dir.close(io);
@@ -185,23 +189,33 @@ pub const Manifest = struct {
             };
             if (st.kind != .file) continue;
             report.total += 1;
+            if (prog) |p| _ = @atomicRmw(u32, &p.found, .Add, 1, .monotonic);
             try seen.put(gpa, rel, {});
             const mtime_ns: i64 = @intCast(st.mtime.nanoseconds);
             if (known.get(rel)) |k| {
                 if (k.size == st.size and k.mtime_ns == mtime_ns and k.duration_ms != not_computed) continue; // unverändert
             }
             report.hashed += 1;
-            const h = hashFile(gpa, io, ent.dir, ent.basename) catch |err| {
-                try errors.append(gpa, .{ .path = rel, .message = @errorName(err) });
+            try jobs.append(gpa, .{ .rel = rel, .size = st.size, .mtime_ns = mtime_ns });
+        }
+
+        // Neue/geänderte Dateien parallel hashen (ein Thread je CPU-Kern)
+        var pool: HashPool = .{ .root = root_dir, .jobs = jobs.items, .progress = prog };
+        defer pool.deinit();
+        if (prog) |p| @atomicStore(u32, &p.total, @intCast(jobs.items.len), .release);
+        try pool.run(io);
+        for (jobs.items) |j| {
+            if (j.err) |e| {
+                try errors.append(gpa, .{ .path = j.rel, .message = e });
                 continue;
-            };
+            }
             try fresh.append(gpa, .{ .row = .{
                 .file_id = "",
-                .entry = .{ .path = rel, .audio_hash = h.audio_hash, .tag_hash = h.tag_hash },
-                .tags_json = h.tags_json,
-                .size = st.size,
-                .mtime_ns = mtime_ns,
-                .duration_ms = if (duration.ofFile(io, ent.dir, ent.basename)) |d| @intCast(d) else -1,
+                .entry = .{ .path = j.rel, .audio_hash = try gpa.dupe(u8, j.audio_hash), .tag_hash = try gpa.dupe(u8, j.tag_hash) },
+                .tags_json = try gpa.dupe(u8, j.tags_json),
+                .size = j.size,
+                .mtime_ns = j.mtime_ns,
+                .duration_ms = j.duration_ms,
             } });
         }
 
@@ -326,6 +340,83 @@ pub const Hashed = struct {
 };
 
 /// Berechnet `audio_hash`, Tags und `tag_hash` einer Datei.
+/// Fortschritt eines Scans: gefundene Audiodateien, davon zu hashen, fertig.
+pub const ScanProgress = extern struct {
+    found: u32 = 0,
+    total: u32 = 0,
+    done: u32 = 0,
+};
+
+const HashJob = struct {
+    rel: []const u8,
+    size: u64,
+    mtime_ns: i64,
+    audio_hash: []const u8 = "",
+    tag_hash: []const u8 = "",
+    tags_json: []const u8 = "",
+    duration_ms: i64 = -1,
+    err: ?[]const u8 = null,
+};
+
+/// Hasht Dateien parallel. Jeder Thread hat ein eigenes `Io` und eine
+/// eigene Arena für die Ergebnisse; das Lesen einer Datei (inkl. Covern)
+/// geschieht in einer Wegwerf-Arena, damit der Speicher nicht mit der
+/// Größe der Bibliothek wächst.
+const HashPool = struct {
+    root: Io.Dir,
+    jobs: []HashJob,
+    progress: ?*ScanProgress,
+    next: usize = 0,
+    arenas: [max_threads]std.heap.ArenaAllocator = undefined,
+    used: usize = 0,
+
+    const max_threads = 8;
+
+    fn deinit(p: *HashPool) void {
+        for (p.arenas[0..p.used]) |*a| a.deinit();
+    }
+
+    fn run(p: *HashPool, io: Io) !void {
+        _ = io;
+        if (p.jobs.len == 0) return;
+        const cpus = std.Thread.getCpuCount() catch 1;
+        const n = @max(1, @min(@min(cpus, max_threads), p.jobs.len));
+        for (0..n) |i| p.arenas[i] = .init(std.heap.page_allocator);
+        p.used = n;
+        var threads: [max_threads]?std.Thread = @splat(null);
+        for (1..n) |i| {
+            threads[i] = std.Thread.spawn(.{ .stack_size = 2 << 20 }, work, .{ p, i }) catch null;
+        }
+        work(p, 0); // der aufrufende Thread arbeitet mit
+        for (threads[1..n]) |t| if (t) |th| th.join();
+    }
+
+    fn work(p: *HashPool, slot: usize) void {
+        var threaded: Io.Threaded = .init_single_threaded;
+        const io = threaded.io();
+        const keep = p.arenas[slot].allocator();
+        var tmp: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+        defer tmp.deinit();
+        while (true) {
+            const i = @atomicRmw(usize, &p.next, .Add, 1, .monotonic);
+            if (i >= p.jobs.len) break;
+            const j = &p.jobs[i];
+            _ = tmp.reset(.retain_capacity);
+            const a = tmp.allocator();
+            if (hashFile(a, io, p.root, j.rel)) |h| {
+                j.audio_hash = keep.dupe(u8, h.audio_hash) catch "";
+                j.tag_hash = keep.dupe(u8, h.tag_hash) catch "";
+                j.tags_json = keep.dupe(u8, h.tags_json) catch "";
+                j.duration_ms = if (duration.ofFile(io, p.root, j.rel)) |d| @intCast(d) else -1;
+                if (j.audio_hash.len == 0 or j.tags_json.len == 0) j.err = "OutOfMemory";
+            } else |err| {
+                j.err = @errorName(err);
+            }
+            if (p.progress) |pr| _ = @atomicRmw(u32, &pr.done, .Add, 1, .monotonic);
+        }
+    }
+};
+
 pub fn hashFile(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8) !Hashed {
     const a = try audiohash.hashFile(io, dir, path);
     const t = try tags_mod.readFile(gpa, io, dir, path);

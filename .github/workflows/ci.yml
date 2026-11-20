@@ -2,8 +2,8 @@ name: Prüfen und bauen
 
 # Jeder Pull Request nach master (Voraussetzung für den Merge, siehe
 # docs/updates.md): Jeder Merge wird ein Release, deshalb muss die Version in
-# app/pubspec.yaml höher sein als der letzte Tag. Danach Kern und App testen
-# und für Linux und Android bauen.
+# app/pubspec.yaml höher sein als der letzte Tag. Danach Kern und App testen,
+# für Linux und Android bauen und die mitgelieferte Nix-Flake prüfen.
 on:
   pull_request:
     branches: [master]
@@ -49,6 +49,32 @@ jobs:
       - name: Linux-App bauen
         working-directory: app
         run: flutter build linux --release
+
+      - uses: actions/cache@v5
+        with:
+          path: .appimage-tools
+          key: appimage-tools-${{ hashFiles('tools/release/make_appimage.sh') }}
+      - name: AppImage bauen
+        run: |
+          version=$(sed -n 's/^version: \([0-9.]*\).*/\1/p' app/pubspec.yaml)
+          tools/release/make_appimage.sh app/build/linux/x64/release/bundle "$version" appimage
+      # zum Ausprobieren vor dem Merge (Actions → dieser Lauf → Artefakte)
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mync-appimage
+          path: appimage/mync-x86_64.AppImage
+          retention-days: 14
+
+      # Die Flake, die jedem Release beiliegt, gegen diesen Stand prüfen
+      - uses: cachix/install-nix-action@v31
+      - name: Nix-Flake prüfen
+        run: |
+          version=$(sed -n 's/^version: \([0-9.]*\).*/\1/p' app/pubspec.yaml)
+          tools/release/stage_linux.sh app/build/linux/x64/release/bundle "$version" stage
+          (cd stage && nix flake check -L path:.)
+          # Flake im Repository: das Release dieser Version gibt es noch nicht,
+          # deshalb gegen den eben zusammengestellten Stand prüfen
+          nix flake check -L --override-input release "path:$PWD/stage"
 
   android:
     name: Android (APK)

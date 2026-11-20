@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../update/update_service.dart';
 import 'scope.dart';
@@ -19,6 +20,18 @@ class UpdateBanner extends StatelessWidget {
         Widget? content;
         List<Widget> actions = const [];
         switch (u.state) {
+          case UpdateState.available when info != null && !u.canInstall:
+            // Nix/AppImage: nur Hinweis, wie man aktualisiert
+            content = Text(
+              'mync ${info.version} ist verfügbar – ${u.externalUpdateHint}',
+            );
+            actions = [
+              TextButton(
+                onPressed: () => showUpdateDetails(context),
+                child: const Text('Details'),
+              ),
+              const ExternalUpdateButton(),
+            ];
           case UpdateState.available when info != null:
             content = Text(
               'Update auf ${info.version} verfügbar – ${formatBytes(info.downloadBytes)} '
@@ -100,10 +113,13 @@ Future<void> showUpdateDetails(BuildContext context) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Installiert: ${u.currentVersion}'),
-              Text(
-                'Teil-Update: ${info.missing.length} von ${info.files.length} Dateien, '
-                '${formatBytes(info.downloadBytes)} statt ${formatBytes(info.fullBytes)}',
-              ),
+              if (u.canInstall)
+                Text(
+                  'Teil-Update: ${info.missing.length} von ${info.files.length} Dateien, '
+                  '${formatBytes(info.downloadBytes)} statt ${formatBytes(info.fullBytes)}',
+                )
+              else
+                SelectableText(u.externalUpdateHint),
               Text(
                 info.signed
                     ? 'Signatur geprüft ✓'
@@ -127,13 +143,16 @@ Future<void> showUpdateDetails(BuildContext context) {
           onPressed: () => Navigator.pop(ctx),
           child: const Text('Später'),
         ),
-        FilledButton(
-          onPressed: () {
-            Navigator.pop(ctx);
-            u.install();
-          },
-          child: const Text('Installieren'),
-        ),
+        if (u.canInstall)
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              u.install();
+            },
+            child: const Text('Installieren'),
+          )
+        else
+          const ExternalUpdateButton(),
       ],
     ),
   );
@@ -148,11 +167,12 @@ class UpdateSettings extends StatelessWidget {
     final u = UpdateService.instance;
     final s = context.settings;
     if (u == null || !u.supported) {
-      return const ListTile(
-        leading: Icon(Icons.system_update),
-        title: Text('Updates'),
+      return ListTile(
+        leading: const Icon(Icons.system_update),
+        title: const Text('Updates'),
         subtitle: Text(
-          'Auf diesem Gerät über die APK aus den GitHub-Releases.',
+          u?.unsupportedReason ??
+              'Auf diesem Gerät über die APK aus den GitHub-Releases.',
         ),
       );
     }
@@ -190,28 +210,44 @@ class UpdateSettings extends StatelessWidget {
             value: s.updateCheck,
             onChanged: s.setUpdateCheck,
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.download_for_offline_outlined),
-            title: const Text(
-              'Updates automatisch herunterladen und installieren',
+          if (!u.canInstall)
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: Text(
+                u.isAppImage ? 'Läuft als AppImage' : 'Installiert über Nix',
+              ),
+              subtitle: Text(
+                'mync meldet neue Versionen – ${u.externalUpdateHint}.',
+              ),
+              trailing: const ExternalUpdateButton(),
             ),
-            subtitle: const Text(
-              'Nur geänderte Dateien; aktiv nach dem nächsten Start',
+          if (u.canInstall)
+            SwitchListTile(
+              secondary: const Icon(Icons.download_for_offline_outlined),
+              title: const Text(
+                'Updates automatisch herunterladen und installieren',
+              ),
+              subtitle: const Text(
+                'Nur geänderte Dateien; aktiv nach dem nächsten Start',
+              ),
+              value: s.autoUpdate,
+              onChanged: s.updateCheck ? s.setAutoUpdate : null,
             ),
-            value: s.autoUpdate,
-            onChanged: s.updateCheck ? s.setAutoUpdate : null,
-          ),
           if (u.state == UpdateState.available)
             ListTile(
               leading: const Icon(Icons.new_releases_outlined),
               title: Text('Version ${u.available!.version} verfügbar'),
               subtitle: Text(
-                '${formatBytes(u.available!.downloadBytes)} herunterzuladen',
+                u.canInstall
+                    ? '${formatBytes(u.available!.downloadBytes)} herunterzuladen'
+                    : u.externalUpdateHint,
               ),
-              trailing: FilledButton(
-                onPressed: u.install,
-                child: const Text('Installieren'),
-              ),
+              trailing: u.canInstall
+                  ? FilledButton(
+                      onPressed: u.install,
+                      child: const Text('Installieren'),
+                    )
+                  : const ExternalUpdateButton(),
               onTap: () => showUpdateDetails(context),
             ),
           if (u.state == UpdateState.installed)
@@ -225,6 +261,36 @@ class UpdateSettings extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Nix: Befehl kopieren, AppImage: Release-Seite öffnen.
+class ExternalUpdateButton extends StatelessWidget {
+  const ExternalUpdateButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final u = UpdateService.instance;
+    if (u != null && u.isAppImage) {
+      return FilledButton.icon(
+        onPressed: u.openReleasePage,
+        icon: const Icon(Icons.open_in_new, size: 18),
+        label: const Text('Release öffnen'),
+      );
+    }
+    return FilledButton.icon(
+      onPressed: () async {
+        await Clipboard.setData(
+          const ClipboardData(text: UpdateService.nixUpgradeCommand),
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.maybeOf(context)
+              ?.showSnackBar(const SnackBar(content: Text('Befehl kopiert')));
+        }
+      },
+      icon: const Icon(Icons.copy, size: 18),
+      label: const Text('Befehl kopieren'),
     );
   }
 }

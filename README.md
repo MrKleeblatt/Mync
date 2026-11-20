@@ -1,3 +1,5 @@
+<img src="docs/logo.png" alt="mync" width="96" align="right">
+
 # mync
 
 **mync** = *music sync*. Ein Offline-Musikplayer für Linux im Stil von
@@ -22,6 +24,63 @@ Sleeptimer, Mini-Player, mehrere Musikordner, Sicherung, Medientasten (MPRIS),
 **Sync mit dem Handy** (verschlüsselt, jede Änderung bestätigen) – und
 **Teil-Updates** direkt aus den GitHub-Releases. Ohne Konto, ohne Werbung.
 Details: [docs/funktionen.md](docs/funktionen.md), Updates: [docs/updates.md](docs/updates.md).
+
+## AppImage (jede Linux-Distribution)
+
+```bash
+curl -LO https://github.com/MrKleeblatt/mync/releases/latest/download/mync-x86_64.AppImage
+```
+
+```bash
+chmod +x mync-x86_64.AppImage && ./mync-x86_64.AppImage
+```
+
+libmpv und FFmpeg sind enthalten; GTK 3 und der Grafiktreiber kommen vom
+System. Neue Versionen meldet mync selbst. Zum Aktualisieren ein neues
+AppImage laden – oder mit [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate)
+bzw. Gear Lever: Die Update-Information ist eingebettet, dem Release liegt
+eine `.zsync`-Datei bei, geladen werden nur die geänderten Teile.
+
+## Installation mit Nix
+
+```bash
+nix run github:MrKleeblatt/mync
+```
+
+Dauerhaft installieren (mit Eintrag im Anwendungsmenü), auf Wunsch eine
+bestimmte Version (`github:MrKleeblatt/mync/v0.6.0`):
+
+```bash
+nix profile install github:MrKleeblatt/mync
+```
+
+Die Flake im Repository liefert das fertig gebaute Programm aus dem Release
+ihrer Version; nixpkgs ist dort in der `flake.lock` festgelegt und beim
+Release geprüft. Für NixOS gibt es `nixosModules.default` und
+`overlays.default`:
+
+```nix
+{
+  inputs.mync.url = "github:MrKleeblatt/mync";
+  # optional eigenes nixpkgs: inputs.mync.inputs.release.inputs.nixpkgs.follows = "nixpkgs";
+  outputs = { nixpkgs, mync, ... }: {
+    nixosConfigurations.rechner = nixpkgs.lib.nixosSystem {
+      modules = [ mync.nixosModules.default ./configuration.nix ];
+    };
+  };
+}
+```
+
+**Updates:** mync meldet neue Versionen selbst („mync 0.7.0 ist verfügbar“)
+und zeigt den Befehl dazu (`nix profile upgrade --refresh mync`, bei NixOS
+`nix flake update mync` und neu bauen). Selbst installieren kann die
+Nix-Variante nicht – das macht Nix.
+
+Grafik: Auf NixOS braucht es `hardware.graphics.enable = true;` (setzt das
+Modul), auf anderen Distributionen startet man Nix-Grafikprogramme über
+[nixGL](https://github.com/nix-community/nixGL). Auch ohne Repository geht
+es direkt aus dem Release-Tarball:
+`nix run https://github.com/MrKleeblatt/mync/releases/latest/download/mync-linux-x86_64.tar.gz`.
 
 ## Installation unter Arch Linux
 

@@ -1,7 +1,8 @@
 name: Release
 
 # Jeder Merge nach master (nur per Pull Request, siehe docs/updates.md) wird
-# ein Release: Version prüfen, Linux-App mit Teil-Update und Android-APK
+# ein Release: Version prüfen, Linux-App mit Teil-Update, Nix-Flake (im
+# Tarball, mit flake.lock, geprüft), AppImage (+ .zsync) und Android-APK
 # bauen, den Tag v<version> auf den Merge-Commit setzen und das Release mit
 # allen Dateien anlegen. Die Version steht nur in app/pubspec.yaml.
 #
@@ -71,7 +72,26 @@ jobs:
         run: |
           flutter pub get
           flutter test
-          flutter build linux --release --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
+
+      - name: Linux-App bauen
+        working-directory: app
+        run: flutter build linux --release --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
+
+      # Flake für Nix mitliefern: zusammenstellen, nixpkgs festlegen (flake.lock),
+      # prüfen – ohne bestandene Prüfung kein Release
+      - uses: cachix/install-nix-action@v31
+      - name: Flake zusammenstellen und prüfen
+        run: |
+          tools/release/stage_linux.sh app/build/linux/x64/release/bundle "${TAG#v}" stage
+          (cd stage && nix flake lock && nix flake check -L path:.)
+          nix flake check -L --override-input release "path:$PWD/stage"
+
+      - uses: actions/cache@v5
+        with:
+          path: .appimage-tools
+          key: appimage-tools-${{ hashFiles('tools/release/make_appimage.sh') }}
+      - name: AppImage bauen (mit .zsync für Teil-Updates per AppImageUpdate)
+        run: tools/release/make_appimage.sh app/build/linux/x64/release/bundle "${TAG#v}" dist
 
       - name: Manifest des vorigen Releases holen
         run: |
@@ -90,7 +110,7 @@ jobs:
             echo "::warning::Secret MYNC_UPDATE_KEY fehlt – Teil-Updates werden nicht signiert."
           fi
           python3 tools/release/make_update.py \
-            --bundle app/build/linux/x64/release/bundle \
+            --bundle stage \
             --version "${TAG#v}" --platform "$PLATFORM" \
             --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
             --previous "prev/update-$PLATFORM.json" \

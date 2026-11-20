@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'library/library.dart';
+import 'player/android_media.dart';
 import 'player/mpris.dart';
 import 'player/player_controller.dart';
 import 'settings.dart';
@@ -31,6 +32,8 @@ Future<void> main() async {
   await player.init();
   final mpris = Mpris(player);
   unawaited(mpris.start());
+  // Android: Mediensitzung (Benachrichtigung, Medienausgabe, Tasten)
+  if (Platform.isAndroid) unawaited(AndroidMedia.start(player));
   if (settings.scanOnStart) unawaited(library.refresh());
 
   // Sync mit gekoppelten Geräten im Heimnetz
@@ -89,11 +92,9 @@ class MyncApp extends StatelessWidget {
       builder: (context, _) => MaterialApp(
         title: 'mync',
         debugShowCheckedModeBanner: false,
-        theme: standardTheme(Brightness.light),
-        darkTheme: settings.design == AppDesign.graphite
-            ? graphiteTheme()
-            : standardTheme(Brightness.dark),
-        themeMode: settings.themeMode,
+        // ein einziges Design: „Graphit“
+        theme: graphiteTheme(),
+        themeMode: ThemeMode.dark,
         builder: (context, child) => GlobalShortcuts(
           player: player,
           child: ListenableBuilder(
