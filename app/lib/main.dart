@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'library/library.dart';
+import 'player/android_media.dart';
 import 'player/mpris.dart';
 import 'player/player_controller.dart';
 import 'settings.dart';
@@ -31,6 +32,8 @@ Future<void> main() async {
   await player.init();
   final mpris = Mpris(player);
   unawaited(mpris.start());
+  // Android: Mediensitzung (Benachrichtigung, Medienausgabe, Tasten)
+  if (Platform.isAndroid) unawaited(AndroidMedia.start(player));
   if (settings.scanOnStart) unawaited(library.refresh());
 
   // Sync mit gekoppelten Geräten im Heimnetz

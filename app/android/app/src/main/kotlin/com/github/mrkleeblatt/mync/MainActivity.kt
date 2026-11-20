@@ -5,7 +5,7 @@ import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -13,8 +13,11 @@ import io.flutter.plugin.common.MethodChannel
  * Kanal „mync/storage“: Berechtigung „Zugriff auf alle Dateien“
  * (MANAGE_EXTERNAL_STORAGE) prüfen und die Systemeinstellung dafür öffnen.
  * Nötig, damit der Zig-Kern Musikdateien umbenennen, löschen und taggen kann.
+ *
+ * Erbt von AudioServiceActivity (audio_service), damit Activity und
+ * Wiedergabedienst dieselbe Flutter-Engine nutzen.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/storage")

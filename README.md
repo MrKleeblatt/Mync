@@ -1,3 +1,5 @@
+<img src="docs/logo.png" alt="mync" width="96" align="right">
+
 # mync
 
 **mync** = *music sync*. Ein Offline-Musikplayer für Linux im Stil von

@@ -66,6 +66,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Equalizer | – | entfernt (nicht benötigt); Balance und ReplayGain unter „Klang“ |
 | Sleeptimer (nach Zeit mit Ausblenden, nach Titelende) | ✅ | |
 | MPRIS (Medientasten, GNOME/KDE-Mediensteuerung, `playerctl`) | ✅ | |
+| Android-Mediensitzung | ✅ | Benachrichtigung, Sperrbildschirm, Medienausgabe, Kopfhörer-/Bluetooth-Tasten, Spulen; Wiedergabe im Hintergrund |
 | Tastenkürzel | ✅ | greifen nicht beim Tippen in Textfeldern |
 | Design **Graphit** | ✅ | eigenes dunkles Design (warme Grautöne, Kupfer, flache Formen); das einzige Design |
 
