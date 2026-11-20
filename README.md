@@ -25,6 +25,22 @@ Sleeptimer, Mini-Player, mehrere Musikordner, Sicherung, Medientasten (MPRIS),
 **Teil-Updates** direkt aus den GitHub-Releases. Ohne Konto, ohne Werbung.
 Details: [docs/funktionen.md](docs/funktionen.md), Updates: [docs/updates.md](docs/updates.md).
 
+## AppImage (jede Linux-Distribution)
+
+```bash
+curl -LO https://github.com/MrKleeblatt/mync/releases/latest/download/mync-x86_64.AppImage
+```
+
+```bash
+chmod +x mync-x86_64.AppImage && ./mync-x86_64.AppImage
+```
+
+libmpv und FFmpeg sind enthalten; GTK 3 und der Grafiktreiber kommen vom
+System. Neue Versionen meldet mync selbst. Zum Aktualisieren ein neues
+AppImage laden – oder mit [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate)
+bzw. Gear Lever: Die Update-Information ist eingebettet, dem Release liegt
+eine `.zsync`-Datei bei, geladen werden nur die geänderten Teile.
+
 ## Installation mit Nix
 
 ```bash

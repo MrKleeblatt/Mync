@@ -109,13 +109,41 @@ class UpdateService extends ChangeNotifier {
   /// Von Nix verwaltet (der Wrapper der Flake setzt MYNC_NO_SELF_UPDATE):
   /// Dann nur benachrichtigen – geladene Dateien wären dort nicht lauffähig,
   /// und Nix soll den Stand bestimmen.
-  bool get managedByNix => Platform.environment['MYNC_NO_SELF_UPDATE'] != null;
+  bool get managedByNix =>
+      Platform.environment['MYNC_NO_SELF_UPDATE'] != null ||
+      Platform.environment['MYNC_PACKAGED'] == 'nix';
+
+  /// Läuft als AppImage (AppRun setzt MYNC_PACKAGED, die AppImage-Laufzeit
+  /// APPIMAGE). Das Abbild ist schreibgeschützt; aktualisiert wird die
+  /// AppImage-Datei selbst (AppImageUpdate/zsync oder neu herunterladen).
+  bool get isAppImage =>
+      Platform.environment['MYNC_PACKAGED'] == 'appimage' ||
+      Platform.environment['APPIMAGE'] != null;
 
   /// Selbst installieren (Teil-Update) möglich?
-  bool get canInstall => supported && !managedByNix;
+  bool get canInstall => supported && !managedByNix && !isAppImage;
 
   /// Befehl, mit dem man unter Nix aktualisiert.
   static const nixUpgradeCommand = 'nix profile upgrade --refresh mync';
+
+  /// Seite des neuesten Releases (für AppImage-Nutzer).
+  static const releasePage =
+      'https://github.com/MrKleeblatt/mync/releases/latest';
+
+  /// Hinweis, wie man aktualisiert, wenn die App es nicht selbst kann.
+  String get externalUpdateHint => isAppImage
+      ? 'neues AppImage aus dem Release laden – AppImageUpdate oder Gear Lever '
+            'holen dabei nur die Änderungen'
+      : 'aktualisieren mit: $nixUpgradeCommand';
+
+  /// Release-Seite im Browser öffnen.
+  Future<void> openReleasePage() async {
+    try {
+      await Process.start('xdg-open', [
+        releasePage,
+      ], mode: ProcessStartMode.detached);
+    } catch (_) {}
+  }
 
   /// Begründung, falls [supported] false ist.
   String get unsupportedReason =>
@@ -323,10 +351,10 @@ class UpdateService extends ChangeNotifier {
         missing: missing,
         signed: signed,
       );
-      if (managedByNix) {
+      if (!canInstall) {
         _set(
           UpdateState.available,
-          'Version $version verfügbar – aktualisieren mit: $nixUpgradeCommand',
+          'Version $version verfügbar – $externalUpdateHint',
         );
         return;
       }

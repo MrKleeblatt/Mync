@@ -18,3 +18,5 @@ app/android/build/
 result
 result-*
 /flake.lock
+/.appimage-tools/
+/appimage/

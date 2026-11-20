@@ -1,8 +1,9 @@
 name: Release
 
 # Jeder Merge nach master (nur per Pull Request, siehe docs/updates.md) wird
-# ein Release: Version prüfen, Linux-App mit Teil-Update und Nix-Flake
-# (im Tarball, mit flake.lock, geprüft) und Android-APK bauen, den Tag v<version> auf den Merge-Commit setzen und das Release mit
+# ein Release: Version prüfen, Linux-App mit Teil-Update, Nix-Flake (im
+# Tarball, mit flake.lock, geprüft), AppImage (+ .zsync) und Android-APK
+# bauen, den Tag v<version> auf den Merge-Commit setzen und das Release mit
 # allen Dateien anlegen. Die Version steht nur in app/pubspec.yaml.
 #
 # Secrets (optional, empfohlen):
@@ -84,6 +85,13 @@ jobs:
           tools/release/stage_linux.sh app/build/linux/x64/release/bundle "${TAG#v}" stage
           (cd stage && nix flake lock && nix flake check -L path:.)
           nix flake check -L --override-input release "path:$PWD/stage"
+
+      - uses: actions/cache@v5
+        with:
+          path: .appimage-tools
+          key: appimage-tools-${{ hashFiles('tools/release/make_appimage.sh') }}
+      - name: AppImage bauen (mit .zsync für Teil-Updates per AppImageUpdate)
+        run: tools/release/make_appimage.sh app/build/linux/x64/release/bundle "${TAG#v}" dist
 
       - name: Manifest des vorigen Releases holen
         run: |

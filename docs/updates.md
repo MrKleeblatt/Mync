@@ -74,6 +74,8 @@ Dateien eines Releases:
 |---|---|
 | `mync-vX.Y.Z-android-arm64.apk` | Android-App |
 | `mync-linux-x86_64.tar.gz` | Linux-Programm komplett, mit `flake.nix` + `flake.lock` für Nix (`nix run <URL des Tarballs>`) |
+| `mync-x86_64.AppImage` | AppImage (libmpv/FFmpeg enthalten), mit eingebetteter Update-Information |
+| `mync-x86_64.AppImage.zsync` | Blockliste: AppImageUpdate/Gear Lever laden nur geänderte Teile |
 | `update-linux-x86_64.json` (+ `.sig`) | Manifest für Teil-Updates |
 | `f-….gz` | nur die geänderten Programmdateien |
 | `SHA256SUMS` | Prüfsummen |
@@ -103,6 +105,21 @@ deren unveränderte Dateien (bis zur Umstellung nach
   sondern zeigt `nix profile upgrade --refresh mync` (kopierbar). Geprüft:
   `nix profile upgrade` holt den neuen Tarball hinter derselben Adresse;
   `--refresh` umgeht den Zwischenspeicher von bis zu einer Stunde.
+
+## AppImage
+
+`tools/release/make_appimage.sh` legt das Flutter-Bundle unverändert nach
+`usr/lib/mync`, bündelt libmpv mit ihren Abhängigkeiten (linuxdeploy) und
+entfernt danach wieder, was jedes Desktop-System mitbringt (GLib, GTK-Umfeld,
+X11/Wayland, Grafik, D-Bus, Krypto …) – gebündelte Kopien davon kollidieren
+sonst mit dem GTK des Systems. Die Werkzeuge haben feste Versionen und werden
+vor dem Ausführen per SHA-256 geprüft. Gebaut wird auf Ubuntu 24.04, das
+AppImage braucht also ein System mit glibc ≥ 2.39.
+
+Die App erkennt das AppImage (`MYNC_PACKAGED=appimage`) und installiert
+nichts selbst – das Abbild ist schreibgeschützt. Sie meldet neue Versionen
+und bietet „Release öffnen“ an; Teil-Updates übernehmen AppImageUpdate oder
+Gear Lever über die `.zsync`-Datei.
 
 ## Einstellungen auf GitHub (einmalig)
 

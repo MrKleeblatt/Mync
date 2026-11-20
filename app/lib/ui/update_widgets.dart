@@ -21,17 +21,16 @@ class UpdateBanner extends StatelessWidget {
         List<Widget> actions = const [];
         switch (u.state) {
           case UpdateState.available when info != null && !u.canInstall:
-            // Nix: nur Hinweis mit dem passenden Befehl
+            // Nix/AppImage: nur Hinweis, wie man aktualisiert
             content = Text(
-              'mync ${info.version} ist verfügbar – aktualisieren mit '
-              '„${UpdateService.nixUpgradeCommand}“',
+              'mync ${info.version} ist verfügbar – ${u.externalUpdateHint}',
             );
             actions = [
               TextButton(
                 onPressed: () => showUpdateDetails(context),
                 child: const Text('Details'),
               ),
-              const CopyNixCommandButton(),
+              const ExternalUpdateButton(),
             ];
           case UpdateState.available when info != null:
             content = Text(
@@ -120,10 +119,7 @@ Future<void> showUpdateDetails(BuildContext context) {
                   '${formatBytes(info.downloadBytes)} statt ${formatBytes(info.fullBytes)}',
                 )
               else
-                const SelectableText(
-                  'Installiert über Nix – aktualisieren mit:\n'
-                  '${UpdateService.nixUpgradeCommand}',
-                ),
+                SelectableText(u.externalUpdateHint),
               Text(
                 info.signed
                     ? 'Signatur geprüft ✓'
@@ -156,7 +152,7 @@ Future<void> showUpdateDetails(BuildContext context) {
             child: const Text('Installieren'),
           )
         else
-          const CopyNixCommandButton(),
+          const ExternalUpdateButton(),
       ],
     ),
   );
@@ -214,17 +210,18 @@ class UpdateSettings extends StatelessWidget {
             value: s.updateCheck,
             onChanged: s.setUpdateCheck,
           ),
-          if (u.managedByNix)
-            const ListTile(
-              leading: Icon(Icons.inventory_2_outlined),
-              title: Text('Installiert über Nix'),
-              subtitle: Text(
-                'mync meldet neue Versionen, aktualisiert wird mit '
-                '„${UpdateService.nixUpgradeCommand}“.',
+          if (!u.canInstall)
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: Text(
+                u.isAppImage ? 'Läuft als AppImage' : 'Installiert über Nix',
               ),
-              trailing: CopyNixCommandButton(),
+              subtitle: Text(
+                'mync meldet neue Versionen – ${u.externalUpdateHint}.',
+              ),
+              trailing: const ExternalUpdateButton(),
             ),
-          if (!u.managedByNix)
+          if (u.canInstall)
             SwitchListTile(
               secondary: const Icon(Icons.download_for_offline_outlined),
               title: const Text(
@@ -243,14 +240,14 @@ class UpdateSettings extends StatelessWidget {
               subtitle: Text(
                 u.canInstall
                     ? '${formatBytes(u.available!.downloadBytes)} herunterzuladen'
-                    : UpdateService.nixUpgradeCommand,
+                    : u.externalUpdateHint,
               ),
               trailing: u.canInstall
                   ? FilledButton(
                       onPressed: u.install,
                       child: const Text('Installieren'),
                     )
-                  : const CopyNixCommandButton(),
+                  : const ExternalUpdateButton(),
               onTap: () => showUpdateDetails(context),
             ),
           if (u.state == UpdateState.installed)
@@ -268,22 +265,32 @@ class UpdateSettings extends StatelessWidget {
   }
 }
 
-/// Kopiert den Nix-Befehl zum Aktualisieren in die Zwischenablage.
-class CopyNixCommandButton extends StatelessWidget {
-  const CopyNixCommandButton({super.key});
+/// Nix: Befehl kopieren, AppImage: Release-Seite öffnen.
+class ExternalUpdateButton extends StatelessWidget {
+  const ExternalUpdateButton({super.key});
 
   @override
-  Widget build(BuildContext context) => FilledButton.icon(
-    onPressed: () async {
-      await Clipboard.setData(
-        const ClipboardData(text: UpdateService.nixUpgradeCommand),
+  Widget build(BuildContext context) {
+    final u = UpdateService.instance;
+    if (u != null && u.isAppImage) {
+      return FilledButton.icon(
+        onPressed: u.openReleasePage,
+        icon: const Icon(Icons.open_in_new, size: 18),
+        label: const Text('Release öffnen'),
       );
-      if (context.mounted) {
-        ScaffoldMessenger.maybeOf(context)
-            ?.showSnackBar(const SnackBar(content: Text('Befehl kopiert')));
-      }
-    },
-    icon: const Icon(Icons.copy, size: 18),
-    label: const Text('Befehl kopieren'),
-  );
+    }
+    return FilledButton.icon(
+      onPressed: () async {
+        await Clipboard.setData(
+          const ClipboardData(text: UpdateService.nixUpgradeCommand),
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.maybeOf(context)
+              ?.showSnackBar(const SnackBar(content: Text('Befehl kopiert')));
+        }
+      },
+      icon: const Icon(Icons.copy, size: 18),
+      label: const Text('Befehl kopieren'),
+    );
+  }
 }
