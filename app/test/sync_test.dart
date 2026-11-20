@@ -17,7 +17,11 @@ class TestHost implements SyncHost {
   final String db;
   final applied = <String>[];
   @override
-  Future<void> rescan() async => scanLibrary(root: root, db: db);
+  Future<void> rescan() async {
+    await scanLibrary(root: root, db: db);
+    await hashAllPending(root: root, db: db);
+  }
+
   @override
   Future<void> afterApply(List<String> changedPaths) async =>
       applied.addAll(changedPaths);

@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/foundation.dart';
 
+import '../library/track.dart';
+import '../log.dart';
 import 'player_controller.dart';
 
 /// Android-Mediensitzung: Ohne sie erscheint mync weder in der
@@ -38,7 +39,7 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
       h._attach();
       return h;
     } catch (e) {
-      debugPrint('mync: Mediensitzung nicht verfügbar: $e');
+      logError('Android-Mediensitzung nicht verfügbar', e);
       return null;
     }
   }
@@ -67,22 +68,22 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
       } else {
         final cover = await player.library.coverFor(t);
         if (_itemFor != t.path) return; // inzwischen gewechselt
-        mediaItem.add(
-          MediaItem(
-            id: t.path,
-            title: t.title,
-            artist: t.artist,
-            album: t.album,
-            duration: t.duration > Duration.zero ? t.duration : null,
-            artUri: cover == null ? null : Uri.file(cover),
-          ),
-        );
+        mediaItem.add(_item(t, cover));
       }
       _publishState();
     } else if (player.playing != _lastPlaying) {
       _publishState();
     }
   }
+
+  MediaItem _item(Track t, String? cover) => MediaItem(
+    id: t.path,
+    title: t.title,
+    artist: t.artist,
+    album: t.album,
+    duration: t.duration > Duration.zero ? t.duration : null,
+    artUri: cover == null ? null : Uri.file(cover),
+  );
 
   void _publishState() {
     _lastPlaying = player.playing;
@@ -115,40 +116,95 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
     );
   }
 
+  // ─── Medienbrowser (Karte „Wiedergabe fortsetzen“) ────────────────────
+  //
+  // Android fragt nach dem Neustart des Geräts oder der App über den
+  // Medienbrowser nach dem zuletzt gespielten Titel (Wurzel „recent“). Eine
+  // leere Antwort zeigt die Karte als Fehler („In mync ist ein Fehler
+  // aufgetreten“) – deshalb hier den aktuellen Titel der Warteschlange.
+
+  @override
+  Future<List<MediaItem>> getChildren(
+    String parentMediaId, [
+    Map<String, dynamic>? options,
+  ]) async {
+    logInfo('Medienbrowser: Inhalt von „$parentMediaId“ angefragt');
+    final t = player.currentTrack;
+    if (t == null) return const [];
+    // ohne Cover: andere Apps (Systemoberfläche) dürfen die Datei im
+    // privaten Speicher von mync nicht lesen
+    return [_item(t, null)];
+  }
+
+  @override
+  Future<MediaItem?> getMediaItem(String mediaId) async {
+    final t = player.library.byPath(mediaId);
+    return t == null ? null : _item(t, null);
+  }
+
   // ─── Befehle von Android ──────────────────────────────────────────────
 
-  @override
-  Future<void> play() async {
-    if (!player.playing) await player.playPause();
+  Future<void> _run(String what, Future<void> Function() body) async {
+    logInfo('Mediensteuerung: $what');
+    try {
+      await body();
+    } catch (e, st) {
+      logError('Mediensteuerung „$what“ fehlgeschlagen', e, st);
+      rethrow;
+    } finally {
+      _publishState();
+    }
   }
 
   @override
-  Future<void> pause() async {
+  Future<void> prepare() => _run('vorbereiten', () async {});
+
+  @override
+  Future<void> play() => _run('abspielen', () async {
+    if (!player.playing) await player.playPause();
+  });
+
+  @override
+  Future<void> playFromMediaId(
+    String mediaId, [
+    Map<String, dynamic>? extras,
+  ]) => _run('abspielen: $mediaId', () async {
+    final i = player.queue.items.indexOf(mediaId);
+    if (i >= 0 && i != player.queue.index) {
+      await player.jumpTo(i);
+    } else if (i < 0 && player.library.byPath(mediaId) != null) {
+      await player.playTracks([mediaId]);
+      return;
+    }
+    if (!player.playing) await player.playPause();
+  });
+
+  @override
+  Future<void> pause() => _run('pausieren', () async {
     if (player.playing) await player.playPause();
-  }
+  });
 
   @override
   Future<void> stop() => pause();
 
   @override
-  Future<void> skipToNext() => player.next();
+  Future<void> skipToNext() => _run('nächster Titel', player.next);
 
   @override
-  Future<void> skipToPrevious() => player.previous();
+  Future<void> skipToPrevious() => _run('voriger Titel', player.previous);
 
   @override
-  Future<void> seek(Duration position) async {
+  Future<void> seek(Duration position) => _run('springen', () async {
     await player.seek(position);
     _lastPos = position;
     _lastAt = DateTime.now();
-    _publishState();
-  }
+  });
 
   @override
-  Future<void> fastForward() => player.skipBy(1);
+  Future<void> fastForward() => _run('vorspulen', () => player.skipBy(1));
 
   @override
-  Future<void> rewind() => player.skipBy(-1);
+  Future<void> rewind() => _run('zurückspulen', () => player.skipBy(-1));
 
   @override
   Future<void> onTaskRemoved() async {

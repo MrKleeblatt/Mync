@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../core/mync_core.dart';
+import '../core/music_fs.dart';
+import '../log.dart';
 import '../settings.dart';
 import 'track.dart';
 
@@ -31,7 +34,14 @@ class Library extends ChangeNotifier {
   }
 
   bool loaded = false;
-  String? message;
+
+  /// Audio-Hashes im Hintergrund (nur für den Sync): (fertig, gesamt);
+  /// null, wenn gerade nichts zu tun ist.
+  (int done, int total)? hashProgress;
+  Future<void>? _hashing;
+
+  /// Zustand des letzten Ladens/Einlesens (Details im Logbuch).
+  OpStatus? status;
 
   /// Wird bei erkannten Umbenennungen aufgerufen (alter → neuer Pfad).
   void Function(Map<String, String> renames)? onRenamed;
@@ -93,12 +103,12 @@ class Library extends ChangeNotifier {
 
   /// Ordnet weiteren Musikordnern eindeutige Namen zu (kollidiert ein Name
   /// mit einem Ordner im Hauptordner oder einem anderen, wird „ (2)“ angehängt).
-  void _computeRoots() {
+  Future<void> _computeRoots() async {
     final used = <String>{};
     try {
-      for (final e in Directory(root).listSync()) {
-        if (e is Directory) {
-          used.add(e.uri.pathSegments.where((s) => s.isNotEmpty).last);
+      if (root.isNotEmpty) {
+        for (final e in await MusicFs.list(root)) {
+          if (e.isDir) used.add(e.name);
         }
       }
     } catch (_) {}
@@ -109,7 +119,11 @@ class Library extends ChangeNotifier {
           : d;
       if (clean == root) continue;
       final base =
-          clean.split('/').where((s) => s.isNotEmpty).lastOrNull ?? 'Ordner';
+          MusicFs.describe(clean)
+              .split('/')
+              .where((s) => s.isNotEmpty)
+              .lastOrNull ??
+          'Ordner';
       var name = base;
       for (var i = 2; used.contains(name); i++) {
         name = '$base ($i)';
@@ -123,8 +137,9 @@ class Library extends ChangeNotifier {
   /// Liest alle Manifeste und setzt die Präfixe der weiteren Ordner.
   Future<List<Track>> _listAll() async {
     final out = <Track>[
-      for (final i in await listTracks(root: root, db: settings.manifestDb))
-        Track(i),
+      if (root.isNotEmpty)
+        for (final i in await listTracks(root: root, db: settings.manifestDb))
+          Track(i),
     ];
     for (final r in _extra) {
       if (!File(r.db).existsSync()) continue;
@@ -148,59 +163,63 @@ class Library extends ChangeNotifier {
   Future<void> load() async {
     _config = _currentConfig;
     _hide = settings.hideShorterThan;
-    _computeRoots();
+    await _computeRoots();
     try {
       _set(await _listAll());
-    } catch (e) {
-      message = 'Fehler beim Laden: $e';
+      logInfo('Bibliothek geladen: ${_all.length} Titel');
+    } catch (e, st) {
+      logError('Bibliothek laden fehlgeschlagen', e, st);
+      status = const OpStatus.error('Bibliothek konnte nicht geladen werden');
     }
     loaded = true;
     notifyListeners();
+    unawaited(ensureHashed()); // offene vom letzten Mal
   }
 
   /// Scannt den Musikordner und lädt danach neu.
   Future<ScanSummary?> refresh() async {
     if (scanning) return null;
-    if (!Directory(root).existsSync()) {
-      message = 'Musikordner nicht gefunden: $root';
+    if (root.isEmpty) {
+      status = const OpStatus.error('Noch kein Musikordner gewählt');
       notifyListeners();
       return null;
     }
+    // vor dem ersten await sperren, sonst laufen zwei Scans gleichzeitig
     scanning = true;
-    message = null;
+    if (!await _rootReadable(root)) {
+      logWarning('Musikordner nicht gefunden: ${MusicFs.describe(root)}');
+      scanning = false;
+      status = const OpStatus.error('Musikordner nicht gefunden');
+      notifyListeners();
+      return null;
+    }
+    status = const OpStatus.busy('Lese ein …');
+    logInfo('Einlesen gestartet: $root');
+    final watch = Stopwatch()..start();
     notifyListeners();
     try {
-      _computeRoots();
+      await _computeRoots();
       final before = {for (final t in _all) t.fileId: t.path};
       scanProgress = (0, 0, 0);
-      final r = await scanLibrary(
-        root: root,
-        db: settings.manifestDb,
-        excludes: settings.excludes,
-        onProgress: _onScanProgress,
-      );
+      final r = await _scan(root, settings.manifestDb);
       var total = r.total, hashed = r.hashed;
       var added = r.added, removed = r.removed;
       final errors = [...r.errors];
       final missing = <String>[];
       for (final x in _extra) {
-        if (!Directory(x.dir).existsSync()) {
-          missing.add(x.dir);
+        if (!await _rootReadable(x.dir)) {
+          missing.add(MusicFs.describe(x.dir));
           continue;
         }
         try {
-          final s = await scanLibrary(
-            root: x.dir,
-            db: x.db,
-            excludes: settings.excludes,
-            onProgress: _onScanProgress,
-          );
+          final s = await _scan(x.dir, x.db);
           total += s.total;
           hashed += s.hashed;
           added += s.added;
           removed += s.removed;
           errors.addAll(s.errors);
-        } catch (e) {
+        } catch (e, st) {
+          logError('Einlesen von ${x.dir} fehlgeschlagen', e, st);
           errors.add('${x.dir}: $e');
         }
       }
@@ -212,10 +231,23 @@ class Library extends ChangeNotifier {
       }
       _set(tracks);
       if (renames.isNotEmpty) onRenamed?.call(renames);
-      message =
-          '$total Dateien · $added neu · $removed entfernt'
-          '${errors.isEmpty ? '' : ' · ${errors.length} Fehler'}'
-          '${missing.isEmpty ? '' : ' · nicht gefunden: ${missing.join(', ')}'}';
+      for (final e in errors) {
+        logWarning('Nicht lesbar: $e');
+      }
+      for (final m in missing) {
+        logWarning('Weiterer Musikordner nicht gefunden: $m');
+      }
+      final summary = '$total Dateien · $added neu · $removed entfernt';
+      logInfo(
+        'Einlesen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s: '
+        '$summary, $hashed neu eingelesen, ${errors.length} Fehler',
+      );
+      unawaited(ensureHashed());
+      status = errors.isEmpty && missing.isEmpty
+          ? OpStatus.ok(summary)
+          : OpStatus.error(
+              '$summary · ${errors.length + missing.length} nicht lesbar',
+            );
       return ScanSummary(
         total: total,
         hashed: hashed,
@@ -223,8 +255,9 @@ class Library extends ChangeNotifier {
         removed: removed,
         errors: errors,
       );
-    } catch (e) {
-      message = e is MyncCoreException ? e.userMessage : 'Fehler: $e';
+    } catch (e, st) {
+      logError('Einlesen fehlgeschlagen', e, st);
+      status = const OpStatus.error('Einlesen fehlgeschlagen');
       return null;
     } finally {
       scanning = false;
@@ -232,6 +265,96 @@ class Library extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Berechnet fehlende Audio-Hashes (der Scan liest nur Tags und Dauer).
+  /// Läuft im Hintergrund nach jedem Scan; der Sync wartet darauf.
+  Future<void> ensureHashed() => _hashing ??= _hashAll().whenComplete(() {
+    _hashing = null;
+    hashProgress = null;
+    notifyListeners();
+  });
+
+  Future<void> _hashAll() async {
+    final roots = [
+      if (root.isNotEmpty) (root, settings.manifestDb),
+      for (final r in _extra) (r.dir, r.db),
+    ];
+    final todo = <(String, String, List<String>)>[];
+    for (final (dir, db) in roots) {
+      if (!File(db).existsSync()) continue;
+      try {
+        final p = await pendingHashes(db);
+        if (p.isNotEmpty) todo.add((dir, db, p));
+      } catch (e, st) {
+        logError('Offene Prüfsummen nicht lesbar', e, st);
+      }
+    }
+    final total = todo.fold(0, (n, t) => n + t.$3.length);
+    if (total == 0) return;
+    logInfo('Prüfsummen für den Sync: $total Dateien im Hintergrund');
+    final watch = Stopwatch()..start();
+    var done = 0, failed = 0;
+    hashProgress = (0, total);
+    notifyListeners();
+    const batch = 32;
+    for (final (dir, db, paths) in todo) {
+      final tree = MusicFs.isTree(dir);
+      for (var i = 0; i < paths.length; i += batch) {
+        final part = paths.sublist(i, min(i + batch, paths.length));
+        final fds = tree ? await MusicFs.openFds(dir, part) : const <int>[];
+        try {
+          final items = <String, String>{
+            for (var k = 0; k < part.length; k++)
+              if (!tree)
+                part[k]: '$dir/${part[k]}'
+              else if (fds[k] >= 0)
+                part[k]: 'fd:${fds[k]}:${part[k]}',
+          };
+          final (n, errors) = await fillHashes(db, items);
+          failed += part.length - n;
+          for (final e in errors) {
+            logWarning('Prüfsumme nicht berechnet: $e');
+          }
+        } catch (e, st) {
+          failed += part.length;
+          logError('Prüfsummen fehlgeschlagen', e, st);
+        } finally {
+          if (fds.isNotEmpty) await MusicFs.closeFds(fds);
+        }
+        done += part.length;
+        hashProgress = (done, total);
+        notifyListeners();
+      }
+    }
+    logInfo(
+      'Prüfsummen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s'
+      '${failed > 0 ? ', $failed fehlgeschlagen' : ''}',
+    );
+  }
+
+  Future<bool> _rootReadable(String dir) async {
+    try {
+      return await MusicFs.isDir(dir);
+    } catch (e) {
+      logWarning('Kein Zugriff auf ${MusicFs.describe(dir)}: $e');
+      return false;
+    }
+  }
+
+  /// Ordner (Linux) oder Ordnerfreigabe (Android) einlesen.
+  Future<ScanSummary> _scan(String dir, String db) => MusicFs.isTree(dir)
+      ? scanTree(
+          tree: dir,
+          db: db,
+          excludes: settings.excludes,
+          onProgress: _onScanProgress,
+        )
+      : scanLibrary(
+          root: dir,
+          db: db,
+          excludes: settings.excludes,
+          onProgress: _onScanProgress,
+        );
 
   void _set(List<Track> all) {
     _all = all;
@@ -247,11 +370,6 @@ class Library extends ChangeNotifier {
         : _all
               .where((t) => t.info.durationMs < 0 || t.info.durationMs >= minMs)
               .toList();
-  }
-
-  static int _byAlbumThenOrder(Track a, Track b) {
-    final c = compareText(a.albumOrUnknown, b.albumOrUnknown);
-    return c != 0 ? c : compareAlbumOrder(a, b);
   }
 
   // ─── Ordner ────────────────────────────────────────────────────────────
@@ -324,32 +442,6 @@ class Library extends ChangeNotifier {
     return hits;
   }
 
-  // ─── Sortierte Titelliste ─────────────────────────────────────────────
-
-  List<Track> sortedTracks(String sort) {
-    final list = [..._visible];
-    switch (sort) {
-      case 'artist':
-        list.sort((a, b) {
-          final c = compareText(a.artist, b.artist);
-          return c != 0 ? c : _byAlbumThenOrder(a, b);
-        });
-      case 'album':
-        list.sort(_byAlbumThenOrder);
-      case 'year':
-        list.sort((a, b) => (b.year ?? 0).compareTo(a.year ?? 0));
-      case 'duration':
-        list.sort((a, b) => b.info.durationMs.compareTo(a.info.durationMs));
-      case 'added':
-        list.sort((a, b) => b.info.addedMs.compareTo(a.info.addedMs));
-      case 'file':
-        list.sort((a, b) => compareText(a.path, b.path));
-      default:
-        list.sort((a, b) => compareText(a.title, b.title));
-    }
-    return list;
-  }
-
   // ─── Cover ─────────────────────────────────────────────────────────────
 
   final Map<String, Future<String?>> _coverCache = {};
@@ -374,22 +466,35 @@ class Library extends ChangeNotifier {
     final out = _coverCachePath(t);
     if (File(out).existsSync()) return out;
     try {
-      if (await extractCover(abs(t.path), out)) return out;
+      if (await MusicFs.withReadPath(
+        abs(t.path),
+        (p) => extractCover(p, out),
+      )) {
+        return out;
+      }
     } catch (_) {}
     // 2. Bilddatei im Ordner
-    final dir = Directory(abs(t.folder));
+    final dir = abs(t.folder);
     try {
-      final files = dir.listSync().whereType<File>().toList();
+      final names = [
+        for (final c in await MusicFs.list(dir))
+          if (!c.isDir) c.name,
+      ];
+      String? pick;
       for (final base in _folderCovers) {
-        for (final f in files) {
-          final n = f.uri.pathSegments.last.toLowerCase();
-          if (_imageExt.any((e) => n == '$base.$e')) return f.path;
-        }
+        pick ??= names
+            .where((n) => _imageExt.any((e) => n.toLowerCase() == '$base.$e'))
+            .firstOrNull;
       }
-      for (final f in files) {
-        final n = f.uri.pathSegments.last.toLowerCase();
-        if (_imageExt.any((e) => n.endsWith('.$e'))) return f.path;
-      }
+      pick ??= names
+          .where((n) => _imageExt.any((e) => n.toLowerCase().endsWith('.$e')))
+          .firstOrNull;
+      if (pick == null) return null;
+      final loc = '$dir/$pick';
+      if (!MusicFs.isTree(loc)) return loc;
+      // Ordnerfreigabe: Bild in den Cache holen (Image.file, Benachrichtigung)
+      await MusicFs.copyOut(loc, out);
+      return out;
     } catch (_) {}
     return null;
   }

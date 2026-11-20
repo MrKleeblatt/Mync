@@ -21,7 +21,7 @@ class _Dest {
 }
 
 const _dests = [
-  _Dest('Bibliothek', Icons.library_music_outlined, Icons.library_music),
+  _Dest('Ordner', Icons.folder_outlined, Icons.folder),
   _Dest(
     'Warteschlangen',
     Icons.queue_music_outlined,

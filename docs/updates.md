@@ -61,12 +61,17 @@ Wie bei Kassenbon ist **jeder Merge nach `master` ein Release**:
      `flutter test` (gegen den gebauten Kern), `flutter build linux`,
      `nix flake check` der mitgelieferten Flake (`packaging/nix/flake.nix`).
    - **Android:** `flutter build apk` (baut den Zig-Kern über Gradle mit).
+   Jeder weitere Push auf die Branch bricht den laufenden Lauf ab und
+   startet ihn mit dem neuen Stand neu (eine Prüfung je Pull Request).
 4. Nach dem Merge startet **„Release“** (`.github/workflows/release.yml`):
    Version noch einmal prüfen, Linux-App mit Teil-Update und signierte
    APK bauen, die mitgelieferte Nix-Flake festlegen (`flake.lock`) und mit
    `nix flake check` prüfen, Tag `v<version>` auf den Merge-Commit setzen und das Release
    anlegen. Die Änderungsnotizen sind die Commit-Betreffs seit dem letzten
    Tag.
+5. **„Branch aufräumen“** (`.github/workflows/cleanup.yml`) löscht nach dem
+   Merge die Branch des Pull Requests. Nur geschlossene (nicht gemergte)
+   Pull Requests, Branches aus Forks und `master` bleiben bestehen.
 
 Dateien eines Releases:
 

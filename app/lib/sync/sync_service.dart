@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../log.dart';
 import 'channel.dart';
 import 'sync_session.dart';
 import 'sync_store.dart';
+import '../core/music_fs.dart';
 
 /// Ein im WLAN gefundenes Gerät.
 class Discovered {
@@ -82,6 +84,7 @@ class SyncService extends ChangeNotifier {
       _server = await ServerSocket.bind(InternetAddress.anyIPv4, 0);
     }
     _server!.listen(_onConnection);
+    logNetwork('Sync-Server lauscht auf Port ${_server!.port}');
     try {
       _discovery = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
@@ -183,8 +186,13 @@ class SyncService extends ChangeNotifier {
         }
         _startSession(ch, peer, initiator: false);
       }
-    } catch (e) {
-      message = 'Verbindung abgelehnt: $e';
+    } catch (e, st) {
+      logError(
+        'Eingehende Verbindung von ${socket.remoteAddress.address} abgelehnt',
+        e,
+        st,
+      );
+      message = 'Eingehende Verbindung abgelehnt';
       notifyListeners();
     }
   }
@@ -246,12 +254,14 @@ class SyncService extends ChangeNotifier {
       await store.savePeers();
       p.result = true;
       p.status = 'Gekoppelt mit ${p.peerName}.';
+      logNetwork('Gekoppelt mit ${p.peerName} (${p.channel.peerId})');
       pairingUntil = null;
-    } catch (e) {
+    } catch (e, st) {
       p.result = false;
+      logError('Kopplung mit ${p.peerName} fehlgeschlagen', e, st);
       p.status = e is SyncProtocolException
           ? e.message
-          : 'Kopplung fehlgeschlagen: $e';
+          : 'Kopplung fehlgeschlagen';
     } finally {
       await p.channel.close();
       notifyListeners();
@@ -289,6 +299,7 @@ class SyncService extends ChangeNotifier {
     final h = hostOverride ?? peer.host;
     final pt = portOverride ?? peer.port ?? defaultPort;
     if (h == null) {
+      logWarning('Sync: ${peer.name} im Netz nicht gefunden');
       message = '${peer.name} wurde im Netz nicht gefunden. Läuft mync dort?';
       notifyListeners();
       return null;
@@ -300,9 +311,11 @@ class SyncService extends ChangeNotifier {
         store.identity,
         knownPeerStatic: unhex(peer.publicKey),
       );
+      logNetwork('Sync: verbunden mit ${peer.name} ($h:$pt)');
       return _startSession(ch, peer, initiator: true);
-    } catch (e) {
-      message = 'Verbindung zu ${peer.name} fehlgeschlagen: $e';
+    } catch (e, st) {
+      logError('Verbindung zu ${peer.name} ($h:$pt) fehlgeschlagen', e, st);
+      message = 'Verbindung zu ${peer.name} fehlgeschlagen';
       notifyListeners();
       return null;
     }
@@ -330,15 +343,18 @@ class SyncService extends ChangeNotifier {
 
   /// Papierkorb-Einträge älter als 30 Tage löschen.
   Future<void> _cleanupTrash() async {
-    final trash = Directory('${host.root}/.mync-trash');
-    if (!await trash.exists()) return;
+    final trash = '${host.root}/.mync-trash';
+    if (host.root.isEmpty || !await MusicFs.isDir(trash)) return;
     final limit = DateTime.now().subtract(const Duration(days: 30));
-    await for (final d in trash.list()) {
-      final name = d.uri.pathSegments.where((s) => s.isNotEmpty).last;
-      final day = DateTime.tryParse(name);
-      if (d is Directory && day != null && day.isBefore(limit)) {
+    for (final d in await MusicFs.list(trash)) {
+      final day = DateTime.tryParse(d.name);
+      if (d.isDir && day != null && day.isBefore(limit)) {
         try {
-          await d.delete(recursive: true);
+          if (MusicFs.isTree(trash)) {
+            await MusicFs.delete('$trash/${d.name}'); // löscht samt Inhalt
+          } else {
+            await Directory('$trash/${d.name}').delete(recursive: true);
+          }
         } catch (_) {}
       }
     }

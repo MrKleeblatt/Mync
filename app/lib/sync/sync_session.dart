@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../core/mync_core.dart';
+import '../log.dart';
 import 'channel.dart';
 import 'sync_store.dart';
+import '../core/music_fs.dart';
 
 /// Was der Sync von der App braucht (in Tests ersetzbar).
 abstract class SyncHost {
@@ -68,6 +70,10 @@ class InboxItem {
   bool done = false;
   String? error;
 
+  /// Für das Logbuch: Art und Datei.
+  String get title =>
+      '${remote.kind.name} ${remote.resultPath ?? remote.basePath ?? ''}';
+
   String get ignoreKey =>
       '${remote.kind.name}|${remote.oldEntry?.key ?? ''}|${remote.newEntry?.key ?? ''}';
 }
@@ -122,8 +128,8 @@ class SyncSession extends ChangeNotifier {
         for (final e in remote) SyncEntry.fromJson(e as Map<String, dynamic>),
       ];
       await _computeInbox();
-    } catch (e) {
-      _fail('Sync fehlgeschlagen: $e');
+    } catch (e, st) {
+      _fail('Sync fehlgeschlagen', e, st);
     }
   }
 
@@ -235,7 +241,7 @@ class SyncSession extends ChangeNotifier {
         }
       }
     } catch (e) {
-      if (!closed) _fail('Verbindung unterbrochen: $e');
+      if (!closed) _fail('Verbindung unterbrochen', e);
     }
     for (final c in _pending.values) {
       c.completeError(SyncProtocolException('Verbindung beendet'));
@@ -306,24 +312,31 @@ class SyncSession extends ChangeNotifier {
             'data': {'fields': t.fields, 'picture_hashes': t.pictureHashes},
           });
         case 'file':
-          final f = File(_abs(args['path'] as String));
-          final size = await f.length();
-          final sha = await sha256File(f.path);
-          await channel.sendJson({
-            't': 'res',
-            'id': id,
-            'ok': true,
-            'data': {'size': size, 'sha256': sha},
-          });
-          await for (final chunk in f.openRead()) {
-            for (var o = 0; o < chunk.length; o += 64 * 1024) {
-              await channel.sendBinary(
-                id,
-                chunk.sublist(o, (o + 64 * 1024).clamp(0, chunk.length)),
-              );
+          final loc = _abs(args['path'] as String);
+          // Ordnerfreigabe (Android): erst eine lokale Kopie
+          final copy = MusicFs.isTree(loc) ? await _tempFile(loc) : null;
+          final f = File(copy ?? loc);
+          try {
+            final size = await f.length();
+            final sha = await sha256File(f.path);
+            await channel.sendJson({
+              't': 'res',
+              'id': id,
+              'ok': true,
+              'data': {'size': size, 'sha256': sha},
+            });
+            await for (final chunk in f.openRead()) {
+              for (var o = 0; o < chunk.length; o += 64 * 1024) {
+                await channel.sendBinary(
+                  id,
+                  chunk.sublist(o, (o + 64 * 1024).clamp(0, chunk.length)),
+                );
+              }
             }
+            await channel.sendBinary(id, const []);
+          } finally {
+            if (copy != null) await _deleteQuietly(copy);
           }
-          await channel.sendBinary(id, const []);
         default:
           throw SyncProtocolException('Unbekannte Anfrage ${m['op']}');
       }
@@ -368,8 +381,14 @@ class SyncSession extends ChangeNotifier {
         changed.addAll(await _makeLocalMatch(localPath, item.remote.newEntry));
         item.done = true;
         item.error = null;
-      } catch (e) {
-        item.error = '$e';
+        logNetwork('Sync ${peer.name}: übernommen ${item.title}');
+      } catch (e, st) {
+        logError(
+          'Sync ${peer.name}: Übernehmen fehlgeschlagen – ${item.title}',
+          e,
+          st,
+        );
+        item.error = 'fehlgeschlagen';
       }
       n++;
       progress = n / todo.length;
@@ -413,7 +432,7 @@ class SyncSession extends ChangeNotifier {
     final changed = <String>[];
     if (cur != null && cur.audioHash == target.audioHash) {
       if (localPath != target.path) {
-        if (await File(_abs(target.path)).exists()) await _trash(target.path);
+        if (await MusicFs.exists(_abs(target.path))) await _trash(target.path);
         await _move(localPath!, target.path);
         changed.addAll([localPath, target.path]);
       }
@@ -465,11 +484,16 @@ class SyncSession extends ChangeNotifier {
 
   /// Lädt die Datei [path] von der Gegenseite und ersetzt die lokale (alte → Papierkorb).
   Future<void> _fetchInto(String path) async {
-    final dst = File(_abs(path));
-    await dst.parent.create(recursive: true);
-    final tmp = File(
-      '${dst.parent.path}/.${dst.uri.pathSegments.last}.mync-part',
-    );
+    final loc = _abs(path);
+    final tree = MusicFs.isTree(loc);
+    final File tmp;
+    if (tree) {
+      tmp = File(await _tempPath(path));
+    } else {
+      final dst = File(loc);
+      await dst.parent.create(recursive: true);
+      tmp = File('${dst.parent.path}/.${dst.uri.pathSegments.last}.mync-part');
+    }
     final (size, sha, data) = await _requestFile(path);
     final sink = tmp.openWrite();
     try {
@@ -481,14 +505,38 @@ class SyncSession extends ChangeNotifier {
       await tmp.delete();
       throw SyncProtocolException('Übertragung von $path fehlerhaft');
     }
-    if (await dst.exists()) await _trash(path);
-    await tmp.rename(dst.path);
+    if (await MusicFs.exists(loc)) await _trash(path);
+    if (tree) {
+      try {
+        await MusicFs.copyIn(tmp.path, loc);
+      } finally {
+        await _deleteQuietly(tmp.path);
+      }
+    } else {
+      await tmp.rename(loc);
+    }
+  }
+
+  static Future<String> _tempPath(String rel) async {
+    final dir = await Directory('${MusicFs.tempDir}/mync-sync')
+        .create(recursive: true);
+    return '${dir.path}/${DateTime.now().microsecondsSinceEpoch}-${rel.split('/').last}';
+  }
+
+  static Future<String> _tempFile(String loc) async {
+    final p = await _tempPath(MusicFs.split(loc).$2);
+    await MusicFs.copyOut(loc, p);
+    return p;
+  }
+
+  static Future<void> _deleteQuietly(String path) async {
+    try {
+      await File(path).delete();
+    } catch (_) {}
   }
 
   Future<void> _move(String from, String to) async {
-    final dst = File(_abs(to));
-    await dst.parent.create(recursive: true);
-    await File(_abs(from)).rename(dst.path);
+    await MusicFs.rename(_abs(from), _abs(to));
     await _pruneDirs(from);
   }
 
@@ -497,13 +545,12 @@ class SyncSession extends ChangeNotifier {
     final d = DateTime.now();
     final day =
         '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    var dst = File('${host.root}/.mync-trash/$day/$rel');
+    var dst = '${host.root}/.mync-trash/$day/$rel';
     var n = 1;
-    while (await dst.exists()) {
-      dst = File('${host.root}/.mync-trash/$day/$rel.${n++}');
+    while (await MusicFs.exists(dst)) {
+      dst = '${host.root}/.mync-trash/$day/$rel.${n++}';
     }
-    await dst.parent.create(recursive: true);
-    await File(_abs(rel)).rename(dst.path);
+    await MusicFs.rename(_abs(rel), dst);
     await _pruneDirs(rel);
   }
 
@@ -511,10 +558,10 @@ class SyncSession extends ChangeNotifier {
   Future<void> _pruneDirs(String rel) async {
     var parts = rel.split('/')..removeLast();
     while (parts.isNotEmpty) {
-      final d = Directory('${host.root}/${parts.join('/')}');
+      final d = '${host.root}/${parts.join('/')}';
       try {
-        if (await d.list().isEmpty) {
-          await d.delete();
+        if ((await MusicFs.list(d)).isEmpty) {
+          await MusicFs.delete(d);
         } else {
           break;
         }
@@ -553,8 +600,8 @@ class SyncSession extends ChangeNotifier {
             : 'Abgeschlossen – ${peer.name} entscheidet noch …',
       );
       if (peerFinished) await close();
-    } catch (e) {
-      _fail('Abschluss fehlgeschlagen: $e');
+    } catch (e, st) {
+      _fail('Abschluss fehlgeschlagen', e, st);
     }
   }
 
@@ -567,10 +614,13 @@ class SyncSession extends ChangeNotifier {
 
   void _setStatus(String s) {
     status = s;
+    logNetwork('Sync ${peer.name}: $s');
     notifyListeners();
   }
 
-  void _fail(String msg) {
+  /// Kurze Meldung für die Anzeige, Einzelheiten ins Logbuch.
+  void _fail(String msg, [Object? e, StackTrace? st]) {
+    logError('Sync ${peer.name}: $msg', e, st);
     error = msg;
     status = msg;
     if (!_scanned.isCompleted) _scanned.complete();

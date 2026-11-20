@@ -1,13 +1,16 @@
-import 'package:file_selector/file_selector.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
-import '../core/storage_access.dart';
-import '../library/track.dart';
+import '../core/music_fs.dart';
+import 'folder_picker.dart';
+import 'global_shortcuts.dart';
 import 'scope.dart';
+import 'status_line.dart';
 import 'track_actions.dart';
 import 'track_list.dart';
 
-/// Bibliothek: Ordner (Hauptansicht) und alle Titel – plus Suche.
+/// Ordner: die Musikordner zum Durchblättern, plus Suche.
 class LibraryPage extends StatefulWidget {
   const LibraryPage({super.key});
 
@@ -15,33 +18,14 @@ class LibraryPage extends StatefulWidget {
   State<LibraryPage> createState() => LibraryPageState();
 }
 
-class LibraryPageState extends State<LibraryPage>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabs;
+class LibraryPageState extends State<LibraryPage> {
   final _search = TextEditingController();
   final searchFocus = FocusNode();
   final _folderKey = GlobalKey<FolderViewState>();
   String _query = '';
 
-  static const _tabNames = ['Ordner', 'Titel'];
-
-  @override
-  void initState() {
-    super.initState();
-    _tabs = TabController(
-      length: _tabNames.length,
-      vsync: this,
-      initialIndex: 0,
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tabs.index = context.settings.libraryTab.clamp(0, _tabNames.length - 1);
-      _tabs.addListener(() => context.settings.setLibraryTab(_tabs.index));
-    });
-  }
-
   @override
   void dispose() {
-    _tabs.dispose();
     _search.dispose();
     searchFocus.dispose();
     super.dispose();
@@ -50,27 +34,25 @@ class LibraryPageState extends State<LibraryPage>
   void focusSearch() => searchFocus.requestFocus();
 
   Future<void> _scan() async {
-    if (!await StorageAccess.granted()) {
-      await StorageAccess.request();
-      return;
-    }
-    if (mounted) await context.library.refresh();
+    if (context.settings.musicDir.isEmpty) return _pickFolder();
+    await context.library.refresh();
   }
 
   Future<void> _pickFolder() async {
     final s = context.settings;
-    final path = await getDirectoryPath(
-      initialDirectory: s.musicDir,
-      confirmButtonText: 'Musikordner wählen',
+    final old = s.musicDir;
+    final path = await pickMusicFolder(
+      initial: old,
+      confirm: 'Musikordner wählen',
     );
-    if (path == null || path.isEmpty) return;
+    if (path == null || path == old) return;
     await s.setMusicDir(path);
+    if (!s.extraMusicDirs.contains(old)) await MusicFs.release(old);
   }
 
   @override
   Widget build(BuildContext context) {
     final lib = context.library;
-    final theme = Theme.of(context);
     return ListenableBuilder(
       listenable: lib,
       builder: (context, _) {
@@ -84,7 +66,7 @@ class LibraryPageState extends State<LibraryPage>
                     child: SearchBar(
                       controller: _search,
                       focusNode: searchFocus,
-                      hintText: 'Bibliothek durchsuchen (Strg+F)',
+                      hintText: 'Ordner durchsuchen${keyHint('Strg+F')}',
                       leading: const Icon(Icons.search),
                       trailing: [
                         if (_query.isNotEmpty)
@@ -106,7 +88,7 @@ class LibraryPageState extends State<LibraryPage>
                     icon: const Icon(Icons.folder_open),
                   ),
                   IconButton(
-                    tooltip: 'Bibliothek neu einlesen',
+                    tooltip: 'Ordner neu einlesen',
                     onPressed: lib.scanning ? null : _scan,
                     icon: lib.scanning
                         ? const SizedBox.square(
@@ -119,12 +101,38 @@ class LibraryPageState extends State<LibraryPage>
               ),
             ),
             if (lib.scanning) _ScanStatus(progress: lib.scanProgress),
-            if (lib.message != null && !lib.scanning)
+            if (lib.status != null && !lib.scanning)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(lib.message!, style: theme.textTheme.bodySmall),
+                  child: StatusLine(lib.status, dense: true),
+                ),
+              ),
+            if (lib.hashProgress case (final done, final total)
+                when !lib.scanning)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
+                child: Tooltip(
+                  message:
+                      'Prüfsummen für den Abgleich mit dem Handy – alles andere '
+                      'ist schon nutzbar',
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 80,
+                        child: LinearProgressIndicator(
+                          value: total == 0 ? null : done / total,
+                          minHeight: 2,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Prüfsummen für den Sync: $done von $total',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             if (_query.isNotEmpty)
@@ -134,32 +142,18 @@ class LibraryPageState extends State<LibraryPage>
                   onOpenFolder: (f) {
                     _search.clear();
                     setState(() => _query = '');
-                    _tabs.index = 0;
                     _folderKey.currentState?.open(f);
                   },
                 ),
               )
-            else ...[
-              TabBar(
-                controller: _tabs,
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                tabs: [for (final n in _tabNames) Tab(text: n)],
-              ),
+            else
               Expanded(
                 child: !lib.loaded
                     ? const Center(child: CircularProgressIndicator())
                     : lib.tracks.isEmpty
                     ? _EmptyLibrary(onScan: _scan, onPick: _pickFolder)
-                    : TabBarView(
-                        controller: _tabs,
-                        children: [
-                          FolderView(key: _folderKey),
-                          const AllTracksView(),
-                        ],
-                      ),
+                    : FolderView(key: _folderKey),
               ),
-            ],
           ],
         );
       },
@@ -185,10 +179,21 @@ class _EmptyLibrary extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Keine Titel gefunden in',
+            context.settings.musicDir.isEmpty
+                ? 'Wählen Sie Ihren Musikordner'
+                : 'Keine Titel gefunden in',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          Text(context.settings.musicDir),
+          if (context.settings.musicDir.isNotEmpty)
+            Text(folderLabel(context.settings.musicDir))
+          else if (Platform.isAndroid)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                'mync bekommt nur Zugriff auf diesen Ordner.',
+                textAlign: TextAlign.center,
+              ),
+            ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -362,85 +367,12 @@ class FolderViewState extends State<FolderView>
         if (subs.isNotEmpty && tracks.isNotEmpty) const Divider(),
       ],
     );
-    return TrackListView(tracks: tracks, header: header);
+    return TrackListView(tracks: tracks, header: header, tapOpensMenu: true);
   }
 
   String _join(String name) => _folder.isEmpty ? name : '$_folder/$name';
 }
 
-// ─── Alle Titel ──────────────────────────────────────────────────────────
-
-class AllTracksView extends StatefulWidget {
-  const AllTracksView({super.key});
-
-  @override
-  State<AllTracksView> createState() => _AllTracksViewState();
-}
-
-class _AllTracksViewState extends State<AllTracksView> {
-  static const sorts = {
-    'title': 'Titel',
-    'artist': 'Künstler',
-    'album': 'Album',
-    'year': 'Jahr',
-    'duration': 'Dauer',
-    'added': 'Zuletzt hinzugefügt',
-    'file': 'Dateiname',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    // Eigene Abhängigkeit von der Bibliothek: const-Widgets werden sonst nicht neu gebaut
-    return ListenableBuilder(
-      listenable: context.library,
-      builder: (context, _) => _build(context),
-    );
-  }
-
-  Widget _build(BuildContext context) {
-    final s = context.settings;
-    final sort = sorts.containsKey(s.trackSort) ? s.trackSort : 'title';
-    final tracks = context.library.sortedTracks(sort);
-    return TrackListView(
-      tracks: tracks,
-      header: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-        child: Row(
-          children: [
-            Text(
-              '${tracks.length} Titel · ${formatDuration(tracks.fold(Duration.zero, (a, t) => a + t.duration))}',
-            ),
-            const Spacer(),
-            PopupMenuButton<String>(
-              tooltip: 'Sortieren',
-              initialValue: sort,
-              onSelected: (v) async {
-                await s.setTrackSort(v);
-                setState(() {});
-              },
-              itemBuilder: (_) => [
-                for (final e in sorts.entries)
-                  PopupMenuItem(value: e.key, child: Text(e.value)),
-              ],
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.sort),
-                    const SizedBox(width: 4),
-                    Text(sorts[sort]!),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Fortschritt beim Einlesen: erst Dateien suchen, dann neue einlesen.
 class _ScanStatus extends StatelessWidget {
   const _ScanStatus({required this.progress});
   final (int, int, int) progress;

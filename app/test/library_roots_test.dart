@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mync/core/mync_core.dart';
 import 'package:mync/library/library.dart';
 import 'package:mync/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -70,6 +71,10 @@ void main() {
     }
     await lib.refresh();
     expect(lib.tracks.length, 6);
+    // Audio-Hashes (für den Sync) entstehen im Hintergrund
+    await lib.ensureHashed();
+    expect(await pendingHashes(s.manifestDb), isEmpty);
+    expect(lib.hashProgress, isNull);
     lib.dispose();
   }, skip: _core() ? false : 'libmync_core.so fehlt');
 }

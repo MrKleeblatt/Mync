@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' hide Track;
 
 import '../analysis/analysis_service.dart';
+import '../log.dart';
 import '../library/chapters.dart';
 import '../library/library.dart';
 import '../library/track.dart';
@@ -14,6 +15,7 @@ import '../stats/history.dart';
 import '../stats/stats.dart';
 import 'queue.dart';
 import 'state_store.dart';
+import '../core/music_fs.dart';
 
 /// Zähler aus Versionen vor dem Hörprotokoll (werden nur noch gelesen).
 class PlayStat {
@@ -225,7 +227,7 @@ class PlayerController extends ChangeNotifier {
       player.stream.playlist.listen(_onPlaylist),
       player.stream.completed.listen(_onCompleted),
       player.stream.error.listen((e) {
-        debugPrint('mpv: $e');
+        logError('Wiedergabe (mpv): $e');
         error = e;
         notifyListeners();
       }),
@@ -250,12 +252,13 @@ class PlayerController extends ChangeNotifier {
     _startUsed[rel] = start;
     if (start > 0) _debug('Start bei $start ms: $rel');
     return Media(
-      Uri.file(library.abs(rel)).toString(),
+      MusicFs.mediaUri(library.abs(rel)),
       start: start > 0 ? Duration(milliseconds: start) : null,
     );
   }
 
   static void _debug(String m) {
+    logInfo(m);
     if (Platform.environment['MYNC_DEBUG'] != null) debugPrint('mync: $m');
   }
 
@@ -479,7 +482,13 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> playPause() async {
     _cancelCrossfade();
+    _pausedByVolume = false;
     if (queue.isEmpty) return;
+    // stumm: erst wieder hörbar machen, sonst „spielt“ es lautlos
+    if (!playing && volume <= 0) {
+      await player.setVolume(50);
+      await settings.setVolume(50);
+    }
     if (!_loaded) {
       await _openQueue(play: true);
     } else {
@@ -769,9 +778,22 @@ class PlayerController extends ChangeNotifier {
   // ─── Klang ─────────────────────────────────────────────────────────────
 
   double get volume => settings.volume;
+
+  /// Pausiert, weil die Lautstärke auf 0 gezogen wurde (geht beim
+  /// Aufdrehen weiter – nicht, wenn der Nutzer selbst pausiert hat).
+  bool _pausedByVolume = false;
+
   Future<void> setVolume(double v) async {
     await player.setVolume(v);
     await settings.setVolume(v);
+    if (v <= 0 && playing) {
+      _pausedByVolume = true;
+      await player.pause();
+      _debug('Lautstärke 0: pausiert');
+    } else if (v > 0 && _pausedByVolume) {
+      _pausedByVolume = false;
+      if (!playing) await playPause();
+    }
     notifyListeners();
   }
 
@@ -1007,7 +1029,7 @@ class PlayerController extends ChangeNotifier {
     final aux = await _auxPlayer();
     await aux.setRate(speed);
     await aux.setVolume(0);
-    await aux.open(Media(Uri.file(library.abs(next)).toString()), play: true);
+    await aux.open(Media(MusicFs.mediaUri(library.abs(next))), play: true);
     if (token != _fadeToken) return;
     final started = DateTime.now();
     final total = remaining.inMilliseconds / speed;

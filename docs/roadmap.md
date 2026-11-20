@@ -23,7 +23,7 @@ zuerst der Sync (das eigentliche Problem), dann der Player.
   TCP, Kopplung per 6-stelligem Code mit Commitment, Schlüssel-Pinning.
 - Inbox-Bildschirm in Flutter (annehmen/ablehnen/später).
 - Anwenden mit Prüfsummen, Papierkorb (30 Tage); ⏳ Journal/Undo.
-- Android: „Zugriff auf alle Dateien“, MediaScanner; ⏳ Foreground-Service.
+- Android: nur freigegebene Ordner (Ordnerfreigabe statt „Zugriff auf alle Dateien“); ⏳ Foreground-Service.
 
 ## M2 – Inbox-Komfort (teilweise)
 - ✅ Tag-Diff, „Immer ignorieren“, Geräte finden (UDP-Broadcast).

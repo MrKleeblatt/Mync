@@ -138,3 +138,124 @@ test "Scan erkennt Umbenennung mit Tag-Änderung und hasht nur Geändertes" {
     r = try m.scan(a);
     try t.expectEqual(@as(u32, 0), r.hashed);
 }
+
+test "Scan aus einer Auflistung mit Deskriptoren, in Portionen (Android)" {
+    var arena: std.heap.ArenaAllocator = .init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var td = try openTestdata();
+    defer td.close(t.io);
+    var tmp = t.tmpDir(.{});
+    defer tmp.cleanup();
+    try td.copyFile("mp3-plain.mp3", tmp.dir, "a.mp3", t.io, .{});
+    try td.copyFile("mp3-tagged.mp3", tmp.dir, "b.mp3", t.io, .{});
+
+    const root = try std.fmt.allocPrint(a, ".zig-cache/tmp/{s}", .{&tmp.sub_path});
+    const db_path = try std.fmt.allocPrintSentinel(a, "{s}/manifest.db", .{root}, 0);
+    const m = try manifest.Manifest.open(t.io, db_path, "");
+    defer m.close();
+
+    const L = manifest.Listed;
+    // 1. Nur auflisten: beide Dateien müssen eingelesen werden
+    const list = [_]L{
+        .{ .path = "Rock/a.mp3", .size = 10, .mtime_ns = 1 },
+        .{ .path = "Rock/b.mp3", .size = 20, .mtime_ns = 1 },
+        .{ .path = ".mync-trash/x.mp3", .size = 1, .mtime_ns = 1 },
+        .{ .path = "Rock/notiz.pdf", .size = 1, .mtime_ns = 1 },
+    };
+    var r = try m.scanEntries(a, std.Io.Dir.cwd(), &list, false);
+    try t.expectEqual(@as(u32, 2), r.total);
+    try t.expectEqual(@as(usize, 2), r.needed.len);
+
+    // 2. Portion für Portion über Deskriptoren einlesen
+    for ([_][]const u8{ "a.mp3", "b.mp3" }, 0..) |name, i| {
+        const f = try tmp.dir.openFile(t.io, name, .{});
+        defer f.close(t.io);
+        var batch = list;
+        batch[i].src = try std.fmt.allocPrint(a, "fd:{d}:{s}", .{ f.handle, list[i].path });
+        r = try m.scanEntries(a, std.Io.Dir.cwd(), &batch, false);
+        try t.expectEqual(@as(u32, 1), r.hashed);
+        try t.expectEqual(@as(usize, 0), r.errors.len);
+    }
+    r = try m.scanEntries(a, std.Io.Dir.cwd(), &list, true);
+    try t.expectEqual(@as(usize, 0), r.needed.len);
+    try t.expectEqual(@as(u32, 0), r.removed);
+    const before = try m.files(a);
+    try t.expectEqual(@as(usize, 2), before.len);
+
+    // 3. Umbenannt (a.mp3 → Pop/a.mp3): erst einlesen, dann abschließen –
+    //    die file_id bleibt, nichts wird gelöscht
+    const f = try tmp.dir.openFile(t.io, "a.mp3", .{});
+    defer f.close(t.io);
+    var moved = [_]L{
+        .{ .path = "Pop/a.mp3", .size = 10, .mtime_ns = 2, .src = try std.fmt.allocPrint(a, "fd:{d}:a.mp3", .{f.handle}) },
+        list[1],
+    };
+    r = try m.scanEntries(a, std.Io.Dir.cwd(), &moved, false);
+    try t.expectEqual(@as(u32, 0), r.added);
+    moved[0].src = null;
+    r = try m.scanEntries(a, std.Io.Dir.cwd(), &moved, true);
+    try t.expectEqual(@as(u32, 0), r.removed);
+    const after = try m.files(a);
+    try t.expectEqual(@as(usize, 2), after.len);
+    try t.expectEqualStrings("Pop/a.mp3", after[0].entry.path);
+    try t.expectEqualStrings(before[0].file_id, after[0].file_id);
+
+    // 4. Datei weg: erst im abschließenden Aufruf gelöscht
+    r = try m.scanEntries(a, std.Io.Dir.cwd(), moved[1..], false);
+    try t.expectEqual(@as(u32, 0), r.removed);
+    r = try m.scanEntries(a, std.Io.Dir.cwd(), moved[1..], true);
+    try t.expectEqual(@as(u32, 1), r.removed);
+}
+
+test "Scan ohne Audio-Hash, Hashes im Hintergrund nachholen" {
+    var arena: std.heap.ArenaAllocator = .init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var td = try openTestdata();
+    defer td.close(t.io);
+    var tmp = t.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try std.fmt.allocPrint(a, ".zig-cache/tmp/{s}", .{&tmp.sub_path});
+    try tmp.dir.createDirPath(t.io, "A");
+    try td.copyFile("mp3-tagged.mp3", tmp.dir, "A/x.mp3", t.io, .{});
+    try td.copyFile("flac-plain.flac", tmp.dir, "A/y.flac", t.io, .{});
+    try tmp.dir.createDirPath(t.io, ".mync");
+
+    const db_path = try std.fmt.allocPrintSentinel(a, "{s}/.mync/manifest.db", .{root}, 0);
+    var m = try manifest.Manifest.open(t.io, db_path, root);
+    defer m.close();
+    m.defer_audio = true;
+
+    var r = try m.scan(a);
+    try t.expectEqual(@as(u32, 2), r.added);
+    try t.expectEqual(@as(usize, 2), (try m.pending(a)).len);
+    const id_before = (try m.files(a))[0].file_id;
+    try t.expect((try m.files(a))[0].duration_ms > 0); // Dauer ist schon da
+
+    // Verschieben ohne Hash: an Größe + Tags erkannt, file_id bleibt
+    try tmp.dir.createDirPath(t.io, "B");
+    try tmp.dir.rename("A/x.mp3", tmp.dir, "B/x.mp3", t.io);
+    r = try m.scan(a);
+    try t.expectEqual(@as(u32, 0), r.added);
+    try t.expectEqual(@as(u32, 0), r.removed);
+    const moved = for (try m.files(a)) |f| {
+        if (std.mem.eql(u8, f.entry.path, "B/x.mp3")) break f;
+    } else unreachable;
+    try t.expectEqualStrings(id_before, moved.file_id);
+
+    // Nachholen: gleiche Hashes wie ein vollständiger Scan
+    var items: std.ArrayList(manifest.HashItem) = .empty;
+    for (try m.pending(a)) |p| try items.append(a, .{ .path = p, .src = try std.fmt.allocPrint(a, "{s}/{s}", .{ root, p }) });
+    const f = try m.fillHashes(a, std.Io.Dir.cwd(), items.items);
+    try t.expectEqual(@as(u32, 2), f.hashed);
+    try t.expectEqual(@as(usize, 0), (try m.pending(a)).len);
+    const want = try manifest.hashFile(a, t.io, tmp.dir, "B/x.mp3");
+    for (try m.files(a)) |row| {
+        if (std.mem.eql(u8, row.entry.path, "B/x.mp3")) try t.expectEqualStrings(want.audio_hash, row.entry.audio_hash);
+    }
+    // ein weiterer Scan rührt die (unveränderten) Dateien nicht an
+    r = try m.scan(a);
+    try t.expectEqual(@as(u32, 0), r.hashed);
+    try t.expectEqual(@as(usize, 0), (try m.pending(a)).len);
+}

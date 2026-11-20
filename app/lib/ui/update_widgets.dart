@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../log.dart';
 import '../update/update_service.dart';
 import 'scope.dart';
+import 'status_line.dart';
 
 /// Hinweisleiste oben: Update verfügbar / wird geladen / installiert.
 class UpdateBanner extends StatelessWidget {
@@ -183,12 +185,21 @@ class UpdateSettings extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: Text('Installiert: mync ${u.currentVersion}'),
-            subtitle: Text(
-              u.message ??
-                  (u.signatureRequired
-                      ? 'Updates werden auf ihre Signatur geprüft.'
-                      : ''),
-            ),
+            subtitle: u.message == null
+                ? Text(
+                    u.signatureRequired
+                        ? 'Updates werden auf ihre Signatur geprüft.'
+                        : '',
+                  )
+                : StatusLine(
+                    OpStatus(switch (u.state) {
+                      UpdateState.checking ||
+                      UpdateState.downloading => OpKind.busy,
+                      UpdateState.error => OpKind.error,
+                      _ => OpKind.ok,
+                    }, u.message!),
+                    dense: true,
+                  ),
             trailing:
                 u.state == UpdateState.checking ||
                     u.state == UpdateState.downloading

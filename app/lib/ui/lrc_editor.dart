@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/mync_core.dart';
+import '../log.dart';
 import '../library/lrc.dart';
 import '../library/track.dart';
+import 'global_shortcuts.dart';
 import 'scope.dart';
+import 'status_line.dart';
+import '../core/music_fs.dart';
 
 Future<void> showLrcEditor(BuildContext context, Track track) =>
     showDialog<void>(
@@ -48,7 +52,7 @@ class _LrcEditorState extends State<LrcEditor> {
   bool _toTags = false;
   bool _saving = false;
   bool _writable = true;
-  String? _error;
+  OpStatus? _status;
   final _scroll = ScrollController();
   final _focus = FocusNode();
   static const _rowHeight = 48.0;
@@ -62,12 +66,10 @@ class _LrcEditorState extends State<LrcEditor> {
   Future<void> _load() async {
     String? text;
     var fromFile = false;
-    final lrc = File(lrcPathFor(context, widget.track));
+    final lrc = lrcPathFor(context, widget.track);
     final abs = context.library.abs(widget.track.path);
-    if (await lrc.exists()) {
-      text = await lrc.readAsString();
-      fromFile = true;
-    }
+    text = await MusicFs.tryReadString(lrc);
+    if (text != null) fromFile = true;
     try {
       final tags = await readTags(abs);
       _writable = tags.writable;
@@ -203,10 +205,10 @@ class _LrcEditorState extends State<LrcEditor> {
     );
     setState(() {
       _saving = true;
-      _error = null;
+      _status = const OpStatus.busy('Speichere …');
     });
     try {
-      final lrc = File(lrcPathFor(context, t));
+      final lrc = lrcPathFor(context, t);
       if (_toTags) {
         final abs = lib.abs(t.path);
         final tags = await readTags(abs);
@@ -215,17 +217,22 @@ class _LrcEditorState extends State<LrcEditor> {
           'lyrics': [text.trimRight()],
         });
         // eine alte .lrc hätte Vorrang – entfernen
-        if (await lrc.exists()) await lrc.delete();
+        if (await MusicFs.exists(lrc)) await MusicFs.delete(lrc);
         await lib.refresh();
       } else {
-        await lrc.writeAsString(text, flush: true);
+        await MusicFs.writeString(lrc, text);
       }
       lib.lyricsChanged();
+      logInfo(
+        'Lyrics gespeichert (${_toTags ? 'Tags' : '.lrc'}): ${t.path}, '
+        '${lines.where((l) => l.time != null).length} Zeilen',
+      );
       if (mounted) Navigator.pop(context);
-    } catch (e) {
+    } catch (e, st) {
+      logError('Lyrics speichern fehlgeschlagen: ${t.path}', e, st);
       setState(() {
         _saving = false;
-        _error = e is MyncCoreException ? e.userMessage : '$e';
+        _status = OpStatus.error(shortError(e, 'Speichern fehlgeschlagen'));
       });
     }
   }
@@ -289,7 +296,7 @@ class _LrcEditorState extends State<LrcEditor> {
                           color: theme.colorScheme.secondaryContainer,
                           child: ListTile(
                             leading: const Icon(Icons.info_outline),
-                            title: const Text(
+                            title: Text(
                               'Zum Synchronisieren muss dieser Titel laufen.',
                             ),
                             trailing: FilledButton.icon(
@@ -311,7 +318,7 @@ class _LrcEditorState extends State<LrcEditor> {
                             icon: const Icon(Icons.replay_5),
                           ),
                           IconButton.filled(
-                            tooltip: 'Wiedergabe/Pause (Leertaste)',
+                            tooltip: 'Wiedergabe/Pause${keyHint('Leertaste')}',
                             onPressed: _isCurrent ? player.playPause : null,
                             icon: Icon(
                               player.playing ? Icons.pause : Icons.play_arrow,
@@ -413,12 +420,14 @@ class _LrcEditorState extends State<LrcEditor> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        'Eingabetaste: Zeit für die markierte Zeile setzen · '
-                        'Rücktaste: zurück · ↑/↓: Zeile wählen · −/+: '
-                        '0,1 s verschieben · Leertaste: Pause',
-                        style: theme.textTheme.bodySmall,
-                      ),
+                      // auf dem Handy: „Zeit setzen“ antippen statt Tasten
+                      if (!Platform.isAndroid)
+                        Text(
+                          'Eingabetaste: Zeit für die markierte Zeile setzen · '
+                          'Rücktaste: zurück · ↑/↓: Zeile wählen · −/+: '
+                          '0,1 s verschieben · Leertaste: Pause',
+                          style: theme.textTheme.bodySmall,
+                        ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -453,13 +462,10 @@ class _LrcEditorState extends State<LrcEditor> {
                           ),
                         ],
                       ),
-                      if (_error != null)
+                      if (_status != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            _error!,
-                            style: TextStyle(color: theme.colorScheme.error),
-                          ),
+                          child: StatusLine(_status),
                         ),
                     ],
                   ),

@@ -1,10 +1,11 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
+import '../core/music_fs.dart';
 import '../library/rename.dart';
 import '../library/track.dart';
+import '../log.dart';
 import 'scope.dart';
+import 'status_line.dart';
 
 Future<void> showRenameDialog(BuildContext context, List<Track> tracks) =>
     showDialog<void>(
@@ -41,7 +42,7 @@ class _RenameDialogState extends State<RenameDialog> {
     ..addListener(() => setState(() {}));
   bool _running = false;
   int _done = 0;
-  String? _result;
+  OpStatus? _status;
 
   List<_Plan> _plan() {
     final lib = context.library;
@@ -61,7 +62,7 @@ class _RenameDialogState extends State<RenameDialog> {
           final x when x == widget.tracks[i].path => _State.same,
           final x
               when seen[x.toLowerCase()]! > 1 ||
-                  File(lib.abs(x)).existsSync() &&
+                  lib.byPath(x) != null &&
                       x.toLowerCase() != widget.tracks[i].path.toLowerCase() =>
             _State.conflict,
           _ => _State.ok,
@@ -72,37 +73,44 @@ class _RenameDialogState extends State<RenameDialog> {
   Future<void> _run(List<_Plan> plan) async {
     final lib = context.library;
     await context.settings.setRenamePattern(_ctrl.text);
+    final todo = plan.where((p) => p.state == _State.ok).toList();
     setState(() {
       _running = true;
       _done = 0;
+      _status = OpStatus.busy('Benenne um … 0 von ${todo.length}');
     });
     var ok = 0;
-    final errors = <String>[];
-    final todo = plan.where((p) => p.state == _State.ok).toList();
+    var failed = 0;
     for (final p in todo) {
       try {
         await _move(lib.abs(p.track.path), lib.abs(p.target!));
+        logInfo('Umbenannt: ${p.track.path} → ${p.target}');
         ok++;
-      } catch (e) {
-        errors.add('${p.track.fileName}: $e');
+      } catch (e, st) {
+        logError('Umbenennen fehlgeschlagen: ${p.track.path}', e, st);
+        failed++;
       }
-      if (mounted) setState(() => _done++);
+      if (mounted) {
+        setState(() {
+          _done++;
+          _status = OpStatus.busy('Benenne um … $_done von ${todo.length}');
+        });
+      }
     }
     // leere alte Ordner aufräumen
     for (final p in todo) {
-      await _pruneEmpty(File(lib.abs(p.track.path)).parent);
+      await _pruneEmpty(MusicFs.parent(lib.abs(p.track.path)));
     }
     await lib.refresh();
     if (!mounted) return;
-    if (errors.isEmpty) {
+    if (failed == 0) {
       Navigator.pop(context);
       ScaffoldMessenger.maybeOf(context)
           ?.showSnackBar(SnackBar(content: Text('$ok Dateien umbenannt')));
     } else {
       setState(() {
         _running = false;
-        _result =
-            '$ok umbenannt, ${errors.length} Fehler:\n${errors.join('\n')}';
+        _status = OpStatus.error('$ok umbenannt, $failed fehlgeschlagen');
       });
     }
   }
@@ -114,35 +122,34 @@ class _RenameDialogState extends State<RenameDialog> {
   }
 
   Future<void> _move(String from, String to) async {
-    await File(to).parent.create(recursive: true);
-    if (await File(to).exists() && from.toLowerCase() != to.toLowerCase()) {
-      throw const FileSystemException('Ziel existiert schon');
-    }
-    await File(from).rename(to);
+    await MusicFs.rename(from, to);
     // Begleitdateien mit gleichem Namen (Lyrics, Beschreibung, Kapitel)
     final fb = _base(from), tb = _base(to);
     for (final ext in sidecarExtensions) {
-      final side = File('$fb.$ext');
-      if (await side.exists() && !await File('$tb.$ext').exists()) {
-        await side.rename('$tb.$ext');
+      final side = '$fb.$ext';
+      if (await MusicFs.exists(side) && !await MusicFs.exists('$tb.$ext')) {
+        await MusicFs.rename(side, '$tb.$ext');
       }
     }
   }
 
-  Future<void> _pruneEmpty(Directory d) async {
+  Future<void> _pruneEmpty(String d) async {
     final roots = {
       context.library.root,
       for (final r in context.library.extraRoots) r.dir,
     };
     var dir = d;
-    while (!roots.contains(dir.path) && await dir.exists()) {
+    while (!roots.contains(dir) && !roots.contains('$dir/')) {
       try {
-        if (!await dir.list().isEmpty) return;
-        await dir.delete();
+        if (!await MusicFs.isDir(dir)) return;
+        if ((await MusicFs.list(dir)).isNotEmpty) return;
+        await MusicFs.delete(dir);
       } catch (_) {
         return;
       }
-      dir = dir.parent;
+      final up = MusicFs.parent(dir);
+      if (up == dir) return;
+      dir = up;
     }
   }
 
@@ -283,23 +290,15 @@ class _RenameDialogState extends State<RenameDialog> {
               '${conflicts > 0 ? '\n$conflicts Konflikte werden übersprungen.' : ''}',
               style: theme.textTheme.bodySmall,
             ),
-            if (_result != null)
+            if (_status != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _result!,
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
+                child: StatusLine(_status),
               ),
           ],
         ),
       ),
       actions: [
-        if (_running)
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Text('$_done / $count'),
-          ),
         TextButton(
           onPressed: _running ? null : () => Navigator.pop(context),
           child: const Text('Abbrechen'),

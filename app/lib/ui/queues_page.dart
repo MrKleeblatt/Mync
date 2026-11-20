@@ -164,12 +164,47 @@ class QueuesPage extends StatelessWidget {
   }
 }
 
-class _QueueList extends StatelessWidget {
+/// Titel der Warteschlange. Bearbeiten nur durch seitliches Wischen:
+/// nach links nimmt den Titel heraus (rückgängig machbar), nach rechts
+/// schaltet ihn zum Verschieben frei (Griff zum Ziehen, Pfeile).
+class _QueueList extends StatefulWidget {
   const _QueueList({required this.player});
   final PlayerController player;
 
   @override
+  State<_QueueList> createState() => _QueueListState();
+}
+
+class _QueueListState extends State<_QueueList> {
+  String? _moving; // Pfad des Titels, der gerade verschoben werden darf
+
+  Future<void> _remove(BuildContext context, int i, String path) async {
+    final player = widget.player;
+    final name = context.library.byPath(path)?.title ?? path.split('/').last;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final wasCurrent = i == player.queue.index;
+    await player.removeAt(i);
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('„$name“ herausgenommen'),
+        action: wasCurrent
+            ? null
+            : SnackBarAction(
+                label: 'Rückgängig',
+                onPressed: () async {
+                  await player.append([path]);
+                  final last = player.queue.items.length - 1;
+                  if (i < last) await player.moveItem(last, i);
+                },
+              ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final player = widget.player;
     final q = player.queue;
     final lib = context.library;
     final theme = Theme.of(context);
@@ -178,7 +213,7 @@ class _QueueList extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            'Leer. Titel in der Bibliothek antippen oder über das Menü hinzufügen.',
+            'Leer. Titel unter „Ordner“ antippen und hinzufügen.',
             textAlign: TextAlign.center,
           ),
         ),
@@ -192,50 +227,117 @@ class _QueueList extends StatelessWidget {
         final path = q.items[i];
         final t = lib.byPath(path);
         final current = i == q.index;
-        return ListTile(
+        final moving = _moving == path;
+        return Dismissible(
           key: ValueKey('$i:$path'),
-          selected: current,
-          dense: true,
-          leading: ReorderableDragStartListener(
-            index: i,
-            child: t == null
+          background: Container(
+            color: theme.colorScheme.secondaryContainer,
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.swap_vert,
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  moving ? 'Fertig' : 'Verschieben',
+                  style: TextStyle(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          secondaryBackground: Container(
+            color: theme.colorScheme.errorContainer,
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  'Herausnehmen',
+                  style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.remove_circle_outline,
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ],
+            ),
+          ),
+          confirmDismiss: (dir) async {
+            if (dir == DismissDirection.startToEnd) {
+              setState(() => _moving = moving ? null : path);
+              return false;
+            }
+            return true;
+          },
+          onDismissed: (_) => _remove(context, i, path),
+          child: ListTile(
+            selected: current,
+            dense: true,
+            tileColor: moving
+                ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.35)
+                : null,
+            leading: t == null
                 ? const Icon(Icons.help_outline)
                 : CoverArt(track: t, size: 36),
+            title: Text(
+              t?.title ?? path.split('/').last,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: current
+                  ? const TextStyle(fontWeight: FontWeight.w600)
+                  : null,
+            ),
+            subtitle: Text(
+              t?.artist ?? 'Datei fehlt',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (current)
+                  Icon(
+                    player.playing ? Icons.graphic_eq : Icons.pause,
+                    size: 18,
+                    color: theme.colorScheme.primary,
+                  ),
+                if (moving) ...[
+                  IconButton(
+                    tooltip: 'Nach oben',
+                    onPressed: i == 0 ? null : () => player.moveItem(i, i - 1),
+                    icon: const Icon(Icons.arrow_upward, size: 18),
+                  ),
+                  IconButton(
+                    tooltip: 'Nach unten',
+                    onPressed: i == q.items.length - 1
+                        ? null
+                        : () => player.moveItem(i, i + 1),
+                    icon: const Icon(Icons.arrow_downward, size: 18),
+                  ),
+                  ReorderableDragStartListener(
+                    index: i,
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.drag_handle),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Fertig',
+                    onPressed: () => setState(() => _moving = null),
+                    icon: const Icon(Icons.check, size: 18),
+                  ),
+                ],
+              ],
+            ),
+            onTap: () => player.jumpTo(i),
           ),
-          title: Text(
-            t?.title ?? path.split('/').last,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: current
-                ? const TextStyle(fontWeight: FontWeight.w600)
-                : null,
-          ),
-          subtitle: Text(
-            t?.artist ?? 'Datei fehlt',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (current)
-                Icon(
-                  player.playing ? Icons.graphic_eq : Icons.pause,
-                  size: 18,
-                  color: theme.colorScheme.primary,
-                ),
-              IconButton(
-                tooltip: 'Entfernen',
-                onPressed: () => player.removeAt(i),
-                icon: const Icon(Icons.close, size: 18),
-              ),
-              ReorderableDragStartListener(
-                index: i,
-                child: const Icon(Icons.drag_handle),
-              ),
-            ],
-          ),
-          onTap: () => player.jumpTo(i),
         );
       },
     );

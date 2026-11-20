@@ -4,8 +4,14 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 
 import '../backup/backup.dart';
+import '../core/music_fs.dart';
 import '../core/mync_core.dart';
+import '../log.dart';
+import 'folder_picker.dart';
+import 'global_shortcuts.dart';
 import 'scope.dart';
+import 'log_page.dart';
+import 'status_line.dart';
 import 'sound_sheets.dart';
 import 'update_widgets.dart';
 
@@ -25,52 +31,58 @@ class SettingsPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text('Einstellungen', style: theme.textTheme.headlineSmall),
           ),
-          const _Section('Bibliothek'),
+          const _Section('Ordner'),
           ListTile(
             leading: const Icon(Icons.folder),
             title: const Text('Musikordner'),
             subtitle: Text(
-              '${s.musicDir}\nHauptordner, wird mit dem Handy abgeglichen',
+              '${folderLabel(s.musicDir)}\nHauptordner, wird mit dem Handy abgeglichen',
             ),
             isThreeLine: true,
             onTap: () async {
-              final p = await getDirectoryPath(
-                initialDirectory: s.musicDir,
-                confirmButtonText: 'Wählen',
-              );
-              if (p != null && p.isNotEmpty) await s.setMusicDir(p);
+              final old = s.musicDir;
+              final p = await pickMusicFolder(initial: old);
+              if (p == null || p == old) return;
+              await s.setMusicDir(p);
+              if (!s.extraMusicDirs.contains(old)) await MusicFs.release(old);
             },
           ),
           for (final d in s.extraMusicDirs)
             ListTile(
               leading: const Icon(Icons.folder_outlined),
               title: Text(
-                d.split('/').where((x) => x.isNotEmpty).lastOrNull ?? d,
+                folderLabel(d)
+                        .split('/')
+                        .where((x) => x.isNotEmpty)
+                        .lastOrNull ??
+                    d,
               ),
               subtitle: Text(
-                '$d\nWeiterer Ordner, erscheint in der Bibliothek als eigener Ordner',
+                '${folderLabel(d)}\nWeiterer Ordner, erscheint unter „Ordner“ als eigener Ordner',
               ),
               isThreeLine: true,
               trailing: IconButton(
                 tooltip: 'Ordner entfernen (Dateien bleiben erhalten)',
                 icon: const Icon(Icons.remove_circle_outline),
-                onPressed: () =>
-                    s.setExtraMusicDirs([...s.extraMusicDirs]..remove(d)),
+                onPressed: () async {
+                  await s.setExtraMusicDirs([...s.extraMusicDirs]..remove(d));
+                  if (d != s.musicDir) await MusicFs.release(d);
+                },
               ),
             ),
           ListTile(
             leading: const Icon(Icons.create_new_folder_outlined),
             title: const Text('Weiteren Musikordner hinzufügen …'),
             onTap: () async {
-              final p = await getDirectoryPath(confirmButtonText: 'Hinzufügen');
-              if (p == null || p.isEmpty) return;
+              final p = await pickMusicFolder(confirm: 'Hinzufügen');
+              if (p == null) return;
               if (p == s.musicDir || s.extraMusicDirs.contains(p)) return;
               await s.setExtraMusicDirs([...s.extraMusicDirs, p]);
             },
           ),
           ListTile(
             leading: const Icon(Icons.block),
-            title: const Text('Ausschlüsse'),
+            title: Text('Ausschlüsse'),
             subtitle: Text(
               s.excludes.isEmpty
                   ? 'Keine – alle Audiodateien werden eingelesen'
@@ -119,7 +131,7 @@ class SettingsPage extends StatelessWidget {
             leading: const Icon(Icons.fast_forward),
             title: const Text('Spulen'),
             subtitle: Text(
-              '${s.seekStep} s pro Schritt (Umschalt+Pfeil: 1 min)',
+              '${s.seekStep} s pro Schritt${keyHint('Umschalt+Pfeil: 1 min')}',
             ),
             trailing: DropdownButton<int>(
               value: s.seekStep,
@@ -203,34 +215,36 @@ class SettingsPage extends StatelessWidget {
             value: s.visualizer,
             onChanged: s.setVisualizer,
           ),
-          const _Section('Tastenkürzel'),
-          const _Shortcuts(),
+          // Tastenkürzel nur am Rechner (auf dem Handy gibt es keine Tastatur)
+          if (!Platform.isAndroid) ...[
+            const _Section('Tastenkürzel'),
+            const _Shortcuts(),
+          ],
           const _Section('Sicherung'),
-          ListTile(
-            leading: const Icon(Icons.save_alt),
-            title: const Text('Sicherung erstellen …'),
-            subtitle: const Text(
-              'Einstellungen, Warteschlangen, Hörstatistik, gemerkte '
-              'Positionen und Kopplungen in eine Datei',
-            ),
-            onTap: () => _createBackup(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings_backup_restore),
-            title: const Text('Sicherung wiederherstellen …'),
-            subtitle: const Text(
-              'Ersetzt den aktuellen Stand; mync startet neu',
-            ),
-            onTap: () => _restoreBackup(context),
-          ),
-          const _Section('Updates'),
-          const UpdateSettings(),
-          const _Section('Info'),
+          const _BackupSection(),
+          const _Section('Info und Updates'),
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('mync'),
             subtitle: Text('Kern ${_coreVersion()} · Daten in ${s.dataDir}'),
           ),
+          ListenableBuilder(
+            listenable: appLog,
+            builder: (context, _) => ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: const Text('Logbuch'),
+              subtitle: Text(
+                appLog.problems == 0
+                    ? 'Was die App seit dem Start getan hat'
+                    : appLog.problems == 1
+                    ? '1 Warnung oder Fehler seit dem Start'
+                    : '${appLog.problems} Warnungen oder Fehler seit dem Start',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => openLogPage(context),
+            ),
+          ),
+          const UpdateSettings(),
         ],
       ),
     );
@@ -272,7 +286,7 @@ class _Shortcuts extends StatelessWidget {
     ('Strg + F', 'Suche'),
     ('Strg + R', 'Wiederholen umschalten'),
     ('Strg + S', 'Warteschlange mischen'),
-    ('F5', 'Bibliothek neu einlesen'),
+    ('F5', 'Ordner neu einlesen'),
   ];
 
   @override
@@ -387,10 +401,62 @@ Future<bool?> _askPairings(BuildContext context, String title, String action) {
   );
 }
 
-Future<void> _createBackup(BuildContext context) async {
+/// Sicherung erstellen und wiederherstellen, mit Zustandszeile.
+class _BackupSection extends StatefulWidget {
+  const _BackupSection();
+
+  @override
+  State<_BackupSection> createState() => _BackupSectionState();
+}
+
+class _BackupSectionState extends State<_BackupSection> {
+  OpStatus? _status;
+
+  void _report(OpStatus s) {
+    if (mounted) setState(() => _status = s);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = _status?.busy ?? false;
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.save_alt),
+          title: const Text('Sicherung erstellen …'),
+          subtitle: const Text(
+            'Einstellungen, Warteschlangen, Hörstatistik, gemerkte '
+            'Positionen und Kopplungen in eine Datei',
+          ),
+          enabled: !busy,
+          onTap: () => _createBackup(context, _report),
+        ),
+        ListTile(
+          leading: const Icon(Icons.settings_backup_restore),
+          title: const Text('Sicherung wiederherstellen …'),
+          subtitle: const Text('Ersetzt den aktuellen Stand; mync startet neu'),
+          enabled: !busy,
+          onTap: () => _restoreBackup(context, _report),
+        ),
+        if (_status != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: StatusLine(_status, dense: true),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+Future<void> _createBackup(
+  BuildContext context,
+  void Function(OpStatus) report,
+) async {
   final settings = context.settings;
   final player = context.player;
-  final messenger = ScaffoldMessenger.of(context);
   final pairings = await _askPairings(
     context,
     'Sicherung erstellen',
@@ -400,10 +466,35 @@ Future<void> _createBackup(BuildContext context) async {
   final d = DateTime.now();
   final name =
       'mync-${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}.${Backup.extension}';
-  String? path;
   if (Platform.isAndroid) {
-    path = '/storage/emulated/0/Download/$name';
-  } else {
+    // Ohne Speicherberechtigung: erst in den Cache, dann „Speichern unter“
+    // des Systems (Downloads, Drive, …)
+    await runStatus<int?>(
+      report,
+      () async {
+        await player.saveNow();
+        final tmp = await Backup.create(
+          settings,
+          '${settings.cacheDir}/$name',
+          pairings: pairings,
+        );
+        try {
+          final bytes = await tmp.readAsBytes();
+          final uri = await MusicFs.saveDocument(name, bytes);
+          return uri == null ? null : bytes.length;
+        } finally {
+          await tmp.delete();
+        }
+      },
+      busy: 'Sichere …',
+      ok: (n) => n == null ? 'Abgebrochen' : 'Gesichert (${formatSize(n)})',
+      failText: 'Sicherung fehlgeschlagen',
+      logWhat: 'Sicherung',
+    );
+    return;
+  }
+  String? path;
+  {
     final loc = await getSaveLocation(
       suggestedName: name,
       acceptedTypeGroups: const [
@@ -413,29 +504,30 @@ Future<void> _createBackup(BuildContext context) async {
     path = loc?.path;
   }
   if (path == null) return;
-  try {
-    await player.saveNow();
-    final f = await Backup.create(settings, path, pairings: pairings);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Gesichert: ${f.path} (${formatSize(f.lengthSync())})'),
-      ),
-    );
-  } catch (e) {
-    messenger.showSnackBar(
-      SnackBar(content: Text('Sicherung fehlgeschlagen: $e')),
-    );
-  }
+  final target = path;
+  await runStatus<File>(
+    report,
+    () async {
+      await player.saveNow();
+      return Backup.create(settings, target, pairings: pairings);
+    },
+    busy: 'Sichere …',
+    ok: (f) => 'Gesichert: ${f.path} (${formatSize(f.lengthSync())})',
+    failText: 'Sicherung fehlgeschlagen',
+    logWhat: 'Sicherung',
+  );
 }
 
 String formatSize(int b) => b >= 1e6
     ? '${(b / 1e6).toStringAsFixed(1).replaceAll('.', ',')} MB'
     : '${(b / 1e3).ceil()} kB';
 
-Future<void> _restoreBackup(BuildContext context) async {
+Future<void> _restoreBackup(
+  BuildContext context,
+  void Function(OpStatus) report,
+) async {
   final settings = context.settings;
   final player = context.player;
-  final messenger = ScaffoldMessenger.of(context);
   final file = await openFile(
     acceptedTypeGroups: const [
       XTypeGroup(label: 'mync-Sicherung', extensions: [Backup.extension]),
@@ -445,8 +537,9 @@ Future<void> _restoreBackup(BuildContext context) async {
   final BackupInfo info;
   try {
     info = await Backup.inspect(file.path);
-  } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('$e')));
+  } catch (e, st) {
+    logError('Sicherung nicht lesbar: ${file.name}', e, st);
+    report(const OpStatus.error('Keine gültige mync-Sicherung'));
     return;
   }
   if (!context.mounted) return;
@@ -458,19 +551,25 @@ Future<void> _restoreBackup(BuildContext context) async {
     'Wiederherstellen',
   );
   if (pairings == null) return;
-  try {
-    // ab jetzt nichts mehr speichern, sonst überschreibt das Beenden die Sicherung
-    player.frozen = true;
-    await Backup.restore(
-      settings,
-      file.path,
-      pairings: pairings && info.hasPairings,
-    );
-  } catch (e) {
+  // ab jetzt nichts mehr speichern, sonst überschreibt das Beenden die Sicherung
+  player.frozen = true;
+  final done = await runStatus<bool>(
+    report,
+    () async {
+      await Backup.restore(
+        settings,
+        file.path,
+        pairings: pairings && info.hasPairings,
+      );
+      return true;
+    },
+    busy: 'Stelle wieder her …',
+    ok: (_) => 'Wiederhergestellt',
+    failText: 'Wiederherstellen fehlgeschlagen',
+    logWhat: 'Wiederherstellen',
+  );
+  if (done == null) {
     player.frozen = false;
-    messenger.showSnackBar(
-      SnackBar(content: Text('Wiederherstellen fehlgeschlagen: $e')),
-    );
     return;
   }
   if (!context.mounted) return;

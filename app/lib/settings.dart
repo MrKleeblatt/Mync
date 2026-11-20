@@ -31,7 +31,8 @@ class AppSettings extends ChangeNotifier {
   }
 
   static String get defaultMusicDir {
-    if (Platform.isAndroid) return '/storage/emulated/0/Music';
+    // Android: erst nach der Ordnerauswahl (Freigabe, siehe MusicFs)
+    if (Platform.isAndroid) return '';
     final home = Platform.environment['HOME'] ?? '';
     for (final name in ['Musik', 'Music']) {
       if (Directory('$home/$name').existsSync()) return '$home/$name';
@@ -76,15 +77,24 @@ class AppSettings extends ChangeNotifier {
     }
   }
 
-  String get musicDir => _prefs.getString('musicDir') ?? defaultMusicDir;
+  /// Hauptordner; unter Android die Ordnerfreigabe (content://…), leer
+  /// solange keine gewählt ist. Alte Pfade (vor der Freigabe) gelten nicht.
+  String get musicDir {
+    final v = _prefs.getString('musicDir') ?? defaultMusicDir;
+    if (Platform.isAndroid && !v.startsWith('content://')) return '';
+    return v;
+  }
+
   Future<void> setMusicDir(String path) async {
     await _prefs.setString('musicDir', path);
     notifyListeners();
   }
 
   /// Weitere Musikordner (erscheinen als eigene Ordner in der Bibliothek).
-  List<String> get extraMusicDirs =>
-      _prefs.getStringList('extraMusicDirs') ?? const [];
+  List<String> get extraMusicDirs => [
+    for (final d in _prefs.getStringList('extraMusicDirs') ?? const <String>[])
+      if (!Platform.isAndroid || d.startsWith('content://')) d,
+  ];
   Future<void> setExtraMusicDirs(List<String> dirs) async {
     await _prefs.setStringList('extraMusicDirs', dirs);
     notifyListeners();
@@ -219,9 +229,4 @@ class AppSettings extends ChangeNotifier {
   }
 
   /// Aktuelle Bibliotheksansicht (Tab-Index).
-  int get libraryTab => _prefs.getInt('libraryTab') ?? 0;
-  Future<void> setLibraryTab(int i) => _prefs.setInt('libraryTab', i);
-
-  String get trackSort => _prefs.getString('trackSort') ?? 'title';
-  Future<void> setTrackSort(String v) => _prefs.setString('trackSort', v);
 }

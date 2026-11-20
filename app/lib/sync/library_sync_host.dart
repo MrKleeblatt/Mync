@@ -1,7 +1,3 @@
-import 'dart:io';
-
-import 'package:flutter/services.dart';
-
 import '../library/library.dart';
 import '../settings.dart';
 import 'sync_session.dart';
@@ -11,8 +7,6 @@ class LibrarySyncHost implements SyncHost {
   LibrarySyncHost(this.library, this.settings);
   final Library library;
   final AppSettings settings;
-
-  static const _channel = MethodChannel('mync/storage');
 
   @override
   String get root => settings.musicDir;
@@ -26,16 +20,13 @@ class LibrarySyncHost implements SyncHost {
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
     await library.refresh();
+    // der Abgleich braucht alle Audio-Hashes
+    await library.ensureHashed();
   }
 
   @override
   Future<void> afterApply(List<String> changedPaths) async {
-    if (!Platform.isAndroid) return;
-    // Android-MediaScanner, damit Musicolet die Änderungen sieht
-    try {
-      await _channel.invokeMethod<void>('scanFiles', [
-        for (final p in changedPaths) '$root/$p',
-      ]);
-    } catch (_) {}
+    // Android: Änderungen über die Ordnerfreigabe sieht die Medien-
+    // datenbank (Musicolet & Co.) von selbst – nichts zu tun.
   }
 }

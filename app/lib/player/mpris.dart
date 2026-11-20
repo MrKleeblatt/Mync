@@ -5,6 +5,7 @@ import 'package:dbus/dbus.dart';
 
 import 'player_controller.dart';
 import 'queue.dart';
+import '../core/music_fs.dart';
 
 /// MPRIS2-Schnittstelle (D-Bus): Medientasten, Mediensteuerung von
 /// GNOME/KDE, `playerctl`, KDE Connect usw.
@@ -80,7 +81,7 @@ class _MprisObject extends DBusObject {
       if (t.album != null) m['xesam:album'] = DBusString(t.album!);
       m['xesam:albumArtist'] = DBusArray.string([t.albumArtist]);
       if (t.trackNo != null) m['xesam:trackNumber'] = DBusInt32(t.trackNo!);
-      m['xesam:url'] = DBusString(Uri.file(c.library.abs(t.path)).toString());
+      m['xesam:url'] = DBusString(MusicFs.mediaUri(c.library.abs(t.path)));
       final len = c.duration > Duration.zero ? c.duration : t.duration;
       m['mpris:length'] = DBusInt64(len.inMicroseconds);
     }

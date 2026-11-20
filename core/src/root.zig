@@ -13,6 +13,7 @@ pub const sqlite = @import("sqlite.zig");
 pub const duration = @import("duration.zig");
 pub const writer = @import("writer.zig");
 pub const sign = @import("sign.zig");
+pub const source = @import("source.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
