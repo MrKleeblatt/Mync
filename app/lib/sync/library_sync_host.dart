@@ -20,6 +20,8 @@ class LibrarySyncHost implements SyncHost {
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
     await library.refresh();
+    // der Abgleich braucht alle Audio-Hashes
+    await library.ensureHashed();
   }
 
   @override

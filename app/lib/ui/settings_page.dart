@@ -31,7 +31,7 @@ class SettingsPage extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text('Einstellungen', style: theme.textTheme.headlineSmall),
           ),
-          const _Section('Bibliothek'),
+          const _Section('Ordner'),
           ListTile(
             leading: const Icon(Icons.folder),
             title: const Text('Musikordner'),
@@ -58,7 +58,7 @@ class SettingsPage extends StatelessWidget {
                     d,
               ),
               subtitle: Text(
-                '${folderLabel(d)}\nWeiterer Ordner, erscheint in der Bibliothek als eigener Ordner',
+                '${folderLabel(d)}\nWeiterer Ordner, erscheint unter „Ordner“ als eigener Ordner',
               ),
               isThreeLine: true,
               trailing: IconButton(
@@ -286,7 +286,7 @@ class _Shortcuts extends StatelessWidget {
     ('Strg + F', 'Suche'),
     ('Strg + R', 'Wiederholen umschalten'),
     ('Strg + S', 'Warteschlange mischen'),
-    ('F5', 'Bibliothek neu einlesen'),
+    ('F5', 'Ordner neu einlesen'),
   ];
 
   @override

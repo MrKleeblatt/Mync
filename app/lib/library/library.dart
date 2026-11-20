@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
@@ -33,6 +34,11 @@ class Library extends ChangeNotifier {
   }
 
   bool loaded = false;
+
+  /// Audio-Hashes im Hintergrund (nur für den Sync): (fertig, gesamt);
+  /// null, wenn gerade nichts zu tun ist.
+  (int done, int total)? hashProgress;
+  Future<void>? _hashing;
 
   /// Zustand des letzten Ladens/Einlesens (Details im Logbuch).
   OpStatus? status;
@@ -167,6 +173,7 @@ class Library extends ChangeNotifier {
     }
     loaded = true;
     notifyListeners();
+    unawaited(ensureHashed()); // offene vom letzten Mal
   }
 
   /// Scannt den Musikordner und lädt danach neu.
@@ -235,6 +242,7 @@ class Library extends ChangeNotifier {
         'Einlesen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s: '
         '$summary, $hashed neu eingelesen, ${errors.length} Fehler',
       );
+      unawaited(ensureHashed());
       status = errors.isEmpty && missing.isEmpty
           ? OpStatus.ok(summary)
           : OpStatus.error(
@@ -256,6 +264,72 @@ class Library extends ChangeNotifier {
       loaded = true;
       notifyListeners();
     }
+  }
+
+  /// Berechnet fehlende Audio-Hashes (der Scan liest nur Tags und Dauer).
+  /// Läuft im Hintergrund nach jedem Scan; der Sync wartet darauf.
+  Future<void> ensureHashed() => _hashing ??= _hashAll().whenComplete(() {
+    _hashing = null;
+    hashProgress = null;
+    notifyListeners();
+  });
+
+  Future<void> _hashAll() async {
+    final roots = [
+      if (root.isNotEmpty) (root, settings.manifestDb),
+      for (final r in _extra) (r.dir, r.db),
+    ];
+    final todo = <(String, String, List<String>)>[];
+    for (final (dir, db) in roots) {
+      if (!File(db).existsSync()) continue;
+      try {
+        final p = await pendingHashes(db);
+        if (p.isNotEmpty) todo.add((dir, db, p));
+      } catch (e, st) {
+        logError('Offene Prüfsummen nicht lesbar', e, st);
+      }
+    }
+    final total = todo.fold(0, (n, t) => n + t.$3.length);
+    if (total == 0) return;
+    logInfo('Prüfsummen für den Sync: $total Dateien im Hintergrund');
+    final watch = Stopwatch()..start();
+    var done = 0, failed = 0;
+    hashProgress = (0, total);
+    notifyListeners();
+    const batch = 32;
+    for (final (dir, db, paths) in todo) {
+      final tree = MusicFs.isTree(dir);
+      for (var i = 0; i < paths.length; i += batch) {
+        final part = paths.sublist(i, min(i + batch, paths.length));
+        final fds = tree ? await MusicFs.openFds(dir, part) : const <int>[];
+        try {
+          final items = <String, String>{
+            for (var k = 0; k < part.length; k++)
+              if (!tree)
+                part[k]: '$dir/${part[k]}'
+              else if (fds[k] >= 0)
+                part[k]: 'fd:${fds[k]}:${part[k]}',
+          };
+          final (n, errors) = await fillHashes(db, items);
+          failed += part.length - n;
+          for (final e in errors) {
+            logWarning('Prüfsumme nicht berechnet: $e');
+          }
+        } catch (e, st) {
+          failed += part.length;
+          logError('Prüfsummen fehlgeschlagen', e, st);
+        } finally {
+          if (fds.isNotEmpty) await MusicFs.closeFds(fds);
+        }
+        done += part.length;
+        hashProgress = (done, total);
+        notifyListeners();
+      }
+    }
+    logInfo(
+      'Prüfsummen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s'
+      '${failed > 0 ? ', $failed fehlgeschlagen' : ''}',
+    );
   }
 
   Future<bool> _rootReadable(String dir) async {
@@ -296,11 +370,6 @@ class Library extends ChangeNotifier {
         : _all
               .where((t) => t.info.durationMs < 0 || t.info.durationMs >= minMs)
               .toList();
-  }
-
-  static int _byAlbumThenOrder(Track a, Track b) {
-    final c = compareText(a.albumOrUnknown, b.albumOrUnknown);
-    return c != 0 ? c : compareAlbumOrder(a, b);
   }
 
   // ─── Ordner ────────────────────────────────────────────────────────────
@@ -371,32 +440,6 @@ class Library extends ChangeNotifier {
       return c != 0 ? c : compareText(a, b);
     });
     return hits;
-  }
-
-  // ─── Sortierte Titelliste ─────────────────────────────────────────────
-
-  List<Track> sortedTracks(String sort) {
-    final list = [..._visible];
-    switch (sort) {
-      case 'artist':
-        list.sort((a, b) {
-          final c = compareText(a.artist, b.artist);
-          return c != 0 ? c : _byAlbumThenOrder(a, b);
-        });
-      case 'album':
-        list.sort(_byAlbumThenOrder);
-      case 'year':
-        list.sort((a, b) => (b.year ?? 0).compareTo(a.year ?? 0));
-      case 'duration':
-        list.sort((a, b) => b.info.durationMs.compareTo(a.info.durationMs));
-      case 'added':
-        list.sort((a, b) => b.info.addedMs.compareTo(a.info.addedMs));
-      case 'file':
-        list.sort((a, b) => compareText(a.path, b.path));
-      default:
-        list.sort((a, b) => compareText(a.title, b.title));
-    }
-    return list;
   }
 
   // ─── Cover ─────────────────────────────────────────────────────────────

@@ -213,7 +213,7 @@ class _QueueListState extends State<_QueueList> {
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            'Leer. Titel in der Bibliothek antippen oder über das Menü hinzufügen.',
+            'Leer. Titel unter „Ordner“ antippen und hinzufügen.',
             textAlign: TextAlign.center,
           ),
         ),

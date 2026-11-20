@@ -75,6 +75,10 @@ pub const Manifest = struct {
     excludes: []const []const u8 = &.{},
     /// Fortschritt (wird während `scan` aus anderen Threads gelesen).
     progress: ?*ScanProgress = null,
+    /// Audio-Hash nicht beim Scan berechnen (er liest die ganze Datei),
+    /// sondern später mit `fillHashes` – der Scan liest dann nur Tags und
+    /// Dauer aus den Dateiköpfen. Bis dahin ist `audio_hash` leer.
+    defer_audio: bool = false,
 
     pub fn open(io: Io, db_path: [:0]const u8, root: []const u8) !Manifest {
         const db = try sqlite.Db.open(db_path);
@@ -122,6 +126,42 @@ pub const Manifest = struct {
             });
         }
         return out.items;
+    }
+
+    /// Dateien ohne Audio-Hash (Scan mit `defer_audio`), nach Pfad.
+    pub fn pending(m: Manifest, gpa: Allocator) ![]const []const u8 {
+        const st = try m.db.prepare("SELECT path FROM file WHERE audio_hash='' ORDER BY path");
+        defer st.deinit();
+        var out: std.ArrayList([]const u8) = .empty;
+        while (try st.step()) try out.append(gpa, try gpa.dupe(u8, st.text(0)));
+        return out.items;
+    }
+
+    /// Berechnet fehlende Audio-Hashes (parallel). Ändert nichts an `seq`:
+    /// die Datei selbst ist unverändert, nur der Eintrag wird vollständig.
+    pub fn fillHashes(m: Manifest, gpa: Allocator, dir: Io.Dir, items: []const HashItem) !FillReport {
+        const jobs = try gpa.alloc(HashJob, items.len);
+        for (items, jobs) |it, *j| j.* = .{ .mode = .audio, .rel = it.path, .src = it.src, .size = 0, .mtime_ns = 0 };
+        var pool: HashPool = .{ .root = dir, .jobs = jobs, .progress = m.progress };
+        defer pool.deinit();
+        try pool.run(m.io);
+        var report: FillReport = .{};
+        var errors: std.ArrayList(ScanError) = .empty;
+        try m.db.exec("BEGIN");
+        errdefer m.db.exec("ROLLBACK") catch {};
+        const up = try m.db.prepare("UPDATE file SET audio_hash=?1 WHERE path=?2 AND audio_hash=''");
+        defer up.deinit();
+        for (jobs) |j| {
+            if (j.err) |e| {
+                try errors.append(gpa, .{ .path = j.rel, .message = e });
+                continue;
+            }
+            try up.run(.{ j.audio_hash, j.rel });
+            report.hashed += 1;
+        }
+        try m.db.exec("COMMIT");
+        report.errors = errors.items;
+        return report;
     }
 
     pub fn entries(m: Manifest, gpa: Allocator) ![]diff.Entry {
@@ -229,7 +269,7 @@ pub const Manifest = struct {
                 continue;
             };
             report.hashed += 1;
-            try jobs.append(gpa, .{ .rel = l.path, .src = src, .size = l.size, .mtime_ns = l.mtime_ns });
+            try jobs.append(gpa, .{ .rel = l.path, .src = src, .size = l.size, .mtime_ns = l.mtime_ns, .mode = if (m.defer_audio) .tags else .full });
         }
 
         // Neue/geänderte Dateien parallel hashen (ein Thread je CPU-Kern)
@@ -273,7 +313,7 @@ pub const Manifest = struct {
             var id: ?[]const u8 = if (known.get(r.entry.path)) |k| k.file_id else null;
             if (id == null) {
                 for (vanished.items, 0..) |v, i| {
-                    if (std.mem.eql(u8, v.entry.audio_hash, r.entry.audio_hash)) {
+                    if (sameAudio(v, r.*)) {
                         id = v.file_id;
                         _ = vanished.swapRemove(i);
                         break;
@@ -299,6 +339,18 @@ pub const Manifest = struct {
         report.needed = needed.items;
         return report;
     }
+};
+
+/// Ergebnis von `Manifest.fillHashes`.
+pub const FillReport = struct {
+    hashed: u32 = 0,
+    errors: []const ScanError = &.{},
+};
+
+/// Zum Nachberechnen eines Audio-Hashs: Pfad und wie die Datei zu öffnen ist.
+pub const HashItem = struct {
+    path: []const u8,
+    src: []const u8,
 };
 
 /// Eine Datei einer Auflistung (siehe `Manifest.scanEntries`).
@@ -417,7 +469,19 @@ pub const ScanProgress = extern struct {
     done: u32 = 0,
 };
 
+/// Gleiche Aufnahme (für erkannte Umbenennungen)? Mit Audio-Hash eindeutig;
+/// fehlt er auf einer Seite (noch nicht berechnet), genügen gleiche Größe
+/// und gleiche Tags – das erkennt reines Verschieben/Umbenennen.
+fn sameAudio(a: FileRow, b: FileRow) bool {
+    if (a.entry.audio_hash.len > 0 and b.entry.audio_hash.len > 0)
+        return std.mem.eql(u8, a.entry.audio_hash, b.entry.audio_hash);
+    return a.size == b.size and std.mem.eql(u8, a.entry.tag_hash, b.entry.tag_hash);
+}
+
+const HashMode = enum { full, tags, audio };
+
 const HashJob = struct {
+    mode: HashMode = .full,
     rel: []const u8,
     /// Zum Öffnen relativ zu `HashPool.root` (auch `fd:N:<name>`).
     src: []const u8,
@@ -475,14 +539,22 @@ const HashPool = struct {
             const j = &p.jobs[i];
             _ = tmp.reset(.retain_capacity);
             const a = tmp.allocator();
-            if (hashFile(a, io, p.root, j.src)) |h| {
-                j.audio_hash = keep.dupe(u8, h.audio_hash) catch "";
-                j.tag_hash = keep.dupe(u8, h.tag_hash) catch "";
-                j.tags_json = keep.dupe(u8, h.tags_json) catch "";
-                j.duration_ms = if (duration.ofFile(io, p.root, j.src)) |d| @intCast(d) else -1;
-                if (j.audio_hash.len == 0 or j.tags_json.len == 0) j.err = "OutOfMemory";
-            } else |err| {
-                j.err = @errorName(err);
+            switch (j.mode) {
+                .audio => if (audiohash.hashFile(io, p.root, j.src)) |h| {
+                    j.audio_hash = keep.dupe(u8, &h.hash) catch "";
+                    if (j.audio_hash.len == 0) j.err = "OutOfMemory";
+                } else |err| {
+                    j.err = @errorName(err);
+                },
+                .full, .tags => if (readFile(a, io, p.root, j.src, j.mode == .full)) |h| {
+                    j.audio_hash = keep.dupe(u8, h.audio_hash) catch "";
+                    j.tag_hash = keep.dupe(u8, h.tag_hash) catch "";
+                    j.tags_json = keep.dupe(u8, h.tags_json) catch "";
+                    j.duration_ms = if (duration.ofFile(io, p.root, j.src)) |d| @intCast(d) else -1;
+                    if ((j.mode == .full and j.audio_hash.len == 0) or j.tags_json.len == 0) j.err = "OutOfMemory";
+                } else |err| {
+                    j.err = @errorName(err);
+                },
             }
             if (p.progress) |pr| _ = @atomicRmw(u32, &pr.done, .Add, 1, .monotonic);
         }
@@ -490,13 +562,18 @@ const HashPool = struct {
 };
 
 pub fn hashFile(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8) !Hashed {
-    const a = try audiohash.hashFile(io, dir, path);
+    return readFile(gpa, io, dir, path, true);
+}
+
+/// Tags und `tag_hash`, mit `audio` auch den Audio-Hash (sonst leer).
+fn readFile(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8, audio: bool) !Hashed {
+    const a: ?audiohash.Result = if (audio) try audiohash.hashFile(io, dir, path) else null;
     const t = try tags_mod.readFile(gpa, io, dir, path);
     var aw: Io.Writer.Allocating = .init(gpa);
     try t.writeJson(&aw.writer);
     const th = try t.hash();
     return .{
-        .audio_hash = try gpa.dupe(u8, &a.hash),
+        .audio_hash = if (a) |r| try gpa.dupe(u8, &r.hash) else "",
         .tag_hash = try gpa.dupe(u8, &th),
         .tags_json = aw.written(),
         .tags = t,

@@ -229,9 +229,4 @@ class AppSettings extends ChangeNotifier {
   }
 
   /// Aktuelle Bibliotheksansicht (Tab-Index).
-  int get libraryTab => _prefs.getInt('libraryTab') ?? 0;
-  Future<void> setLibraryTab(int i) => _prefs.setInt('libraryTab', i);
-
-  String get trackSort => _prefs.getString('trackSort') ?? 'title';
-  Future<void> setTrackSort(String v) => _prefs.setString('trackSort', v);
 }

@@ -207,3 +207,55 @@ test "Scan aus einer Auflistung mit Deskriptoren, in Portionen (Android)" {
     r = try m.scanEntries(a, std.Io.Dir.cwd(), moved[1..], true);
     try t.expectEqual(@as(u32, 1), r.removed);
 }
+
+test "Scan ohne Audio-Hash, Hashes im Hintergrund nachholen" {
+    var arena: std.heap.ArenaAllocator = .init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var td = try openTestdata();
+    defer td.close(t.io);
+    var tmp = t.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try std.fmt.allocPrint(a, ".zig-cache/tmp/{s}", .{&tmp.sub_path});
+    try tmp.dir.createDirPath(t.io, "A");
+    try td.copyFile("mp3-tagged.mp3", tmp.dir, "A/x.mp3", t.io, .{});
+    try td.copyFile("flac-plain.flac", tmp.dir, "A/y.flac", t.io, .{});
+    try tmp.dir.createDirPath(t.io, ".mync");
+
+    const db_path = try std.fmt.allocPrintSentinel(a, "{s}/.mync/manifest.db", .{root}, 0);
+    var m = try manifest.Manifest.open(t.io, db_path, root);
+    defer m.close();
+    m.defer_audio = true;
+
+    var r = try m.scan(a);
+    try t.expectEqual(@as(u32, 2), r.added);
+    try t.expectEqual(@as(usize, 2), (try m.pending(a)).len);
+    const id_before = (try m.files(a))[0].file_id;
+    try t.expect((try m.files(a))[0].duration_ms > 0); // Dauer ist schon da
+
+    // Verschieben ohne Hash: an Größe + Tags erkannt, file_id bleibt
+    try tmp.dir.createDirPath(t.io, "B");
+    try tmp.dir.rename("A/x.mp3", tmp.dir, "B/x.mp3", t.io);
+    r = try m.scan(a);
+    try t.expectEqual(@as(u32, 0), r.added);
+    try t.expectEqual(@as(u32, 0), r.removed);
+    const moved = for (try m.files(a)) |f| {
+        if (std.mem.eql(u8, f.entry.path, "B/x.mp3")) break f;
+    } else unreachable;
+    try t.expectEqualStrings(id_before, moved.file_id);
+
+    // Nachholen: gleiche Hashes wie ein vollständiger Scan
+    var items: std.ArrayList(manifest.HashItem) = .empty;
+    for (try m.pending(a)) |p| try items.append(a, .{ .path = p, .src = try std.fmt.allocPrint(a, "{s}/{s}", .{ root, p }) });
+    const f = try m.fillHashes(a, std.Io.Dir.cwd(), items.items);
+    try t.expectEqual(@as(u32, 2), f.hashed);
+    try t.expectEqual(@as(usize, 0), (try m.pending(a)).len);
+    const want = try manifest.hashFile(a, t.io, tmp.dir, "B/x.mp3");
+    for (try m.files(a)) |row| {
+        if (std.mem.eql(u8, row.entry.path, "B/x.mp3")) try t.expectEqualStrings(want.audio_hash, row.entry.audio_hash);
+    }
+    // ein weiterer Scan rührt die (unveränderten) Dateien nicht an
+    r = try m.scan(a);
+    try t.expectEqual(@as(u32, 0), r.hashed);
+    try t.expectEqual(@as(usize, 0), (try m.pending(a)).len);
+}

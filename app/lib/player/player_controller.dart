@@ -482,7 +482,13 @@ class PlayerController extends ChangeNotifier {
 
   Future<void> playPause() async {
     _cancelCrossfade();
+    _pausedByVolume = false;
     if (queue.isEmpty) return;
+    // stumm: erst wieder hörbar machen, sonst „spielt“ es lautlos
+    if (!playing && volume <= 0) {
+      await player.setVolume(50);
+      await settings.setVolume(50);
+    }
     if (!_loaded) {
       await _openQueue(play: true);
     } else {
@@ -772,9 +778,22 @@ class PlayerController extends ChangeNotifier {
   // ─── Klang ─────────────────────────────────────────────────────────────
 
   double get volume => settings.volume;
+
+  /// Pausiert, weil die Lautstärke auf 0 gezogen wurde (geht beim
+  /// Aufdrehen weiter – nicht, wenn der Nutzer selbst pausiert hat).
+  bool _pausedByVolume = false;
+
   Future<void> setVolume(double v) async {
     await player.setVolume(v);
     await settings.setVolume(v);
+    if (v <= 0 && playing) {
+      _pausedByVolume = true;
+      await player.pause();
+      _debug('Lautstärke 0: pausiert');
+    } else if (v > 0 && _pausedByVolume) {
+      _pausedByVolume = false;
+      if (!playing) await playPause();
+    }
     notifyListeners();
   }
 

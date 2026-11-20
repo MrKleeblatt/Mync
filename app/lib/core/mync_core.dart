@@ -24,6 +24,19 @@ typedef _ScanC = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
   Pointer<Utf8>,
+  Int32,
+  Pointer<Uint32>,
+);
+typedef _ScanD = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  int,
+  Pointer<Uint32>,
+);
+typedef _FillC = Pointer<Utf8> Function(
+  Pointer<Utf8>,
+  Pointer<Utf8>,
   Pointer<Uint32>,
 );
 typedef _ScanListingC = Pointer<Utf8> Function(
@@ -31,12 +44,14 @@ typedef _ScanListingC = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
   Int32,
+  Int32,
   Pointer<Uint32>,
 );
 typedef _ScanListingD = Pointer<Utf8> Function(
   Pointer<Utf8>,
   Pointer<Utf8>,
   Pointer<Utf8>,
+  int,
   int,
   Pointer<Uint32>,
 );
@@ -132,7 +147,11 @@ class MyncCoreException implements Exception {
 
 class _Lib {
   _Lib._(DynamicLibrary lib)
-    : scan = lib.lookupFunction<_ScanC, _ScanC>('mync_scan'),
+    : scan = lib.lookupFunction<_ScanC, _ScanD>('mync_scan'),
+      pendingHashes = lib.lookupFunction<_OneStr, _OneStr>(
+        'mync_pending_hashes',
+      ),
+      fillHashes = lib.lookupFunction<_FillC, _FillC>('mync_fill_hashes'),
       scanListing = lib.lookupFunction<_ScanListingC, _ScanListingD>(
         'mync_scan_listing',
       ),
@@ -159,7 +178,9 @@ class _Lib {
       free = lib.lookupFunction<_FreeC, _FreeDart>('mync_free'),
       version = lib.lookupFunction<_VersionC, _VersionC>('mync_version');
 
-  final _ScanC scan;
+  final _ScanD scan;
+  final _OneStr pendingHashes;
+  final _FillC fillHashes;
   final _ScanListingD scanListing;
   final _TwoStr listTracks;
   final _OneStr readTags;
@@ -350,6 +371,7 @@ Future<ScanSummary> scanLibrary({
   }
   try {
     return await _scanInIsolate(root, db, jsonEncode(excludes), address);
+    // Audio-Hashes holt [fillHashes] im Hintergrund nach
   } finally {
     timer?.cancel();
     calloc.free(counters);
@@ -371,7 +393,13 @@ Future<ScanSummary> _scanInIsolate(
   try {
     return ScanSummary.fromJson(
       lib._result(
-        lib.scan(a, b, c, Pointer<Uint32>.fromAddress(progressAddress)),
+        lib.scan(
+          a,
+          b,
+          c,
+          _deferAudio,
+          Pointer<Uint32>.fromAddress(progressAddress),
+        ),
       ) as Map<String, dynamic>,
     );
   } finally {
@@ -380,6 +408,49 @@ Future<ScanSummary> _scanInIsolate(
     malloc.free(c);
   }
 });
+
+/// Scans lesen nur Tags und Dauer (Dateiköpfe); der Audio-Hash liest die
+/// ganze Datei und wird nur für den Sync gebraucht – er entsteht danach im
+/// Hintergrund ([pendingHashes], [fillHashes]).
+const _deferAudio = 1;
+
+/// Pfade im Manifest [db], deren Audio-Hash noch fehlt.
+Future<List<String>> pendingHashes(String db) => Isolate.run(() {
+  final lib = _Lib.instance;
+  return (lib.call1(lib.pendingHashes, db) as List).cast<String>();
+});
+
+/// Berechnet fehlende Audio-Hashes. [items]: Pfad im Manifest → `src`
+/// (absoluter Pfad oder `fd:N:<name>`). Liefert (berechnet, Fehler).
+Future<(int, List<String>)> fillHashes(String db, Map<String, String> items) =>
+    _fillInIsolate(
+      db,
+      jsonEncode([
+        for (final e in items.entries) {'path': e.key, 'src': e.value},
+      ]),
+    );
+
+Future<(int, List<String>)> _fillInIsolate(String db, String json) =>
+    Isolate.run(() {
+      final lib = _Lib.instance;
+      final a = db.toNativeUtf8();
+      final b = json.toNativeUtf8();
+      try {
+        final r =
+            lib._result(lib.fillHashes(a, b, nullptr)) as Map<String, dynamic>;
+        return (r['hashed'] as int, (r['errors'] as List).cast<String>());
+      } finally {
+        malloc.free(a);
+        malloc.free(b);
+      }
+    });
+
+/// Holt alle fehlenden Audio-Hashes eines lokalen Ordners [root] nach.
+Future<void> hashAllPending({required String root, required String db}) async {
+  final p = await pendingHashes(db);
+  if (p.isEmpty) return;
+  await fillHashes(db, {for (final x in p) x: '$root/$x'});
+}
 
 /// Gleicht das Manifest [db] mit einer Auflistung ab (siehe
 /// `mync_scan_listing` im Kern). Einträge: `path`, `size`, `mtime_ns` und
@@ -404,7 +475,7 @@ Future<ScanSummary> _scanListingInIsolate(
   final c = excludesJson.toNativeUtf8();
   try {
     return ScanSummary.fromJson(
-      lib._result(lib.scanListing(a, b, c, last ? 1 : 0, nullptr))
+      lib._result(lib.scanListing(a, b, c, last ? 1 : 0, _deferAudio, nullptr))
           as Map<String, dynamic>,
     );
   } finally {
@@ -416,13 +487,14 @@ Future<ScanSummary> _scanListingInIsolate(
 
 /// Scan einer Ordnerfreigabe (Android): Kotlin listet auf, der Kern sagt,
 /// was neu einzulesen ist, und bekommt diese Dateien portionsweise als
-/// offene Deskriptoren – nie mehr als [batch] auf einmal.
+/// offene Deskriptoren – nie mehr als [batch] auf einmal (nur Dateiköpfe
+/// werden gelesen, siehe [_deferAudio]).
 Future<ScanSummary> scanTree({
   required String tree,
   required String db,
   List<String> excludes = const [],
   void Function(int found, int total, int done)? onProgress,
-  int batch = 64,
+  int batch = 256,
 }) async {
   final files = await MusicFs.listFiles(tree);
   final listing = [for (final f in files) f.toJson()];

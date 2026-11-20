@@ -68,11 +68,12 @@ const ScanSummary = struct {
     errors: []const []const u8,
 };
 
-fn scan(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const u8, excludes_json: []const u8, progress: ?*core.manifest.ScanProgress) !ScanSummary {
+fn scan(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const u8, excludes_json: []const u8, flags: c_int, progress: ?*core.manifest.ScanProgress) !ScanSummary {
     if (std.fs.path.dirname(db)) |d| try Io.Dir.cwd().createDirPath(io, d);
     var m = try core.manifest.Manifest.open(io, db, root);
     defer m.close();
     m.progress = progress;
+    m.defer_audio = flags & scan_defer_audio != 0;
     if (excludes_json.len > 0) m.excludes = try std.json.parseFromSliceLeaky([]const []const u8, a, excludes_json, .{});
     const r = try m.scan(a);
     const errs = try a.alloc([]const u8, r.errors.len);
@@ -80,12 +81,48 @@ fn scan(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const u8, exclud
     return .{ .total = r.total, .hashed = r.hashed, .added = r.added, .removed = r.removed, .errors = errs };
 }
 
+/// Flag für `mync_scan`/`mync_scan_listing`: Audio-Hash nicht berechnen
+/// (nur Tags und Dauer), später mit `mync_fill_hashes` nachholen.
+const scan_defer_audio: c_int = 1;
+
 /// Durchsucht den Musikordner `root` und aktualisiert das Manifest `db`.
 /// `excludes_json`: Ausschlussmuster als JSON-Liste (oder leer).
 /// `progress`: optional drei u32 (gefunden, zu hashen, fertig), die während
 /// des Scans aus einem anderen Thread gelesen werden dürfen.
-export fn mync_scan(root: [*:0]const u8, db: [*:0]const u8, excludes_json: [*:0]const u8, progress: ?*core.manifest.ScanProgress) ?[*:0]u8 {
-    return call(scan, .{ std.mem.span(root), std.mem.span(db), std.mem.span(excludes_json), progress });
+/// `flags`: 1 = Audio-Hash später (siehe `scan_defer_audio`).
+export fn mync_scan(root: [*:0]const u8, db: [*:0]const u8, excludes_json: [*:0]const u8, flags: c_int, progress: ?*core.manifest.ScanProgress) ?[*:0]u8 {
+    return call(scan, .{ std.mem.span(root), std.mem.span(db), std.mem.span(excludes_json), flags, progress });
+}
+
+fn pendingHashes(a: std.mem.Allocator, io: Io, db: [:0]const u8) ![]const []const u8 {
+    if (std.fs.path.dirname(db)) |d| try Io.Dir.cwd().createDirPath(io, d);
+    const m = try core.manifest.Manifest.open(io, db, "");
+    defer m.close();
+    return m.pending(a);
+}
+
+/// Pfade ohne Audio-Hash (nach einem Scan mit Flag 1).
+export fn mync_pending_hashes(db: [*:0]const u8) ?[*:0]u8 {
+    return call(pendingHashes, .{std.mem.span(db)});
+}
+
+const FillSummary = struct { hashed: u32, errors: []const []const u8 };
+
+fn fillHashes(a: std.mem.Allocator, io: Io, db: [:0]const u8, items_json: []const u8, progress: ?*core.manifest.ScanProgress) !FillSummary {
+    var m = try core.manifest.Manifest.open(io, db, "");
+    defer m.close();
+    m.progress = progress;
+    const items = try std.json.parseFromSliceLeaky([]core.manifest.HashItem, a, items_json, .{ .ignore_unknown_fields = true });
+    const r = try m.fillHashes(a, Io.Dir.cwd(), items);
+    const errs = try a.alloc([]const u8, r.errors.len);
+    for (r.errors, errs) |e, *o| o.* = try std.fmt.allocPrint(a, "{s}: {s}", .{ e.path, e.message });
+    return .{ .hashed = r.hashed, .errors = errs };
+}
+
+/// Berechnet fehlende Audio-Hashes. `items_json`: Liste von `{"path","src"}`,
+/// `src` = absoluter Pfad oder `fd:N:<name>`.
+export fn mync_fill_hashes(db: [*:0]const u8, items_json: [*:0]const u8, progress: ?*core.manifest.ScanProgress) ?[*:0]u8 {
+    return call(fillHashes, .{ std.mem.span(db), std.mem.span(items_json), progress });
 }
 
 const ListingSummary = struct {
@@ -97,11 +134,12 @@ const ListingSummary = struct {
     needed: []const []const u8,
 };
 
-fn scanListing(a: std.mem.Allocator, io: Io, db: [:0]const u8, listing_json: []const u8, excludes_json: []const u8, final: bool, progress: ?*core.manifest.ScanProgress) !ListingSummary {
+fn scanListing(a: std.mem.Allocator, io: Io, db: [:0]const u8, listing_json: []const u8, excludes_json: []const u8, final: bool, flags: c_int, progress: ?*core.manifest.ScanProgress) !ListingSummary {
     if (std.fs.path.dirname(db)) |d| try Io.Dir.cwd().createDirPath(io, d);
     var m = try core.manifest.Manifest.open(io, db, "");
     defer m.close();
     m.progress = progress;
+    m.defer_audio = flags & scan_defer_audio != 0;
     if (excludes_json.len > 0) m.excludes = try std.json.parseFromSliceLeaky([]const []const u8, a, excludes_json, .{});
     const listed = try std.json.parseFromSliceLeaky([]core.manifest.Listed, a, listing_json, .{ .ignore_unknown_fields = true });
     const r = try m.scanEntries(a, Io.Dir.cwd(), listed, final);
@@ -115,8 +153,8 @@ fn scanListing(a: std.mem.Allocator, io: Io, db: [:0]const u8, listing_json: []c
 /// `{"path","size","mtime_ns","src"?}`; `src` öffnet die Datei (`fd:N:<name>`).
 /// Neu einzulesende Dateien ohne `src` stehen in `needed`. `final != 0`
 /// schließt ab und entfernt verschwundene Dateien (siehe `scanEntries`).
-export fn mync_scan_listing(db: [*:0]const u8, listing_json: [*:0]const u8, excludes_json: [*:0]const u8, final: c_int, progress: ?*core.manifest.ScanProgress) ?[*:0]u8 {
-    return call(scanListing, .{ std.mem.span(db), std.mem.span(listing_json), std.mem.span(excludes_json), final != 0, progress });
+export fn mync_scan_listing(db: [*:0]const u8, listing_json: [*:0]const u8, excludes_json: [*:0]const u8, final: c_int, flags: c_int, progress: ?*core.manifest.ScanProgress) ?[*:0]u8 {
+    return call(scanListing, .{ std.mem.span(db), std.mem.span(listing_json), std.mem.span(excludes_json), final != 0, flags, progress });
 }
 
 const Fields = std.json.ArrayHashMap([]const []const u8);
@@ -256,7 +294,7 @@ export fn mync_sha256_file(path: [*:0]const u8) ?[*:0]u8 {
 }
 
 test "Fehler werden als JSON gemeldet" {
-    const r = mync_scan("/gibt/es/nicht", "/tmp/mync-ffi-test/manifest.db", "", null).?;
+    const r = mync_scan("/gibt/es/nicht", "/tmp/mync-ffi-test/manifest.db", "", 0, null).?;
     defer mync_free(r);
     try std.testing.expectEqualStrings("{\"error\":\"FileNotFound\"}", std.mem.span(r));
 }
@@ -276,15 +314,19 @@ fn manifestEntries(a: std.mem.Allocator, io: Io, root: []const u8, db: [:0]const
     const m = try core.manifest.Manifest.open(io, db, root);
     defer m.close();
     const rows = try m.files(a);
-    const out = try a.alloc(SyncEntry, rows.len);
-    for (rows, out) |r, *o| o.* = .{
-        .path = r.entry.path,
-        .audio_hash = r.entry.audio_hash,
-        .tag_hash = r.entry.tag_hash,
-        .file_id = r.file_id,
-        .size = r.size,
-    };
-    return out;
+    // ohne Audio-Hash (noch nicht berechnet) nicht abgleichen
+    var out: std.ArrayList(SyncEntry) = .empty;
+    for (rows) |r| {
+        if (r.entry.audio_hash.len == 0) continue;
+        try out.append(a, .{
+            .path = r.entry.path,
+            .audio_hash = r.entry.audio_hash,
+            .tag_hash = r.entry.tag_hash,
+            .file_id = r.file_id,
+            .size = r.size,
+        });
+    }
+    return out.items;
 }
 
 /// Alle Dateien des Manifests mit Hashes (für den Sync-Abgleich).

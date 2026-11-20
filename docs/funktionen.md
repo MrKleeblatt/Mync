@@ -6,8 +6,9 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 ## Bibliothek & Navigation
 | Funktion | Stand | Anmerkung |
 |---|---|---|
-| Ordner-Ansicht mit Brotkrumen | ✅ | Hauptansicht; Antippen eines Titels öffnet das Kontextmenü (Abspielen, Als Nächstes …); Kontextmenü auch für ganze Ordner |
-| Alle Titel, sortierbar (Titel, Künstler, Album, Jahr, Dauer, hinzugefügt, Datei) | ✅ | |
+| Ansicht „Ordner“ mit Brotkrumen | ✅ | einzige Ansicht der Musik; Antippen eines Titels öffnet das Kontextmenü (Abspielen, Als Nächstes …); Kontextmenü auch für ganze Ordner |
+| Schnelles Einlesen | ✅ | liest nur Dateiköpfe (Tags, Dauer); die Prüfsummen für den Sync (ganze Datei) entstehen danach im Hintergrund, der Sync wartet auf sie |
+| Liste „Alle Titel“ | – | entfernt; Suche und Ordner genügen |
 | Suche über Titel, Künstler, Album, Pfad – findet auch Ordner | ✅ | Strg+F |
 | Kurze Titel ausblenden | ✅ | Einstellungen |
 | Mehrere Musikordner | ✅ | weitere Ordner erscheinen als eigene Ordner in der Bibliothek; der Hauptordner wird mit dem Handy abgeglichen |
@@ -40,6 +41,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 | Fortsetzen nach Neustart | ✅ | Zustand in `state.json` (atomar gespeichert) |
 | Wiederholen aus / Warteschlange / Titel | ✅ | je Warteschlange |
 | Lückenlose Wiedergabe | ✅ | mpv `gapless-audio` |
+| Lautstärke 0 pausiert | ✅ | beim Aufdrehen geht es weiter (nur wenn die Pause von der Lautstärke kam) |
 | Spulen | ✅ | Knöpfe und ←/→, Schrittweite 5–60 s einstellbar, Umschalt+←/→ = 1 min |
 | Geschwindigkeit | ✅ | 0,5–2× |
 | ReplayGain (Titel/Album) | ✅ | |
