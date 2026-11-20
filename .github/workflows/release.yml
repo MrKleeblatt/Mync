@@ -83,6 +83,7 @@ jobs:
         run: |
           tools/release/stage_linux.sh app/build/linux/x64/release/bundle "${TAG#v}" stage
           (cd stage && nix flake lock && nix flake check -L path:.)
+          nix flake check -L --override-input release "path:$PWD/stage"
 
       - name: Manifest des vorigen Releases holen
         run: |

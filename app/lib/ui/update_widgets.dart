@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../update/update_service.dart';
 import 'scope.dart';
@@ -19,6 +20,19 @@ class UpdateBanner extends StatelessWidget {
         Widget? content;
         List<Widget> actions = const [];
         switch (u.state) {
+          case UpdateState.available when info != null && !u.canInstall:
+            // Nix: nur Hinweis mit dem passenden Befehl
+            content = Text(
+              'mync ${info.version} ist verfügbar – aktualisieren mit '
+              '„${UpdateService.nixUpgradeCommand}“',
+            );
+            actions = [
+              TextButton(
+                onPressed: () => showUpdateDetails(context),
+                child: const Text('Details'),
+              ),
+              const CopyNixCommandButton(),
+            ];
           case UpdateState.available when info != null:
             content = Text(
               'Update auf ${info.version} verfügbar – ${formatBytes(info.downloadBytes)} '
@@ -100,10 +114,16 @@ Future<void> showUpdateDetails(BuildContext context) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Installiert: ${u.currentVersion}'),
-              Text(
-                'Teil-Update: ${info.missing.length} von ${info.files.length} Dateien, '
-                '${formatBytes(info.downloadBytes)} statt ${formatBytes(info.fullBytes)}',
-              ),
+              if (u.canInstall)
+                Text(
+                  'Teil-Update: ${info.missing.length} von ${info.files.length} Dateien, '
+                  '${formatBytes(info.downloadBytes)} statt ${formatBytes(info.fullBytes)}',
+                )
+              else
+                const SelectableText(
+                  'Installiert über Nix – aktualisieren mit:\n'
+                  '${UpdateService.nixUpgradeCommand}',
+                ),
               Text(
                 info.signed
                     ? 'Signatur geprüft ✓'
@@ -127,13 +147,16 @@ Future<void> showUpdateDetails(BuildContext context) {
           onPressed: () => Navigator.pop(ctx),
           child: const Text('Später'),
         ),
-        FilledButton(
-          onPressed: () {
-            Navigator.pop(ctx);
-            u.install();
-          },
-          child: const Text('Installieren'),
-        ),
+        if (u.canInstall)
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              u.install();
+            },
+            child: const Text('Installieren'),
+          )
+        else
+          const CopyNixCommandButton(),
       ],
     ),
   );
@@ -191,28 +214,43 @@ class UpdateSettings extends StatelessWidget {
             value: s.updateCheck,
             onChanged: s.setUpdateCheck,
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.download_for_offline_outlined),
-            title: const Text(
-              'Updates automatisch herunterladen und installieren',
+          if (u.managedByNix)
+            const ListTile(
+              leading: Icon(Icons.inventory_2_outlined),
+              title: Text('Installiert über Nix'),
+              subtitle: Text(
+                'mync meldet neue Versionen, aktualisiert wird mit '
+                '„${UpdateService.nixUpgradeCommand}“.',
+              ),
+              trailing: CopyNixCommandButton(),
             ),
-            subtitle: const Text(
-              'Nur geänderte Dateien; aktiv nach dem nächsten Start',
+          if (!u.managedByNix)
+            SwitchListTile(
+              secondary: const Icon(Icons.download_for_offline_outlined),
+              title: const Text(
+                'Updates automatisch herunterladen und installieren',
+              ),
+              subtitle: const Text(
+                'Nur geänderte Dateien; aktiv nach dem nächsten Start',
+              ),
+              value: s.autoUpdate,
+              onChanged: s.updateCheck ? s.setAutoUpdate : null,
             ),
-            value: s.autoUpdate,
-            onChanged: s.updateCheck ? s.setAutoUpdate : null,
-          ),
           if (u.state == UpdateState.available)
             ListTile(
               leading: const Icon(Icons.new_releases_outlined),
               title: Text('Version ${u.available!.version} verfügbar'),
               subtitle: Text(
-                '${formatBytes(u.available!.downloadBytes)} herunterzuladen',
+                u.canInstall
+                    ? '${formatBytes(u.available!.downloadBytes)} herunterzuladen'
+                    : UpdateService.nixUpgradeCommand,
               ),
-              trailing: FilledButton(
-                onPressed: u.install,
-                child: const Text('Installieren'),
-              ),
+              trailing: u.canInstall
+                  ? FilledButton(
+                      onPressed: u.install,
+                      child: const Text('Installieren'),
+                    )
+                  : const CopyNixCommandButton(),
               onTap: () => showUpdateDetails(context),
             ),
           if (u.state == UpdateState.installed)
@@ -228,4 +266,24 @@ class UpdateSettings extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Kopiert den Nix-Befehl zum Aktualisieren in die Zwischenablage.
+class CopyNixCommandButton extends StatelessWidget {
+  const CopyNixCommandButton({super.key});
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+    onPressed: () async {
+      await Clipboard.setData(
+        const ClipboardData(text: UpdateService.nixUpgradeCommand),
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.maybeOf(context)
+            ?.showSnackBar(const SnackBar(content: Text('Befehl kopiert')));
+      }
+    },
+    icon: const Icon(Icons.copy, size: 18),
+    label: const Text('Befehl kopieren'),
+  );
 }

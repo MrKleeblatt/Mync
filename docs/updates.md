@@ -50,7 +50,8 @@ Wie bei Kassenbon ist **jeder Merge nach `master` ein Release**:
 
 1. Entwickelt wird auf einem eigenen Branch (z. B. `dev/<thema>`).
 2. Im Branch die Version in `app/pubspec.yaml` erhöhen (z. B.
-   `version: 0.6.0+6`) – die einzige Stelle, an der die Version steht.
+   `version: 0.7.0+7`) und die Adresse in `flake.nix` (`inputs.release.url`)
+   auf dasselbe Release setzen – die Versionsprüfung lehnt Abweichungen ab.
 3. Pull Request nach `master` öffnen. Der Workflow **„Prüfen und bauen“**
    (`.github/workflows/ci.yml`) läuft automatisch:
    - **Version prüfen** (`tools/release/release_check.py`): Den Tag
@@ -86,6 +87,22 @@ python3 tools/release/release_check.py
 **Wichtig:** Alte Releases nicht löschen – neuere Manifeste verweisen auf
 deren unveränderte Dateien (bis zur Umstellung nach
 [teilupdates-plan.md](teilupdates-plan.md)).
+
+## Nix
+
+- **Im Release:** Der Linux-Tarball enthält `flake.nix` (aus
+  `packaging/nix/flake.nix`, Version eingesetzt) und `flake.lock`
+  (nixpkgs festgelegt); der Workflow prüft beides mit `nix flake check`.
+- **Im Repository:** `flake.nix` bindet das Release ihrer Version ein
+  (`nix run github:MrKleeblatt/mync`, Tags = Versionen) und bietet
+  `nixosModules.default` und `overlays.default`. Vor dem Release gibt es
+  dessen Tarball noch nicht – PR- und Release-Workflow prüfen die Flake
+  deshalb mit `--override-input release path:stage`.
+- **Updates:** In der Nix-Variante setzt der Wrapper `MYNC_NO_SELF_UPDATE`.
+  Die App sucht weiter nach neuen Versionen, installiert aber nichts,
+  sondern zeigt `nix profile upgrade --refresh mync` (kopierbar). Geprüft:
+  `nix profile upgrade` holt den neuen Tarball hinter derselben Adresse;
+  `--refresh` umgeht den Zwischenspeicher von bis zu einer Stunde.
 
 ## Einstellungen auf GitHub (einmalig)
 

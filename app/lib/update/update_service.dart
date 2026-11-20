@@ -103,17 +103,23 @@ class UpdateService extends ChangeNotifier {
   String? installedVersion;
   Timer? _timer;
 
-  /// Nur Linux-Desktop (auf Android aktualisiert man über die APK).
-  /// Selbst-Update möglich? Nicht, wenn eine Paketverwaltung zuständig ist:
-  /// Der Nix-Wrapper setzt MYNC_NO_SELF_UPDATE (geladene Dateien wären dort
-  /// nicht lauffähig, und Nix soll den Stand bestimmen).
-  bool get supported =>
-      Platform.isLinux && Platform.environment['MYNC_NO_SELF_UPDATE'] == null;
+  /// Nach Updates suchen: nur Linux-Desktop (Android: APK aus dem Release).
+  bool get supported => Platform.isLinux;
+
+  /// Von Nix verwaltet (der Wrapper der Flake setzt MYNC_NO_SELF_UPDATE):
+  /// Dann nur benachrichtigen – geladene Dateien wären dort nicht lauffähig,
+  /// und Nix soll den Stand bestimmen.
+  bool get managedByNix => Platform.environment['MYNC_NO_SELF_UPDATE'] != null;
+
+  /// Selbst installieren (Teil-Update) möglich?
+  bool get canInstall => supported && !managedByNix;
+
+  /// Befehl, mit dem man unter Nix aktualisiert.
+  static const nixUpgradeCommand = 'nix profile upgrade --refresh mync';
 
   /// Begründung, falls [supported] false ist.
-  String get unsupportedReason => Platform.isLinux
-      ? 'Diese Installation wird über Nix aktualisiert (z. B. nix profile upgrade).'
-      : 'Updates kommen auf Android als neue APK aus dem GitHub-Release.';
+  String get unsupportedReason =>
+      'Updates kommen auf Android als neue APK aus dem GitHub-Release.';
 
   String get platform => switch (Abi.current()) {
     Abi.linuxArm64 => 'linux-aarch64',
@@ -160,7 +166,7 @@ class UpdateService extends ChangeNotifier {
 
   void start() {
     if (!supported) return;
-    if (restartPending) {
+    if (canInstall && restartPending) {
       installedVersion = userCurrentVersion;
       _set(
         UpdateState.installed,
@@ -282,7 +288,7 @@ class UpdateService extends ChangeNotifier {
       final version = j['version'] as String;
       final have = [
         currentVersion,
-        ?userCurrentVersion,
+        if (canInstall) ?userCurrentVersion,
       ].reduce((a, b) => compareVersions(a, b) >= 0 ? a : b);
       if (compareVersions(version, have) <= 0) {
         available = null;
@@ -299,7 +305,7 @@ class UpdateService extends ChangeNotifier {
         }
       }
       final missing = <UpdateFile>[];
-      for (final f in files) {
+      for (final f in canInstall ? files : const <UpdateFile>[]) {
         final local = File('$bundleDir/${f.path}');
         if (!await local.exists() ||
             await local.length() != f.size ||
@@ -317,6 +323,13 @@ class UpdateService extends ChangeNotifier {
         missing: missing,
         signed: signed,
       );
+      if (managedByNix) {
+        _set(
+          UpdateState.available,
+          'Version $version verfügbar – aktualisieren mit: $nixUpgradeCommand',
+        );
+        return;
+      }
       _set(UpdateState.available, 'Version $version verfügbar.');
       if (settings.autoUpdate && !manual) await install();
     } catch (e) {
@@ -330,7 +343,9 @@ class UpdateService extends ChangeNotifier {
   /// Lädt die fehlenden Dateien, prüft alles und schaltet auf die neue Version um.
   Future<void> install() async {
     final info = available;
-    if (info == null || state == UpdateState.downloading) return;
+    if (info == null || state == UpdateState.downloading || !canInstall) {
+      return;
+    }
     _set(UpdateState.downloading, 'Lade ${info.missing.length} Datei(en) …');
     progress = 0;
     final versions = Directory('${userRoot.path}/versions');

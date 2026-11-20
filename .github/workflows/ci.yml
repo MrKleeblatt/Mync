@@ -57,6 +57,9 @@ jobs:
           version=$(sed -n 's/^version: \([0-9.]*\).*/\1/p' app/pubspec.yaml)
           tools/release/stage_linux.sh app/build/linux/x64/release/bundle "$version" stage
           (cd stage && nix flake check -L path:.)
+          # Flake im Repository: das Release dieser Version gibt es noch nicht,
+          # deshalb gegen den eben zusammengestellten Stand prüfen
+          nix flake check -L --override-input release "path:$PWD/stage"
 
   android:
     name: Android (APK)

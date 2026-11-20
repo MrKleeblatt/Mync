@@ -27,23 +27,44 @@ Details: [docs/funktionen.md](docs/funktionen.md), Updates: [docs/updates.md](do
 
 ## Installation mit Nix
 
-Jedem Release liegt eine Flake bei (im Linux-Tarball, mit festgelegtem
-nixpkgs in `flake.lock`, beim Release geprüft):
-
 ```bash
-nix run https://github.com/MrKleeblatt/mync/releases/latest/download/mync-linux-x86_64.tar.gz
+nix run github:MrKleeblatt/mync
 ```
 
-Dauerhaft installieren (mit Eintrag im Anwendungsmenü):
+Dauerhaft installieren (mit Eintrag im Anwendungsmenü), auf Wunsch eine
+bestimmte Version (`github:MrKleeblatt/mync/v0.6.0`):
 
 ```bash
-nix profile install https://github.com/MrKleeblatt/mync/releases/latest/download/mync-linux-x86_64.tar.gz
+nix profile install github:MrKleeblatt/mync
 ```
 
-Aktualisiert wird dann über Nix (`nix profile upgrade`); das Selbst-Update
-der App ist in dieser Variante abgeschaltet. Auf NixOS braucht es
-`hardware.graphics.enable = true;`, auf anderen Distributionen startet man
-Nix-Grafikprogramme wie üblich über [nixGL](https://github.com/nix-community/nixGL).
+Die Flake im Repository liefert das fertig gebaute Programm aus dem Release
+ihrer Version; nixpkgs ist dort in der `flake.lock` festgelegt und beim
+Release geprüft. Für NixOS gibt es `nixosModules.default` und
+`overlays.default`:
+
+```nix
+{
+  inputs.mync.url = "github:MrKleeblatt/mync";
+  # optional eigenes nixpkgs: inputs.mync.inputs.release.inputs.nixpkgs.follows = "nixpkgs";
+  outputs = { nixpkgs, mync, ... }: {
+    nixosConfigurations.rechner = nixpkgs.lib.nixosSystem {
+      modules = [ mync.nixosModules.default ./configuration.nix ];
+    };
+  };
+}
+```
+
+**Updates:** mync meldet neue Versionen selbst („mync 0.7.0 ist verfügbar“)
+und zeigt den Befehl dazu (`nix profile upgrade --refresh mync`, bei NixOS
+`nix flake update mync` und neu bauen). Selbst installieren kann die
+Nix-Variante nicht – das macht Nix.
+
+Grafik: Auf NixOS braucht es `hardware.graphics.enable = true;` (setzt das
+Modul), auf anderen Distributionen startet man Nix-Grafikprogramme über
+[nixGL](https://github.com/nix-community/nixGL). Auch ohne Repository geht
+es direkt aus dem Release-Tarball:
+`nix run https://github.com/MrKleeblatt/mync/releases/latest/download/mync-linux-x86_64.tar.gz`.
 
 ## Installation unter Arch Linux
 
