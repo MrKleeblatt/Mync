@@ -150,7 +150,7 @@ class QueuesPage extends StatelessWidget {
       case 'rename':
         final n = await askText(
           context,
-          title: 'Warteschlange umbenennen',
+          title: 'Umbenennen',
           label: 'Name',
           initial: player.queues[i].name,
         );
@@ -187,7 +187,7 @@ class _QueueListState extends State<_QueueList> {
     messenger?.hideCurrentSnackBar();
     messenger?.showSnackBar(
       SnackBar(
-        content: Text('„$name“ herausgenommen'),
+        content: Text('− $name'),
         action: wasCurrent
             ? null
             : SnackBarAction(
@@ -212,10 +212,7 @@ class _QueueListState extends State<_QueueList> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text(
-            'Leer. Titel unter „Ordner“ antippen und hinzufügen.',
-            textAlign: TextAlign.center,
-          ),
+          child: Text('–', textAlign: TextAlign.center),
         ),
       );
     }

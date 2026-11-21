@@ -97,9 +97,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
       setState(() => _loaded = all);
     } catch (e, st) {
       logError('Tags lesen fehlgeschlagen', e, st);
-      setState(
-        () => _status = OpStatus.error(shortError(e, 'Tags nicht lesbar')),
-      );
+      setState(() => _status = OpStatus.error(shortError(e, 'Nicht lesbar')));
     }
   }
 
@@ -110,7 +108,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     setState(() {
       _saving = true;
       _done = 0;
-      _status = OpStatus.busy('Speichere 0 von ${widget.tracks.length} …');
+      _status = OpStatus.busy('0 / ${widget.tracks.length} …');
     });
     try {
       for (var i = 0; i < widget.tracks.length; i++) {
@@ -147,9 +145,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         logInfo('Tags geschrieben: ${widget.tracks[i].path}');
         setState(() {
           _done = i + 1;
-          _status = OpStatus.busy(
-            'Speichere $_done von ${widget.tracks.length} …',
-          );
+          _status = OpStatus.busy('$_done / ${widget.tracks.length} …');
         });
       }
       await lib.refresh();
@@ -161,7 +157,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
       logError('Tags schreiben fehlgeschlagen: $which', e, st);
       setState(() {
         _saving = false;
-        _status = OpStatus.error(shortError(e, 'Speichern fehlgeschlagen'));
+        _status = OpStatus.error(shortError(e, 'Fehlgeschlagen'));
       });
     }
   }
@@ -205,18 +201,14 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     }
     final String status;
     if (_coverFile != null) {
-      status = 'Neues Cover: ${_coverFile!.split(Platform.pathSeparator).last}';
+      status = _coverFile!.split(Platform.pathSeparator).last;
     } else if (_removeCover) {
-      status = 'Eingebettete Bilder werden entfernt.';
+      status = '−';
     } else if (counts.length > 1) {
-      status = 'Verschiedene Cover – bleiben unverändert.';
+      status = '≠';
     } else {
       final n = loaded.first.pictures;
-      status = n == 0
-          ? 'Kein eingebettetes Cover.'
-          : n == 1
-          ? 'Eingebettetes Cover.'
-          : '$n eingebettete Bilder.';
+      status = n <= 1 ? '' : '$n';
     }
     final hasAny = loaded.any((t) => t.pictures > 0);
     final enabled = !_saving && _writable;
@@ -234,13 +226,14 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                 spacing: 8,
                 runSpacing: 4,
                 children: [
-                  OutlinedButton.icon(
+                  IconButton.outlined(
+                    tooltip: 'Bild wählen',
                     onPressed: enabled ? _pickCover : null,
                     icon: const Icon(Icons.image_outlined),
-                    label: const Text('Bild wählen …'),
                   ),
                   if (hasAny && !_removeCover)
-                    OutlinedButton.icon(
+                    IconButton.outlined(
+                      tooltip: 'Entfernen',
                       onPressed: enabled
                           ? () => setState(() {
                               _removeCover = true;
@@ -248,17 +241,17 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                             })
                           : null,
                       icon: const Icon(Icons.hide_image_outlined),
-                      label: const Text('Entfernen'),
                     ),
                   if (_coverFile != null || _removeCover)
-                    TextButton(
+                    IconButton(
+                      tooltip: 'Rückgängig',
                       onPressed: enabled
                           ? () => setState(() {
                               _removeCover = false;
                               _coverFile = null;
                             })
                           : null,
-                      child: const Text('Rückgängig'),
+                      icon: const Icon(Icons.undo),
                     ),
                 ],
               ),
@@ -288,7 +281,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         minLines: maxLines > 1 ? 4 : 1,
         decoration: InputDecoration(
           labelText: label,
-          hintText: _mixed.contains(key) ? '<verschiedene Werte>' : null,
+          hintText: _mixed.contains(key) ? '≠' : null,
           border: const OutlineInputBorder(),
           isDense: true,
         ),
@@ -299,9 +292,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final title = _multi
-        ? 'Tags von ${widget.tracks.length} Titeln'
-        : 'Tags bearbeiten';
+    final title = _multi ? 'Tags (${widget.tracks.length})' : 'Tags';
     Widget body;
     if (_loaded == null && _status == null) {
       body = const SizedBox(
@@ -318,19 +309,15 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
             if (_loaded != null && !_writable)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'Tags dieses Formats können nicht geschrieben werden '
-                  '(möglich: MP3, FLAC, Ogg Vorbis, Opus, M4A, WAV). '
-                  'Die Werte werden nur angezeigt.',
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-              ),
-            if (_multi)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Nur geänderte Felder werden in alle Dateien geschrieben.',
-                  style: theme.textTheme.bodySmall,
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline, color: theme.colorScheme.error),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Nur lesen',
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
+                  ],
                 ),
               ),
             const SizedBox(height: 8),
@@ -358,19 +345,9 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
               ],
             ),
             const SizedBox(height: 12),
-            _field(
-              'description',
-              'Beschreibung (Kapitel als „00:00 Titel“ je Zeile möglich)',
-              maxLines: 6,
-            ),
+            _field('description', 'Beschreibung', maxLines: 6),
             const SizedBox(height: 12),
-            if (!_multi)
-              _field('lyrics', 'Lyrics (auch LRC mit [mm:ss.xx])', maxLines: 8),
-            const SizedBox(height: 4),
-            Text(
-              'Mehrere Künstler/Genres mit „;“ trennen.',
-              style: theme.textTheme.bodySmall,
-            ),
+            if (!_multi) _field('lyrics', 'Lyrics', maxLines: 8),
             if (_status != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),

@@ -169,7 +169,7 @@ class Library extends ChangeNotifier {
       logInfo('Bibliothek geladen: ${_all.length} Titel');
     } catch (e, st) {
       logError('Bibliothek laden fehlgeschlagen', e, st);
-      status = const OpStatus.error('Bibliothek konnte nicht geladen werden');
+      status = const OpStatus.error('Laden fehlgeschlagen');
     }
     loaded = true;
     notifyListeners();
@@ -180,7 +180,7 @@ class Library extends ChangeNotifier {
   Future<ScanSummary?> refresh() async {
     if (scanning) return null;
     if (root.isEmpty) {
-      status = const OpStatus.error('Noch kein Musikordner gewählt');
+      status = const OpStatus.error('Kein Ordner');
       notifyListeners();
       return null;
     }
@@ -189,11 +189,11 @@ class Library extends ChangeNotifier {
     if (!await _rootReadable(root)) {
       logWarning('Musikordner nicht gefunden: ${MusicFs.describe(root)}');
       scanning = false;
-      status = const OpStatus.error('Musikordner nicht gefunden');
+      status = const OpStatus.error('Ordner fehlt');
       notifyListeners();
       return null;
     }
-    status = const OpStatus.busy('Lese ein …');
+    status = const OpStatus.busy('…');
     logInfo('Einlesen gestartet: $root');
     final watch = Stopwatch()..start();
     notifyListeners();
@@ -237,7 +237,7 @@ class Library extends ChangeNotifier {
       for (final m in missing) {
         logWarning('Weiterer Musikordner nicht gefunden: $m');
       }
-      final summary = '$total Dateien · $added neu · $removed entfernt';
+      final summary = '$total · +$added · −$removed';
       logInfo(
         'Einlesen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s: '
         '$summary, $hashed neu eingelesen, ${errors.length} Fehler',
@@ -245,9 +245,7 @@ class Library extends ChangeNotifier {
       unawaited(ensureHashed());
       status = errors.isEmpty && missing.isEmpty
           ? OpStatus.ok(summary)
-          : OpStatus.error(
-              '$summary · ${errors.length + missing.length} nicht lesbar',
-            );
+          : OpStatus.error('$summary · ${errors.length + missing.length} ✗');
       return ScanSummary(
         total: total,
         hashed: hashed,
@@ -257,7 +255,7 @@ class Library extends ChangeNotifier {
       );
     } catch (e, st) {
       logError('Einlesen fehlgeschlagen', e, st);
-      status = const OpStatus.error('Einlesen fehlgeschlagen');
+      status = const OpStatus.error('Fehlgeschlagen');
       return null;
     } finally {
       scanning = false;

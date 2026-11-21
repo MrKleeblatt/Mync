@@ -31,7 +31,7 @@ class Pairing {
   String get peerName => channel.peerName;
 
   final localDecision = Completer<bool>();
-  String status = 'Bitte prüfen, ob auf beiden Geräten derselbe Code steht.';
+  String status = 'Gleicher Code?';
   bool? result;
 }
 
@@ -192,7 +192,7 @@ class SyncService extends ChangeNotifier {
         e,
         st,
       );
-      message = 'Eingehende Verbindung abgelehnt';
+      message = 'Verbindung abgelehnt';
       notifyListeners();
     }
   }
@@ -234,7 +234,7 @@ class SyncService extends ChangeNotifier {
       );
       await p.channel.sendJson({'t': 'pair', 'ok': mine});
       if (!mine) throw SyncProtocolException('Kopplung abgebrochen.');
-      p.status = 'Warte auf Bestätigung von ${p.peerName} …';
+      p.status = '${p.peerName} …';
       notifyListeners();
       final theirs = await p.channel.receive().timeout(
         const Duration(minutes: 3),
@@ -253,15 +253,13 @@ class SyncService extends ChangeNotifier {
       );
       await store.savePeers();
       p.result = true;
-      p.status = 'Gekoppelt mit ${p.peerName}.';
+      p.status = 'Gekoppelt ✓';
       logNetwork('Gekoppelt mit ${p.peerName} (${p.channel.peerId})');
       pairingUntil = null;
     } catch (e, st) {
       p.result = false;
       logError('Kopplung mit ${p.peerName} fehlgeschlagen', e, st);
-      p.status = e is SyncProtocolException
-          ? e.message
-          : 'Kopplung fehlgeschlagen';
+      p.status = e is SyncProtocolException ? e.message : 'Fehlgeschlagen';
     } finally {
       await p.channel.close();
       notifyListeners();
@@ -300,7 +298,7 @@ class SyncService extends ChangeNotifier {
     final pt = portOverride ?? peer.port ?? defaultPort;
     if (h == null) {
       logWarning('Sync: ${peer.name} im Netz nicht gefunden');
-      message = '${peer.name} wurde im Netz nicht gefunden. Läuft mync dort?';
+      message = '${peer.name} nicht gefunden';
       notifyListeners();
       return null;
     }
@@ -315,7 +313,7 @@ class SyncService extends ChangeNotifier {
       return _startSession(ch, peer, initiator: true);
     } catch (e, st) {
       logError('Verbindung zu ${peer.name} ($h:$pt) fehlgeschlagen', e, st);
-      message = 'Verbindung zu ${peer.name} fehlgeschlagen';
+      message = '${peer.name}: keine Verbindung';
       notifyListeners();
       return null;
     }

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -149,7 +147,7 @@ class _LrcEditorState extends State<LrcEditor> {
     final text = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Liedtext'),
+        title: const Text('Text'),
         content: SizedBox(
           width: 520,
           child: TextField(
@@ -158,7 +156,7 @@ class _LrcEditorState extends State<LrcEditor> {
             minLines: 12,
             maxLines: 20,
             decoration: const InputDecoration(
-              hintText: 'Text einfügen – eine Zeile pro Lyrics-Zeile',
+              hintText: '…',
               border: OutlineInputBorder(),
             ),
           ),
@@ -232,7 +230,7 @@ class _LrcEditorState extends State<LrcEditor> {
       logError('Lyrics speichern fehlgeschlagen: ${t.path}', e, st);
       setState(() {
         _saving = false;
-        _status = OpStatus.error(shortError(e, 'Speichern fehlgeschlagen'));
+        _status = OpStatus.error(shortError(e, 'Fehlgeschlagen'));
       });
     }
   }
@@ -280,7 +278,7 @@ class _LrcEditorState extends State<LrcEditor> {
       autofocus: true,
       onKeyEvent: _onKey,
       child: AlertDialog(
-        title: Text('Lyrics synchronisieren – ${widget.track.title}'),
+        title: Text(widget.track.title),
         content: SizedBox(
           width: 680,
           height: 520,
@@ -295,14 +293,11 @@ class _LrcEditorState extends State<LrcEditor> {
                         Card(
                           color: theme.colorScheme.secondaryContainer,
                           child: ListTile(
-                            leading: const Icon(Icons.info_outline),
-                            title: Text(
-                              'Zum Synchronisieren muss dieser Titel laufen.',
-                            ),
-                            trailing: FilledButton.icon(
+                            title: const Text('Titel abspielen'),
+                            trailing: IconButton.filled(
+                              tooltip: 'Abspielen',
                               onPressed: _playThis,
                               icon: const Icon(Icons.play_arrow),
-                              label: const Text('Abspielen'),
                             ),
                           ),
                         ),
@@ -347,11 +342,11 @@ class _LrcEditorState extends State<LrcEditor> {
                           ),
                           const Spacer(),
                           Text(
-                            '$timed / ${lines.length} Zeilen',
+                            '$timed / ${lines.length}',
                             style: theme.textTheme.bodySmall,
                           ),
                           IconButton(
-                            tooltip: 'Text bearbeiten',
+                            tooltip: 'Text',
                             onPressed: _editText,
                             icon: const Icon(Icons.edit_note),
                           ),
@@ -421,39 +416,33 @@ class _LrcEditorState extends State<LrcEditor> {
                       ),
                       const SizedBox(height: 8),
                       // auf dem Handy: „Zeit setzen“ antippen statt Tasten
-                      if (!Platform.isAndroid)
-                        Text(
-                          'Eingabetaste: Zeit für die markierte Zeile setzen · '
-                          'Rücktaste: zurück · ↑/↓: Zeile wählen · −/+: '
-                          '0,1 s verschieben · Leertaste: Pause',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          FilledButton.icon(
+                          IconButton.filled(
+                            tooltip: 'Zeit setzen${keyHint('Eingabe')}',
+                            iconSize: 32,
                             onPressed: _isCurrent && lines.isNotEmpty
                                 ? _stamp
                                 : null,
                             icon: const Icon(Icons.timer_outlined),
-                            label: const Text('Zeit setzen'),
                           ),
                           const SizedBox(width: 8),
-                          OutlinedButton(
+                          IconButton.outlined(
+                            tooltip: 'Zurück${keyHint('Rücktaste')}',
                             onPressed: lines.isEmpty ? null : _back,
-                            child: const Text('Zurück'),
+                            icon: const Icon(Icons.undo),
                           ),
                           const Spacer(),
                           SegmentedButton<bool>(
                             segments: [
                               const ButtonSegment(
                                 value: false,
-                                label: Text('.lrc-Datei'),
+                                label: Text('.lrc'),
                               ),
                               ButtonSegment(
                                 value: true,
                                 enabled: _writable,
-                                label: const Text('In die Tags'),
+                                label: const Text('Tags'),
                               ),
                             ],
                             selected: {_toTags},
@@ -478,11 +467,7 @@ class _LrcEditorState extends State<LrcEditor> {
           ),
           FilledButton(
             onPressed: _saving || timed == 0 ? null : _save,
-            child: Text(
-              timed < (lines?.length ?? 0)
-                  ? 'Speichern ($timed von ${lines!.length})'
-                  : 'Speichern',
-            ),
+            child: const Text('Speichern'),
           ),
         ],
       ),

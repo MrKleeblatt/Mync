@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import '../core/mync_core.dart';
 import '../log.dart';
 import '../settings.dart';
+import 'android_update.dart';
+import 'delta.dart';
 import 'update_key.dart';
 
 /// Eine Datei des Programms laut Update-Manifest.
@@ -36,7 +38,14 @@ class UpdateInfo {
     required this.files,
     required this.missing,
     required this.signed,
+    this.apk,
+    this.apkPlan,
   });
+
+  /// Android: Bausteinliste der neuen APK und was davon zu laden ist
+  /// (null, wenn die installierte APK nicht zerlegt werden konnte).
+  final ChunkManifest? apk;
+  final DeltaPlan? apkPlan;
 
   final String version;
   final String notes;
@@ -46,8 +55,14 @@ class UpdateInfo {
   final List<UpdateFile> missing;
   final bool signed;
 
-  int get downloadBytes => missing.fold(0, (a, f) => a + f.gzSize);
-  int get fullBytes => files.fold(0, (a, f) => a + f.gzSize);
+  int get downloadBytes => apk != null
+      ? (apkPlan?.download ?? apk!.size)
+      : missing.fold(0, (a, f) => a + f.gzSize);
+  int get fullBytes => apk?.size ?? files.fold(0, (a, f) => a + f.gzSize);
+
+  /// Kurz, was geladen wird (Linux: Dateien, Android: Teil der APK).
+  String get summary =>
+      '${formatBytes(downloadBytes)} / ${formatBytes(fullBytes)}';
 }
 
 enum UpdateState {
@@ -104,8 +119,12 @@ class UpdateService extends ChangeNotifier {
   String? installedVersion;
   Timer? _timer;
 
-  /// Nach Updates suchen: nur Linux-Desktop (Android: APK aus dem Release).
-  bool get supported => Platform.isLinux;
+  /// Nach Updates suchen: Linux (Teil-Update der Programmdateien) und
+  /// Android (Teil-Update der APK, siehe android_update.dart).
+  bool get supported => Platform.isLinux || Platform.isAndroid;
+
+  /// Android: installierte Version (aus dem Paket, beim Start gelesen).
+  String? _androidVersion;
 
   /// Von Nix verwaltet (der Wrapper der Flake setzt MYNC_NO_SELF_UPDATE):
   /// Dann nur benachrichtigen – geladene Dateien wären dort nicht lauffähig,
@@ -132,10 +151,8 @@ class UpdateService extends ChangeNotifier {
       'https://github.com/MrKleeblatt/mync/releases/latest';
 
   /// Hinweis, wie man aktualisiert, wenn die App es nicht selbst kann.
-  String get externalUpdateHint => isAppImage
-      ? 'neues AppImage aus dem Release laden – AppImageUpdate oder Gear Lever '
-            'holen dabei nur die Änderungen'
-      : 'aktualisieren mit: $nixUpgradeCommand';
+  String get externalUpdateHint =>
+      isAppImage ? 'AppImageUpdate / Gear Lever' : nixUpgradeCommand;
 
   /// Release-Seite im Browser öffnen.
   Future<void> openReleasePage() async {
@@ -146,10 +163,6 @@ class UpdateService extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Begründung, falls [supported] false ist.
-  String get unsupportedReason =>
-      'Updates kommen auf Android als neue APK aus dem GitHub-Release.';
-
   String get platform => switch (Abi.current()) {
     Abi.linuxArm64 => 'linux-aarch64',
     _ => 'linux-x86_64',
@@ -159,6 +172,7 @@ class UpdateService extends ChangeNotifier {
   String get bundleDir => File(Platform.resolvedExecutable).parent.path;
 
   String get currentVersion {
+    if (Platform.isAndroid) return _androidVersion ?? '0.0.0';
     try {
       return File('$bundleDir/VERSION').readAsStringSync().trim();
     } catch (_) {
@@ -195,12 +209,17 @@ class UpdateService extends ChangeNotifier {
 
   void start() {
     if (!supported) return;
-    if (canInstall && restartPending) {
+    if (Platform.isAndroid && _androidVersion == null) {
+      AndroidApp.version()
+          .then((v) {
+            _androidVersion = v;
+            notifyListeners();
+          })
+          .catchError((Object e) => logWarning('Version unbekannt: $e'));
+    }
+    if (Platform.isLinux && canInstall && restartPending) {
       installedVersion = userCurrentVersion;
-      _set(
-        UpdateState.installed,
-        'Version $installedVersion ist installiert – aktiv nach dem Neustart.',
-      );
+      _set(UpdateState.installed, '$installedVersion ✓ – Neustart');
     }
     _timer?.cancel();
     if (!settings.updateCheck) return;
@@ -267,9 +286,23 @@ class UpdateService extends ChangeNotifier {
       return null;
     }
 
-    final m = find('update-$platform.json');
+    final name = Platform.isAndroid
+        ? _assetName(rel, (n) => n.endsWith('-android-arm64.apk.chunks.json'))
+        : 'update-$platform.json';
+    final m = name == null ? null : find(name);
     if (m == null) return null;
-    return (m, find('update-$platform.json.sig'), rel['body'] as String? ?? '');
+    return (m, find('$name.sig'), rel['body'] as String? ?? '');
+  }
+
+  static String? _assetName(
+    Map<String, dynamic> rel,
+    bool Function(String) test,
+  ) {
+    for (final a in (rel['assets'] as List? ?? const [])) {
+      final n = (a as Map<String, dynamic>)['name'] as String;
+      if (test(n)) return n;
+    }
+    return null;
   }
 
   /// Sucht nach einem Update; bei aktivierter Option wird es gleich installiert.
@@ -280,14 +313,11 @@ class UpdateService extends ChangeNotifier {
       return;
     }
     if (state == UpdateState.installed) return;
-    _set(UpdateState.checking, 'Suche nach Updates …');
+    _set(UpdateState.checking, 'Suche …');
     try {
       final loc = await _locate();
       if (loc == null) {
-        _set(
-          UpdateState.upToDate,
-          'Noch kein Release mit Update-Dateien veröffentlicht.',
-        );
+        _set(UpdateState.upToDate, 'Kein Release');
         return;
       }
       final (murl, surl, relNotes) = loc;
@@ -300,26 +330,24 @@ class UpdateService extends ChangeNotifier {
           if (signatureRequired) {
             signed = await verifyEd25519(updatePublicKey, text, sig);
             if (!signed) {
-              throw const FormatException(
-                'Signatur des Updates ist ungültig – Update abgelehnt.',
-              );
+              throw const FormatException('Signatur ungültig');
             }
           }
         } on HttpException {
           if (signatureRequired) {
-            throw const FormatException(
-              'Update ist nicht signiert – abgelehnt.',
-            );
+            throw const FormatException('Nicht signiert');
           }
         }
       } else if (signatureRequired) {
-        throw const FormatException('Update ist nicht signiert – abgelehnt.');
+        throw const FormatException('Nicht signiert');
       }
       final j = jsonDecode(text) as Map<String, dynamic>;
+      if (Platform.isAndroid) {
+        await _offerApk(j, relNotes, signed);
+        return;
+      }
       if (j['format'] != 1 || j['platform'] != platform) {
-        throw const FormatException(
-          'Manifest passt nicht zu dieser Plattform.',
-        );
+        throw const FormatException('Falsche Plattform');
       }
       final version = j['version'] as String;
       final have = [
@@ -328,7 +356,7 @@ class UpdateService extends ChangeNotifier {
       ].reduce((a, b) => compareVersions(a, b) >= 0 ? a : b);
       if (compareVersions(version, have) <= 0) {
         available = null;
-        _set(UpdateState.upToDate, 'mync $currentVersion ist aktuell.');
+        _set(UpdateState.upToDate, 'Aktuell');
         return;
       }
       final files = [
@@ -337,7 +365,7 @@ class UpdateService extends ChangeNotifier {
       ];
       for (final f in files) {
         if (f.path.startsWith('/') || f.path.split('/').contains('..')) {
-          throw const FormatException('Ungültiger Pfad im Manifest.');
+          throw const FormatException('Ungültiger Pfad');
         }
       }
       final missing = <UpdateFile>[];
@@ -360,20 +388,89 @@ class UpdateService extends ChangeNotifier {
         signed: signed,
       );
       if (!canInstall) {
-        _set(
-          UpdateState.available,
-          'Version $version verfügbar – $externalUpdateHint',
-        );
+        _set(UpdateState.available, '$version verfügbar');
         return;
       }
-      _set(UpdateState.available, 'Version $version verfügbar.');
+      _set(UpdateState.available, '$version verfügbar');
       if (settings.autoUpdate && !manual) await install();
     } catch (e, st) {
       logError('Update-Prüfung fehlgeschlagen', e, st);
       _set(
         UpdateState.error,
         // eigene Meldungen (Signatur, Plattform) sind kurz genug
-        e is FormatException ? e.message : 'Update-Prüfung fehlgeschlagen',
+        e is FormatException ? e.message : 'Fehlgeschlagen',
+      );
+    }
+  }
+
+  /// Android: neue APK anbieten, mit Größe des Teil-Updates.
+  Future<void> _offerApk(
+    Map<String, dynamic> j,
+    String notes,
+    bool signed,
+  ) async {
+    final m = ChunkManifest.fromJson(j);
+    _androidVersion ??= await AndroidApp.version();
+    if (compareVersions(m.version, currentVersion) <= 0) {
+      available = null;
+      _set(UpdateState.upToDate, 'Aktuell');
+      return;
+    }
+    if (await AndroidApp.abi() != 'arm64-v8a') {
+      _set(UpdateState.error, 'Nur arm64');
+      return;
+    }
+    DeltaPlan? p;
+    try {
+      p = plan(m, await chunkFile(await AndroidApp.apkPath()));
+    } catch (e, st) {
+      logError('Installierte APK nicht zerlegbar – ganze APK nötig', e, st);
+    }
+    available = UpdateInfo(
+      version: m.version,
+      notes: notes,
+      files: const [],
+      missing: const [],
+      signed: signed,
+      apk: m,
+      apkPlan: p,
+    );
+    logInfo(
+      'APK ${m.version}: ${formatBytes(available!.downloadBytes)} von '
+      '${formatBytes(m.size)} zu laden',
+    );
+    _set(UpdateState.available, '${m.version} verfügbar');
+  }
+
+  /// Android: neue APK laden (Teil-Update) und den Installer öffnen.
+  Future<void> _installApk(UpdateInfo info) async {
+    _set(UpdateState.downloading, 'Vorbereiten …');
+    progress = 0;
+    try {
+      final path = await prepareApk(
+        manifest: info.apk!,
+        plan: info.apkPlan,
+        installedApk: await AndroidApp.apkPath(),
+        dir: await AndroidApp.updateDir(),
+        client: _client,
+        report: (f, text) {
+          progress = f.clamp(0, 1);
+          message = '$text · ${(progress * 100).round()} %';
+          notifyListeners();
+        },
+      );
+      if (!await AndroidApp.canInstall()) {
+        await AndroidApp.openInstallSettings();
+        _set(UpdateState.available, '„Zulassen“ einschalten, dann erneut');
+        return;
+      }
+      await AndroidApp.install(path);
+      _set(UpdateState.available, 'Installer geöffnet');
+    } catch (e, st) {
+      logError('Update fehlgeschlagen', e, st);
+      _set(
+        UpdateState.error,
+        e is FormatException ? e.message : 'Fehlgeschlagen',
       );
     }
   }
@@ -381,10 +478,16 @@ class UpdateService extends ChangeNotifier {
   /// Lädt die fehlenden Dateien, prüft alles und schaltet auf die neue Version um.
   Future<void> install() async {
     final info = available;
+    if (Platform.isAndroid) {
+      if (info?.apk != null && state != UpdateState.downloading) {
+        await _installApk(info!);
+      }
+      return;
+    }
     if (info == null || state == UpdateState.downloading || !canInstall) {
       return;
     }
-    _set(UpdateState.downloading, 'Lade ${info.missing.length} Datei(en) …');
+    _set(UpdateState.downloading, 'Lade …');
     progress = 0;
     final versions = Directory('${userRoot.path}/versions');
     final staging = Directory('${versions.path}/${info.version}.partial');
@@ -406,7 +509,7 @@ class UpdateService extends ChangeNotifier {
           await File('$bundleDir/${f.path}').copy(dst.path);
         }
         if (await sha256File(dst.path) != f.sha256) {
-          throw FormatException('Prüfsumme falsch: ${f.path}');
+          throw FormatException('Prüfsumme falsch');
         }
         if (f.mode & 0x49 != 0) await Process.run('chmod', ['755', dst.path]);
       }
@@ -421,10 +524,7 @@ class UpdateService extends ChangeNotifier {
       await _cleanup(versions, keep: {info.version, _versionOf(bundleDir)});
       installedVersion = info.version;
       available = null;
-      _set(
-        UpdateState.installed,
-        'Version ${info.version} installiert – aktiv nach dem Neustart.',
-      );
+      _set(UpdateState.installed, '${info.version} ✓ – Neustart');
     } catch (e, st) {
       logError('Update-Installation fehlgeschlagen', e, st);
       try {
@@ -432,7 +532,7 @@ class UpdateService extends ChangeNotifier {
       } catch (_) {}
       _set(
         UpdateState.error,
-        e is FormatException ? e.message : 'Update fehlgeschlagen',
+        e is FormatException ? e.message : 'Fehlgeschlagen',
       );
     }
   }

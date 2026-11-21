@@ -121,13 +121,19 @@ class _HomeShellState extends State<HomeShell> {
                         selectedIndex: _index,
                         onDestinationSelected: (i) =>
                             setState(() => _index = i),
-                        labelType: NavigationRailLabelType.all,
+                        labelType: NavigationRailLabelType.none,
                         groupAlignment: 0, // Navigation senkrecht mittig
                         destinations: [
                           for (final d in _dests)
                             NavigationRailDestination(
-                              icon: Icon(d.icon),
-                              selectedIcon: Icon(d.selected),
+                              icon: Tooltip(
+                                message: d.label,
+                                child: Icon(d.icon),
+                              ),
+                              selectedIcon: Tooltip(
+                                message: d.label,
+                                child: Icon(d.selected),
+                              ),
                               label: Text(d.label),
                             ),
                         ],
@@ -155,6 +161,8 @@ class _HomeShellState extends State<HomeShell> {
               children: [
                 mini,
                 NavigationBar(
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+                  height: 56,
                   selectedIndex: _index,
                   onDestinationSelected: (i) => setState(() => _index = i),
                   destinations: [

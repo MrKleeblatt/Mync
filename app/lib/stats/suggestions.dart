@@ -108,10 +108,7 @@ List<Suggestion> suggest({
 
     // Lange nicht gehört
     if (plays >= 3 && nowMs - k!.lastMs > 45 * day) {
-      consider(
-        0.6 + min(plays, 20) / 40,
-        'Lange nicht gehört ($plays× gespielt)',
-      );
+      consider(0.6 + min(plays, 20) / 40, '⏳ $plays×');
     }
     // Passt zur Tageszeit (nur für zuletzt regelmäßig Gehörtes)
     if (plays >= 2 && nowMs - k!.lastMs <= 60 * day) {
@@ -121,7 +118,7 @@ List<Suggestion> suggest({
       }
       final share = near / plays;
       if (share >= 0.5) {
-        consider(0.5 + share * 0.4, 'Oft um diese Uhrzeit gehört');
+        consider(0.5 + share * 0.4, '🕒');
       }
     }
     // Neu aus Lieblingsordnern
@@ -131,22 +128,22 @@ List<Suggestion> suggest({
         final name = t.folder.isEmpty
             ? 'der Musik'
             : '„${t.folder.split('/').last}“';
-        consider(0.4 + fa * 0.5, 'Noch nie gehört, aus $name');
+        consider(0.4 + fa * 0.5, 'Neu · $name');
       }
     }
     // Mehr von Künstler
     if (plays <= 1 && maxArtist > 0) {
       for (final a in t.artists) {
         final aa = (artistMs[a.toLowerCase()] ?? 0) / maxArtist;
-        if (aa > 0.2) consider(0.35 + aa * 0.5, 'Mehr von $a');
+        if (aa > 0.2) consider(0.35 + aa * 0.5, '+ $a');
       }
     }
     // Neu hinzugefügt
     if (plays == 0 && t.info.addedMs > 0 && nowMs - t.info.addedMs < 30 * day) {
-      consider(0.55, 'Neu in der Bibliothek');
+      consider(0.55, 'Neu');
     }
     // Ohne Verlauf: Zufall aus der Bibliothek
-    if (events.isEmpty) consider(0.1, 'Zufällig aus der Bibliothek');
+    if (events.isEmpty) consider(0.1, '🎲');
     if (score > 0) out.add(Suggestion(t, reason, score + jitter));
   }
 
@@ -178,9 +175,7 @@ List<Suggestion> suggest({
           );
     for (final t in rest.take(count - picked.length)) {
       final k = known[t.fileId];
-      picked.add(
-        Suggestion(t, k == null ? 'Noch nie gehört' : 'Länger nicht gehört', 0),
-      );
+      picked.add(Suggestion(t, k == null ? 'Neu' : '⏳', 0));
     }
   }
   return picked;

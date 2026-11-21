@@ -14,6 +14,7 @@ pub const duration = @import("duration.zig");
 pub const writer = @import("writer.zig");
 pub const sign = @import("sign.zig");
 pub const source = @import("source.zig");
+pub const chunker = @import("chunker.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

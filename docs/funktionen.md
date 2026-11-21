@@ -76,7 +76,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 
 | Sicherung & Wiederherstellen | ✅ | eine `.mync-backup`-Datei: Einstellungen, Warteschlangen, Statistik, Positionen, wahlweise Kopplungen |
 | Mini-Player-Fenster | ✅ | Strg+M, klein und immer im Vordergrund (Linux; unter Wayland je nach Compositor) |
-| Teil-Updates über GitHub-Releases | ✅ | siehe [updates.md](updates.md); auf Wunsch automatisch |
+| Teil-Updates über GitHub-Releases | ✅ | Linux: nur geänderte Dateien, auf Wunsch automatisch; Android: nur geänderte Teile der APK (wie Kassenbon), Installieren bestätigt man in Android; siehe [updates.md](updates.md) |
 | Sync mit dem Handy | ✅ | siehe unten und [sync-konzept.md](sync-konzept.md) |
 
 ## Sync mit dem Handy

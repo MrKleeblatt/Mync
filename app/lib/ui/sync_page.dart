@@ -20,7 +20,7 @@ class SyncPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final sync = SyncScope.service;
     if (sync == null) {
-      return const Center(child: Text('Sync ist nicht verfügbar.'));
+      return const Center(child: Icon(Icons.sync_disabled, size: 48));
     }
     return ListenableBuilder(
       listenable: Listenable.merge([sync, context.settings]),
@@ -62,7 +62,7 @@ class _OverviewState extends State<_Overview> {
     final v = await askText(
       context,
       title: title,
-      label: 'Adresse (z. B. 192.168.1.23 oder 192.168.1.23:47788)',
+      label: '192.168.1.23[:47788]',
     );
     if (v == null) return null;
     final parts = v.split(':');
@@ -81,9 +81,7 @@ class _OverviewState extends State<_Overview> {
       logError('Kopplung mit $host:$port fehlgeschlagen', e, st);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Kopplung fehlgeschlagen – Details im Logbuch'),
-          ),
+          const SnackBar(content: Text('Kopplung fehlgeschlagen')),
         );
       }
     }
@@ -97,22 +95,12 @@ class _OverviewState extends State<_Overview> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Sync mit dem Handy', style: theme.textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(
-          'Gleicht den Musikordner mit gekoppelten Geräten im Heimnetz ab. Jede Änderung wird erst nach '
-          'Bestätigung auf dem empfangenden Gerät übernommen. Die Verbindung ist Ende-zu-Ende verschlüsselt.',
-          style: theme.textTheme.bodyMedium,
-        ),
+        Text('Sync', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 8),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: Text('Dieses Gerät: ${sync.store.identity.name}'),
-          subtitle: Text(
-            sync.running
-                ? 'Im Heimnetz erreichbar (Port ${sync.listeningPort})'
-                : 'Für andere Geräte nicht erreichbar',
-          ),
+          title: Text(sync.store.identity.name),
+          subtitle: sync.running ? Text(':${sync.listeningPort}') : null,
           value: settings.syncEnabled,
           onChanged: (v) async {
             await settings.setSyncEnabled(v);
@@ -123,7 +111,7 @@ class _OverviewState extends State<_Overview> {
             }
           },
           secondary: IconButton(
-            tooltip: 'Gerätenamen ändern',
+            tooltip: 'Umbenennen',
             icon: const Icon(Icons.edit),
             onPressed: () async {
               final n = await askText(
@@ -142,12 +130,8 @@ class _OverviewState extends State<_Overview> {
           ),
         if (p != null) _PairingCard(sync: sync, pairing: p),
         const SizedBox(height: 16),
-        Text('Gekoppelte Geräte', style: theme.textTheme.titleMedium),
-        if (sync.peers.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Noch keine. Unten ein Gerät koppeln.'),
-          ),
+        if (sync.peers.isNotEmpty)
+          Text('Geräte', style: theme.textTheme.titleMedium),
         for (final peer in sync.peers)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -155,16 +139,16 @@ class _OverviewState extends State<_Overview> {
             title: Text(peer.name),
             subtitle: Text(
               peer.lastSyncMs == 0
-                  ? 'Noch nie abgeglichen'
-                  : 'Zuletzt: ${_date(DateTime.fromMillisecondsSinceEpoch(peer.lastSyncMs))}',
+                  ? '–'
+                  : _date(DateTime.fromMillisecondsSinceEpoch(peer.lastSyncMs)),
             ),
             trailing: Wrap(
               spacing: 4,
               children: [
-                FilledButton.icon(
+                IconButton.filled(
+                  tooltip: 'Abgleichen',
                   onPressed: () => sync.syncWith(peer),
                   icon: const Icon(Icons.sync),
-                  label: const Text('Abgleichen'),
                 ),
                 PopupMenuButton<String>(
                   onSelected: (v) async {
@@ -182,44 +166,33 @@ class _OverviewState extends State<_Overview> {
                     }
                   },
                   itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: 'addr',
-                      child: Text('Über Adresse abgleichen …'),
-                    ),
-                    PopupMenuItem(
-                      value: 'remove',
-                      child: Text('Kopplung entfernen'),
-                    ),
+                    PopupMenuItem(value: 'addr', child: Text('Über Adresse')),
+                    PopupMenuItem(value: 'remove', child: Text('Entfernen')),
                   ],
                 ),
               ],
             ),
           ),
         const SizedBox(height: 16),
-        Text('Neues Gerät koppeln', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text(
-          'Auf einem Gerät „Koppelbar machen“ wählen, auf dem anderen „Geräte suchen“. Danach zeigen '
-          'beide einen 6-stelligen Code – nur bestätigen, wenn er übereinstimmt.',
-          style: theme.textTheme.bodySmall,
-        ),
+        Text('Koppeln', style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
             sync.pairingAllowed
-                ? OutlinedButton.icon(
+                ? IconButton.filled(
+                    tooltip: 'Sichtbar – beenden',
                     onPressed: sync.stopPairing,
                     icon: const Icon(Icons.hourglass_top),
-                    label: const Text('Wartet auf Kopplung … (abbrechen)'),
                   )
-                : OutlinedButton.icon(
+                : IconButton.outlined(
+                    tooltip: 'Sichtbar machen (2 min)',
                     onPressed: sync.running ? sync.allowPairing : null,
                     icon: const Icon(Icons.wifi_tethering),
-                    label: const Text('Koppelbar machen (2 min)'),
                   ),
-            FilledButton.tonalIcon(
+            IconButton.filledTonal(
+              tooltip: 'Suchen',
               onPressed: _searching ? null : _search,
               icon: _searching
                   ? const SizedBox.square(
@@ -227,23 +200,21 @@ class _OverviewState extends State<_Overview> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.search),
-              label: const Text('Geräte suchen'),
             ),
-            TextButton(
+            IconButton.outlined(
+              tooltip: 'Adresse',
               onPressed: () async {
-                final a = await _askAddress('Gerät über Adresse koppeln');
+                final a = await _askAddress('Adresse');
                 if (a != null) await _pair(a.$1, a.$2);
               },
-              child: const Text('Adresse eingeben …'),
+              icon: const Icon(Icons.lan_outlined),
             ),
           ],
         ),
         if (_found case final found?) ...[
           const SizedBox(height: 8),
           if (found.where((d) => !sync.store.peers.containsKey(d.id)).isEmpty)
-            const Text(
-              'Kein neues Gerät gefunden. Läuft mync dort und ist „Koppelbar machen“ aktiv?',
-            ),
+            const Text('–'),
           for (final d in found.where(
             (d) => !sync.store.peers.containsKey(d.id),
           ))
@@ -251,12 +222,11 @@ class _OverviewState extends State<_Overview> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.devices),
               title: Text(d.name),
-              subtitle: Text(
-                '${d.host}:${d.port}${d.pairing ? ' · wartet auf Kopplung' : ''}',
-              ),
-              trailing: FilledButton(
+              subtitle: Text('${d.host}:${d.port}${d.pairing ? ' · ⏳' : ''}'),
+              trailing: IconButton.filled(
+                tooltip: 'Koppeln',
                 onPressed: () => _pair(d.host, d.port),
-                child: const Text('Koppeln'),
+                icon: const Icon(Icons.link),
               ),
             ),
         ],
@@ -281,10 +251,7 @@ class _PairingCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Kopplung mit ${pairing.peerName}',
-              style: theme.textTheme.titleMedium,
-            ),
+            Text(pairing.peerName, style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Center(
               child: Text(
@@ -302,20 +269,23 @@ class _PairingCard extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 children: [
-                  FilledButton(
+                  IconButton.filled(
+                    tooltip: 'Code gleich',
                     onPressed: () => sync.confirmPairing(true),
-                    child: const Text('Code stimmt überein'),
+                    icon: const Icon(Icons.check),
                   ),
-                  OutlinedButton(
+                  IconButton.outlined(
+                    tooltip: 'Abbrechen',
                     onPressed: () => sync.confirmPairing(false),
-                    child: const Text('Abbrechen'),
+                    icon: const Icon(Icons.close),
                   ),
                 ],
               )
             else if (pairing.result != null)
-              TextButton(
+              IconButton(
+                tooltip: 'Schließen',
                 onPressed: sync.dismissPairing,
-                child: const Text('Schließen'),
+                icon: const Icon(Icons.close),
               ),
           ],
         ),
@@ -332,9 +302,9 @@ class _SessionView extends StatelessWidget {
 
   static const _groups = [
     (ChangeKind.add, 'Neu'),
-    (ChangeKind.rename, 'Umbenannt / verschoben'),
-    (ChangeKind.tags, 'Tags geändert'),
-    (ChangeKind.replace, 'Inhalt ersetzt'),
+    (ChangeKind.rename, 'Umbenannt'),
+    (ChangeKind.tags, 'Tags'),
+    (ChangeKind.replace, 'Ersetzt'),
     (ChangeKind.delete, 'Gelöscht'),
   ];
 
@@ -355,15 +325,12 @@ class _SessionView extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: Text(
-                'Sync mit ${s.peer.name}',
-                style: theme.textTheme.headlineSmall,
-              ),
+              child: Text(s.peer.name, style: theme.textTheme.headlineSmall),
             ),
-            TextButton.icon(
+            IconButton(
+              tooltip: 'Trennen',
               onPressed: sync.dismissSession,
               icon: const Icon(Icons.close),
-              label: const Text('Trennen'),
             ),
           ],
         ),
@@ -389,9 +356,10 @@ class _SessionView extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              OutlinedButton(
+              OutlinedButton.icon(
                 onPressed: open == 0 ? null : () => s.acceptAll(),
-                child: const Text('Alle annehmen (ohne Löschen)'),
+                icon: const Icon(Icons.done_all),
+                label: const Text('Alle'),
               ),
               FilledButton.icon(
                 onPressed:
@@ -402,31 +370,28 @@ class _SessionView extends StatelessWidget {
                         s.applying
                     ? null
                     : s.applyDecisions,
-                icon: const Icon(Icons.done_all),
-                label: Text('Übernehmen ($accepted)'),
+                icon: const Icon(Icons.check),
+                label: Text('$accepted'),
               ),
-              FilledButton.tonal(
+              IconButton.filledTonal(
+                tooltip: 'Fertig',
                 onPressed: s.applying ? null : s.finish,
-                child: const Text('Fertig'),
+                icon: const Icon(Icons.flag_outlined),
               ),
             ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Nicht übernommene Änderungen werden beim nächsten Abgleich wieder angeboten – außer „Ignorieren“.',
-            style: theme.textTheme.bodySmall,
           ),
         ],
         if (s.finished)
           Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: FilledButton(
+            child: IconButton.filled(
+              tooltip: 'Schließen',
               onPressed: sync.dismissSession,
-              child: const Text('Schließen'),
+              icon: const Icon(Icons.close),
             ),
           ),
         if (conflicts.isNotEmpty) ...[
-          _GroupTitle('Auf beiden Geräten geändert (${conflicts.length})'),
+          _GroupTitle('Konflikte (${conflicts.length})'),
           for (final i in conflicts) _ItemTile(session: s, item: i),
         ],
         for (final (kind, label) in _groups)
@@ -461,7 +426,7 @@ class _ItemTile extends StatelessWidget {
     final r = item.remote;
     return switch (r.kind) {
       ChangeKind.rename =>
-        '${r.oldEntry!.path}\n→ ${r.newEntry!.path}${r.tagsChanged ? ' (und Tags)' : ''}',
+        '${r.oldEntry!.path}\n→ ${r.newEntry!.path}${r.tagsChanged ? ' (+Tags)' : ''}',
       ChangeKind.delete => r.oldEntry!.path,
       _ => r.newEntry!.path,
     };
@@ -471,7 +436,7 @@ class _ItemTile extends StatelessWidget {
     ChangeKind.add => 'neu',
     ChangeKind.delete => 'gelöscht',
     ChangeKind.rename => 'umbenannt',
-    ChangeKind.tags => 'Tags geändert',
+    ChangeKind.tags => 'Tags',
     ChangeKind.replace => 'ersetzt',
   };
 
@@ -480,9 +445,7 @@ class _ItemTile extends StatelessWidget {
     final theme = Theme.of(context);
     final peer = session.peer.name;
     final subtitle = item.isConflict
-        ? 'Hier: ${_kind(item.local!.kind)} · auf $peer: ${_kind(item.remote.kind)}'
-        : item.remote.kind == ChangeKind.delete
-        ? 'Wird in den Papierkorb verschoben (30 Tage wiederherstellbar)'
+        ? 'Hier: ${_kind(item.local!.kind)} · $peer: ${_kind(item.remote.kind)}'
         : null;
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -504,30 +467,36 @@ class _ItemTile extends StatelessWidget {
       ),
       title: Text(_title(), style: theme.textTheme.bodyMedium),
       subtitle: item.error != null
-          ? const StatusLine(
-              OpStatus.error('Übernehmen fehlgeschlagen'),
-              dense: true,
-            )
+          ? const StatusLine(OpStatus.error('Fehlgeschlagen'), dense: true)
           : subtitle == null
           ? null
           : Text(subtitle),
       trailing: item.done
-          ? Text(item.decision == Decision.ignore ? 'ignoriert' : 'übernommen')
+          ? Icon(
+              item.decision == Decision.ignore
+                  ? Icons.visibility_off_outlined
+                  : Icons.check,
+            )
           : SegmentedButton<Decision>(
               showSelectedIcon: false,
               emptySelectionAllowed: true,
               segments: [
                 ButtonSegment(
                   value: Decision.accept,
-                  label: Text(item.isConflict ? 'Von $peer' : 'Annehmen'),
+                  tooltip: item.isConflict ? 'Von $peer' : 'Annehmen',
+                  icon: const Icon(Icons.check),
                 ),
                 ButtonSegment(
                   value: Decision.reject,
-                  label: Text(item.isConflict ? 'Eigene' : 'Nicht jetzt'),
+                  tooltip: item.isConflict ? 'Eigene' : 'Später',
+                  icon: Icon(
+                    item.isConflict ? Icons.home_outlined : Icons.schedule,
+                  ),
                 ),
                 const ButtonSegment(
                   value: Decision.ignore,
-                  label: Text('Ignorieren'),
+                  tooltip: 'Ignorieren',
+                  icon: Icon(Icons.visibility_off_outlined),
                 ),
               ],
               selected: item.decision == Decision.open
@@ -559,16 +528,14 @@ class SyncBanner extends StatelessWidget {
         final s = sync.session;
         String? text;
         if (sync.pairing != null && sync.pairing!.result == null) {
-          text =
-              '${sync.pairing!.peerName} möchte koppeln – Code ${sync.pairing!.code}';
+          text = '${sync.pairing!.peerName} · ${sync.pairing!.code}';
         } else if (s != null &&
             !s.closed &&
             s.ready &&
             s.items.any((i) => !i.done)) {
-          text =
-              'Sync mit ${s.peer.name}: ${s.items.where((i) => !i.done).length} Änderung(en) zu bestätigen';
+          text = '${s.peer.name} · ${s.items.where((i) => !i.done).length}';
         } else if (s != null && !s.closed && !s.initiator && !s.ready) {
-          text = '${s.peer.name} gleicht ab …';
+          text = '${s.peer.name} …';
         }
         if (text == null) return const SizedBox.shrink();
         final theme = Theme.of(context);
@@ -593,12 +560,9 @@ class SyncBanner extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Text(
-                    'Öffnen',
-                    style: TextStyle(
-                      color: theme.colorScheme.onTertiaryContainer,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Icon(
+                    Icons.chevron_right,
+                    color: theme.colorScheme.onTertiaryContainer,
                   ),
                 ],
               ),

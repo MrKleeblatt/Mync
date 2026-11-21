@@ -215,9 +215,7 @@ class SecureChannel {
       final sR = unhex(r['s'] as String);
       final eR = unhex(r['e'] as String);
       if (!pairing && hex(sR) != hex(knownPeerStatic)) {
-        throw SyncProtocolException(
-          'Gerät meldet sich mit einem anderen Schlüssel – Verbindung abgebrochen.',
-        );
+        throw SyncProtocolException('Falscher Schlüssel');
       }
       String? sas;
       if (pairing) {
@@ -283,13 +281,13 @@ class SecureChannel {
       }
 
       if (pairing && !allowPairing) {
-        await reject('Kopplung ist auf ${me.name} gerade nicht freigegeben.');
+        await reject('${me.name}: nicht sichtbar');
       }
       if (!pairing) {
         final known = lookupPeer(h['id'] as String);
-        if (known == null) await reject('Dieses Gerät ist nicht gekoppelt.');
+        if (known == null) await reject('Nicht gekoppelt');
         if (hex(known) != hex(sI)) {
-          await reject('Schlüssel passt nicht zum gekoppelten Gerät.');
+          await reject('Falscher Schlüssel');
         }
       }
       final (eS, eP) = x25519Keypair();

@@ -106,3 +106,7 @@ val buildMyncCore by tasks.registering {
 
 android.sourceSets.getByName("main").jniLibs.srcDir(myncJniLibs.get().asFile)
 tasks.named("preBuild") { dependsOn(buildMyncCore) }
+
+dependencies {
+    implementation("androidx.core:core:1.13.1") // FileProvider für die Installation von Updates
+}

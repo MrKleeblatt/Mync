@@ -1,7 +1,8 @@
 # Teil-Updates über GitHub-Releases
 
-mync aktualisiert sich unter Linux selbst – und lädt dabei nur die Dateien,
-die sich seit der installierten Version geändert haben.
+mync aktualisiert sich unter Linux und Android selbst – und lädt dabei nur,
+was sich seit der installierten Version geändert hat (Android: siehe
+[unten](#android-teil-updates-der-apk)).
 
 ## So funktioniert es
 
@@ -78,6 +79,7 @@ Dateien eines Releases:
 | Datei | Inhalt |
 |---|---|
 | `mync-vX.Y.Z-android-arm64.apk` | Android-App |
+| `mync-vX.Y.Z-android-arm64.apk.chunks.json` (+ `.sig`) | Bausteinliste der APK für Teil-Updates |
 | `mync-linux-x86_64.tar.gz` | Linux-Programm komplett, mit `flake.nix` + `flake.lock` für Nix (`nix run <URL des Tarballs>`) |
 | `mync-x86_64.AppImage` | AppImage (libmpv/FFmpeg enthalten), mit eingebetteter Update-Information |
 | `mync-x86_64.AppImage.zsync` | Blockliste: AppImageUpdate/Gear Lever laden nur geänderte Teile |
@@ -142,6 +144,32 @@ durch diese Einstellungen unter *Settings*:
 - **Actions → General:** Workflows aus Forks nur nach Freigabe;
   *Workflow permissions* „Read and write“ (für das Anlegen des Releases).
 
+## Android: Teil-Updates der APK
+
+Wie in Kassenbon: Android installiert nur ganze, signierte APKs – mync lädt
+aber nur den geänderten Teil und setzt die neue APK selbst zusammen.
+
+1. Die Bausteinliste `<apk>.chunks.json` des neuesten Releases laden und
+   (mit eingebautem Schlüssel) ihre Signatur prüfen.
+2. Die **installierte APK** (`applicationInfo.sourceDir`, ohne Berechtigung
+   lesbar) im Zig-Kern in inhaltsabhängige Bausteine zerlegen
+   (`chunker.zig`, Gear-Hash, 8–128 KiB – derselbe Algorithmus und dieselben
+   Prüfwerte wie Kassenbon; das Release-Skript zerlegt die neue APK mit
+   `mync chunk` genauso).
+3. Nur die fehlenden Bausteine laden: einzelne HTTP-Ranges auf die
+   Release-Datei (GitHub kennt keine Mehrfachbereiche), nahe Bereiche
+   zusammengefasst, 4 gleichzeitig. Die Umleitung auf die signierte
+   Download-Adresse wird einmal aufgelöst.
+4. Neue APK zusammensetzen, Größe und SHA-256 prüfen. Klappt das
+   Teil-Update nicht, wird die ganze APK geladen.
+5. Beim ersten Mal „Apps aus dieser Quelle zulassen“ (Android öffnet die
+   Einstellung), dann den Paketinstaller öffnen – Android fragt
+   „Aktualisieren?“.
+
+Neue Rechte dafür: `REQUEST_INSTALL_PACKAGES` und ein `FileProvider` für den
+Update-Ordner der App. **Voraussetzung ist ein fester Signaturschlüssel**
+(nächster Abschnitt) – sonst lehnt Android jedes Update ab.
+
 ## Android-Signaturschlüssel (einmalig)
 
 Android installiert ein Update nur, wenn es mit demselben Schlüssel signiert
@@ -195,6 +223,6 @@ MYNC_UPDATE_URL=http://127.0.0.1:8765/neu/update-linux-x86_64.json mync
 
 ## Grenzen
 
-- Nur Linux. Auf Android gibt es keine Teil-Updates für Apps außerhalb des
-  Play Stores; dort wird die APK aus dem Release installiert.
+- Android: Installieren muss der Nutzer bestätigen (das verlangt Android für
+  Apps außerhalb des Play Stores). Updates gibt es nur für arm64-Geräte.
 - Der Workflow baut derzeit nur x86_64.

@@ -7,6 +7,7 @@
 //!   mync keygen <schlüsseldatei>     Update-Signaturschlüssel erzeugen
 //!   mync sign   <schlüsseldatei> <datei>   Datei signieren (→ <datei>.sig)
 //!   mync verify <öffentlich-hex> <datei>   Signatur <datei>.sig prüfen
+//!   mync chunk  <datei>              Bausteine für Teil-Updates (JSON: size, sha256, chunks)
 
 const std = @import("std");
 const Io = std.Io;
@@ -19,6 +20,7 @@ const usage =
     \\  mync keygen <schlüsseldatei>
     \\  mync sign <schlüsseldatei> <datei>
     \\  mync verify <öffentlicher-schlüssel-hex> <datei>
+    \\  mync chunk <datei>
     \\  mync tag <datei> feld=wert...   (Felder: title artist album albumartist composer
     \\                                   genre date track tracktotal disc disctotal comment lyrics description;
     \\                                   cover=bild.jpg setzt das Cover, cover= entfernt es)
@@ -92,6 +94,17 @@ pub fn main(init: std.process.Init) !u8 {
         const ok = core.sign.verify(args[2], msg, sig);
         try w.print("{s}\n", .{if (ok) "Signatur gültig" else "Signatur UNGÜLTIG"});
         return if (ok) 0 else 1;
+    } else if (std.mem.eql(u8, cmd, "chunk")) {
+        // Bausteinliste wie in Kassenbon: {"size","sha256","chunks":[[hash, länge], …]}
+        const data = try Io.Dir.cwd().readFileAlloc(io, args[2], a, .unlimited);
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(data, &digest, .{});
+        const chunks = try core.chunker.split(a, data);
+        try w.print("{{\"size\":{d},\"sha256\":\"{s}\",\"chunks\":[", .{ data.len, &std.fmt.bytesToHex(digest, .lower) });
+        for (chunks, 0..) |c, i| {
+            try w.print("{s}[\"{s}\",{d}]", .{ if (i == 0) "" else ",", &c.hash, c.len });
+        }
+        try w.writeAll("]}\n");
     } else if (std.mem.eql(u8, cmd, "tag")) {
         const p = args[2];
         const old = try core.tags.readFile(a, io, Io.Dir.cwd(), p);

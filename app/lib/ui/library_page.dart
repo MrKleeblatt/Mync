@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../core/music_fs.dart';
@@ -66,7 +64,7 @@ class LibraryPageState extends State<LibraryPage> {
                     child: SearchBar(
                       controller: _search,
                       focusNode: searchFocus,
-                      hintText: 'Ordner durchsuchen${keyHint('Strg+F')}',
+                      hintText: 'Suche${keyHint('Strg+F')}',
                       leading: const Icon(Icons.search),
                       trailing: [
                         if (_query.isNotEmpty)
@@ -88,7 +86,7 @@ class LibraryPageState extends State<LibraryPage> {
                     icon: const Icon(Icons.folder_open),
                   ),
                   IconButton(
-                    tooltip: 'Ordner neu einlesen',
+                    tooltip: 'Einlesen',
                     onPressed: lib.scanning ? null : _scan,
                     icon: lib.scanning
                         ? const SizedBox.square(
@@ -114,9 +112,7 @@ class LibraryPageState extends State<LibraryPage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 2, 20, 0),
                 child: Tooltip(
-                  message:
-                      'Prüfsummen für den Abgleich mit dem Handy – alles andere '
-                      'ist schon nutzbar',
+                  message: 'Prüfsummen für den Sync',
                   child: Row(
                     children: [
                       SizedBox(
@@ -128,7 +124,7 @@ class LibraryPageState extends State<LibraryPage> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Prüfsummen für den Sync: $done von $total',
+                        '$done / $total',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -178,36 +174,23 @@ class _EmptyLibrary extends StatelessWidget {
             color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(height: 12),
-          Text(
-            context.settings.musicDir.isEmpty
-                ? 'Wählen Sie Ihren Musikordner'
-                : 'Keine Titel gefunden in',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
           if (context.settings.musicDir.isNotEmpty)
-            Text(folderLabel(context.settings.musicDir))
-          else if (Platform.isAndroid)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                'mync bekommt nur Zugriff auf diesen Ordner.',
-                textAlign: TextAlign.center,
-              ),
-            ),
+            Text(folderLabel(context.settings.musicDir)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             children: [
-              OutlinedButton.icon(
+              IconButton.outlined(
+                tooltip: 'Ordner wählen',
                 onPressed: onPick,
                 icon: const Icon(Icons.folder_open),
-                label: const Text('Ordner wählen'),
               ),
-              FilledButton.icon(
-                onPressed: onScan,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Einlesen'),
-              ),
+              if (context.settings.musicDir.isNotEmpty)
+                IconButton.filled(
+                  tooltip: 'Einlesen',
+                  onPressed: onScan,
+                  icon: const Icon(Icons.refresh),
+                ),
             ],
           ),
         ],
@@ -235,7 +218,7 @@ class _SearchResults extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (folders.isNotEmpty) ...[
-            _SectionTitle('Ordner (${folders.length})'),
+            _SectionTitle('${folders.length}', Icons.folder_outlined),
             for (final f in folders)
               GestureDetector(
                 onSecondaryTapUp: (d) => showTrackMenu(
@@ -252,7 +235,8 @@ class _SearchResults extends StatelessWidget {
                 ),
               ),
           ],
-          if (tracks.isNotEmpty) _SectionTitle('Titel (${tracks.length})'),
+          if (tracks.isNotEmpty)
+            _SectionTitle('${tracks.length}', Icons.music_note_outlined),
         ],
       ),
     );
@@ -260,12 +244,19 @@ class _SearchResults extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, this.icon);
   final String text;
+  final IconData icon;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-    child: Text(text, style: Theme.of(context).textTheme.titleSmall),
+    child: Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 6),
+        Text(text, style: Theme.of(context).textTheme.titleSmall),
+      ],
+    ),
   );
 }
 
@@ -381,9 +372,7 @@ class _ScanStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final (found, total, done) = progress;
     final theme = Theme.of(context);
-    final text = total == 0
-        ? 'Suche Musik … $found Dateien gefunden'
-        : 'Lese ein … $done von $total neuen Dateien';
+    final text = total == 0 ? '$found …' : '$done / $total';
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
       child: Column(

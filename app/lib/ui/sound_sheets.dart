@@ -87,7 +87,7 @@ Future<void> showSpeedDialog(BuildContext context) {
     builder: (ctx) => ListenableBuilder(
       listenable: player,
       builder: (ctx, _) => AlertDialog(
-        title: const Text('Geschwindigkeit und Tonhöhe'),
+        title: const Text('Tempo'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -114,7 +114,7 @@ Future<void> showSpeedDialog(BuildContext context) {
             ),
             const SizedBox(height: 20),
             Text(
-              'Tonhöhe: ${player.pitch == 0 ? 'unverändert' : '${player.pitch > 0 ? '+' : ''}${player.pitch.toStringAsFixed(1)} Halbtöne'}',
+              'Tonhöhe ${player.pitch == 0 ? '±0' : '${player.pitch > 0 ? '+' : ''}${player.pitch.toStringAsFixed(1)}'}',
               style: Theme.of(ctx).textTheme.titleMedium,
             ),
             Slider(
@@ -125,20 +125,25 @@ Future<void> showSpeedDialog(BuildContext context) {
               onChanged: player.setPitch,
             ),
             if (player.pitchUnavailable && player.pitch != 0)
-              Text(
-                'Tonhöhe nicht verfügbar: mpv/ffmpeg ohne „rubberband“.',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+              Tooltip(
+                message: 'mpv ohne rubberband',
+                child: Icon(
+                  Icons.error_outline,
+                  color: Theme.of(ctx).colorScheme.error,
+                ),
               ),
-            TextButton(
+            IconButton(
+              tooltip: 'Zurücksetzen',
               onPressed: player.pitch == 0 ? null : () => player.setPitch(0),
-              child: const Text('Tonhöhe zurücksetzen'),
+              icon: const Icon(Icons.restart_alt),
             ),
           ],
         ),
         actions: [
-          TextButton(
+          IconButton(
+            tooltip: 'Schließen',
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Schließen'),
+            icon: const Icon(Icons.close),
           ),
         ],
       ),
@@ -162,11 +167,12 @@ Future<void> showSleepTimer(BuildContext context) {
               ListTile(
                 leading: const Icon(Icons.timer),
                 title: Text(
-                  'Stoppt um ${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}',
+                  '${at.hour.toString().padLeft(2, '0')}:${at.minute.toString().padLeft(2, '0')}',
                 ),
-                trailing: TextButton(
+                trailing: IconButton(
+                  tooltip: 'Aus',
                   onPressed: () => player.setSleepTimer(null),
-                  child: const Text('Aus'),
+                  icon: const Icon(Icons.timer_off_outlined),
                 ),
               ),
             for (final m in [10, 15, 30, 45, 60, 90, 120])
@@ -175,12 +181,12 @@ Future<void> showSleepTimer(BuildContext context) {
                   player.setSleepTimer(Duration(minutes: m));
                   Navigator.pop(ctx);
                 },
-                child: Text('In $m Minuten'),
+                child: Text('$m min'),
               ),
             CheckboxListTile(
               value: player.sleepAfterTrack,
               onChanged: (v) => player.setSleepAfterTrack(v ?? false),
-              title: const Text('Nach dem aktuellen Titel anhalten'),
+              title: const Text('Nach diesem Titel'),
             ),
           ],
         );

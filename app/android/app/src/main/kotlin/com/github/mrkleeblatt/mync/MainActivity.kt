@@ -7,7 +7,7 @@ import io.flutter.plugin.common.MethodChannel
 
 /**
  * Kanal „mync/fs“ (MusicFs.kt): Zugriff nur auf die vom Nutzer
- * freigegebenen Musikordner.
+ * freigegebenen Musikordner. Kanal „mync/app“ (AppUpdate.kt): Updates.
  *
  * Erbt von AudioServiceActivity (audio_service), damit Activity und
  * Wiedergabedienst dieselbe Flutter-Engine nutzen.
@@ -21,6 +21,8 @@ class MainActivity : AudioServiceActivity() {
         fs = handler
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/fs")
             .setMethodCallHandler(handler)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/app")
+            .setMethodCallHandler(AppUpdate(this))
     }
 
     @Deprecated("Ordnerauswahl über startActivityForResult")

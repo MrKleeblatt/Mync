@@ -42,7 +42,7 @@ class _LogPageState extends State<LogPage> {
           title: const Text('Logbuch'),
           actions: [
             IconButton(
-              tooltip: 'Alles kopieren',
+              tooltip: 'Kopieren',
               icon: const Icon(Icons.copy_all_outlined),
               onPressed: all.isEmpty
                   ? null
@@ -50,9 +50,7 @@ class _LogPageState extends State<LogPage> {
                       await Clipboard.setData(
                         ClipboardData(text: widget.log.text),
                       );
-                      setState(
-                        () => _copied = '${all.length} Einträge kopiert',
-                      );
+                      setState(() => _copied = '${all.length} ✓');
                     },
             ),
             IconButton(
@@ -74,24 +72,22 @@ class _LogPageState extends State<LogPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Seit dem Start: ${all.length} Einträge',
-                        style: t.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
                       SegmentedButton<_Filter>(
                         segments: [
                           const ButtonSegment(
                             value: _Filter.all,
                             label: Text('Alle'),
+                            icon: Icon(Icons.list),
                           ),
                           const ButtonSegment(
                             value: _Filter.network,
                             label: Text('Netz'),
+                            icon: Icon(Icons.swap_vert),
                           ),
                           ButtonSegment(
                             value: _Filter.problems,
-                            label: Text('Fehler (${widget.log.problems})'),
+                            label: Text('${widget.log.problems}'),
+                            icon: const Icon(Icons.error_outline),
                           ),
                         ],
                         selected: {_filter},
@@ -110,14 +106,7 @@ class _LogPageState extends State<LogPage> {
                 const Divider(height: 1),
                 Expanded(
                   child: shown.isEmpty
-                      ? Center(
-                          child: Text(
-                            all.isEmpty
-                                ? 'Noch keine Einträge.'
-                                : 'Keine Einträge in dieser Auswahl.',
-                            style: t.bodyMedium,
-                          ),
-                        )
+                      ? Center(child: Text('–', style: t.bodyMedium))
                       : ListView.separated(
                           padding: const EdgeInsets.only(bottom: 24),
                           itemCount: shown.length,

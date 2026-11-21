@@ -77,7 +77,7 @@ class _RenameDialogState extends State<RenameDialog> {
     setState(() {
       _running = true;
       _done = 0;
-      _status = OpStatus.busy('Benenne um … 0 von ${todo.length}');
+      _status = OpStatus.busy('0 / ${todo.length} …');
     });
     var ok = 0;
     var failed = 0;
@@ -93,7 +93,7 @@ class _RenameDialogState extends State<RenameDialog> {
       if (mounted) {
         setState(() {
           _done++;
-          _status = OpStatus.busy('Benenne um … $_done von ${todo.length}');
+          _status = OpStatus.busy('$_done / ${todo.length} …');
         });
       }
     }
@@ -106,11 +106,11 @@ class _RenameDialogState extends State<RenameDialog> {
     if (failed == 0) {
       Navigator.pop(context);
       ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(SnackBar(content: Text('$ok Dateien umbenannt')));
+          ?.showSnackBar(SnackBar(content: Text('$ok ✓')));
     } else {
       setState(() {
         _running = false;
-        _status = OpStatus.error('$ok umbenannt, $failed fehlgeschlagen');
+        _status = OpStatus.error('$ok ✓ · $failed ✗');
       });
     }
   }
@@ -177,11 +177,7 @@ class _RenameDialogState extends State<RenameDialog> {
     final count = plan.where((p) => p.state == _State.ok).length;
     final conflicts = plan.where((p) => p.state == _State.conflict).length;
     return AlertDialog(
-      title: Text(
-        widget.tracks.length == 1
-            ? 'Nach Tags umbenennen'
-            : '${widget.tracks.length} Titel nach Tags umbenennen',
-      ),
+      title: Text('Umbenennen (${widget.tracks.length})'),
       content: SizedBox(
         width: 640,
         child: Column(
@@ -194,10 +190,6 @@ class _RenameDialogState extends State<RenameDialog> {
               autofocus: true,
               decoration: const InputDecoration(
                 labelText: 'Muster',
-                helperText:
-                    'Ohne „/“ am Anfang: im bisherigen Ordner. Mit „/“: ab dem '
-                    'Musikordner, „/“ dazwischen legt Unterordner an.',
-                helperMaxLines: 2,
                 border: OutlineInputBorder(),
               ),
             ),
@@ -232,8 +224,6 @@ class _RenameDialogState extends State<RenameDialog> {
               ],
             ),
             const Divider(),
-            Text('Vorschau', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 4),
             SizedBox(
               height: 260,
               child: ListView.builder(
@@ -249,17 +239,17 @@ class _RenameDialogState extends State<RenameDialog> {
                     _State.same => (
                       Icons.check,
                       theme.colorScheme.outline,
-                      'unverändert',
+                      '=',
                     ),
                     _State.conflict => (
                       Icons.warning_amber,
                       theme.colorScheme.error,
-                      '${p.target} – existiert schon oder doppelt, wird übersprungen',
+                      '${p.target} ✗',
                     ),
                     _State.invalid => (
                       Icons.block,
                       theme.colorScheme.error,
-                      'leerer Name – wird übersprungen',
+                      '✗',
                     ),
                   };
                   return ListTile(
@@ -282,14 +272,14 @@ class _RenameDialogState extends State<RenameDialog> {
                 },
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Lyrics (.lrc), Beschreibungen und Kapiteldateien mit gleichem '
-              'Namen werden mit umbenannt. Warteschlangen und Statistik '
-              'folgen der Umbenennung.'
-              '${conflicts > 0 ? '\n$conflicts Konflikte werden übersprungen.' : ''}',
-              style: theme.textTheme.bodySmall,
-            ),
+            if (conflicts > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '$conflicts ✗',
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              ),
             if (_status != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -305,7 +295,7 @@ class _RenameDialogState extends State<RenameDialog> {
         ),
         FilledButton(
           onPressed: _running || count == 0 ? null : () => _run(plan),
-          child: Text('$count umbenennen'),
+          child: Text('$count ✓'),
         ),
       ],
     );
