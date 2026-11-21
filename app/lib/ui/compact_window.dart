@@ -67,7 +67,7 @@ class CompactPlayerView extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              t?.title ?? 'Nichts in der Warteschlange',
+                              t?.title ?? '–',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.titleSmall,
@@ -90,7 +90,7 @@ class CompactPlayerView extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Großes Fenster${keyHint('Strg+M')}',
+                        tooltip: 'Groß${keyHint('Strg+M')}',
                         onPressed: CompactWindow.instance.toggle,
                         icon: const Icon(Icons.open_in_full),
                       ),

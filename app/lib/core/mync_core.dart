@@ -132,12 +132,11 @@ class MyncCoreException implements Exception {
 
   /// Verständliche Meldung für die Oberfläche.
   String get userMessage => switch (message) {
-    'UnsupportedFormat' => 'Tags dieses Formats können nicht geschrieben werden (möglich: MP3, FLAC, Ogg Vorbis, Opus, M4A, WAV).',
-    'UnsupportedImage' => 'Als Cover gehen nur JPEG- und PNG-Bilder.',
-    'FileNotFound' => 'Datei oder Ordner nicht gefunden.',
-    'AccessDenied' || 'PermissionDenied' => 'Keine Berechtigung.',
-    'AudioChanged' =>
-      'Sicherheitsprüfung fehlgeschlagen – die Datei wurde nicht verändert.',
+    'UnsupportedFormat' => 'Format nicht schreibbar',
+    'UnsupportedImage' => 'Nur JPEG/PNG',
+    'FileNotFound' => 'Nicht gefunden',
+    'AccessDenied' || 'PermissionDenied' => 'Keine Berechtigung',
+    'AudioChanged' => 'Prüfung fehlgeschlagen – unverändert',
     _ => message,
   };
 

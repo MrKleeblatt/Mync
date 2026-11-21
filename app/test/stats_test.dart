@@ -154,11 +154,11 @@ void main() {
         random: Random(1),
       );
       final byPath = {for (final x in s) x.track.path: x};
-      expect(byPath['Alt/hit.mp3']?.reason, startsWith('Lange nicht gehört'));
-      expect(byPath['Rock/neu.mp3']?.reason, contains('Noch nie gehört'));
+      expect(byPath['Alt/hit.mp3']?.reason, startsWith('⏳'));
+      expect(byPath['Rock/neu.mp3']?.reason, startsWith('Neu'));
       expect(
         byPath['Rock/frisch.mp3']?.reason,
-        'Länger nicht gehört',
+        '⏳',
         reason: 'gerade erst gehört: nur als Auffüller',
       );
       expect(
@@ -191,8 +191,8 @@ void main() {
       final tracks = [for (var i = 0; i < 10; i++) track('Ordner/$i.mp3')];
       final s = suggest(events: const [], tracks: tracks, now: now, count: 8);
       expect(s.length, 8);
-      expect(s.where((x) => x.reason.startsWith('Zufällig')).length, 3);
-      expect(s.skip(3).every((x) => x.reason == 'Noch nie gehört'), isTrue);
+      expect(s.where((x) => x.reason == '🎲').length, 3);
+      expect(s.skip(3).every((x) => x.reason == 'Neu'), isTrue);
     });
 
     test('alles kürzlich gehört: trotzdem Vorschläge, älteste zuerst', () {

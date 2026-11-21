@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/mync_core.dart';
-import '../library/chapters.dart';
 import '../library/lrc.dart';
 import '../library/track.dart';
 import '../player/player_controller.dart';
@@ -42,9 +41,7 @@ class SeekButton extends StatelessWidget {
           };
     return IconButton(
       iconSize: size,
-      tooltip: forward
-          ? '$step s vor${keyHint('→, Umschalt+→: 1 min')}'
-          : '$step s zurück${keyHint('←, Umschalt+←: 1 min')}',
+      tooltip: forward ? '+$step s${keyHint('→')}' : '−$step s${keyHint('←')}',
       onPressed: p.queue.isEmpty ? null : () => p.skipBy(forward ? 1 : -1),
       icon: Icon(icon),
     );
@@ -108,7 +105,7 @@ class MiniPlayer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    t?.title ?? 'Nichts in der Warteschlange',
+                    t?.title ?? '–',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleSmall,
@@ -141,7 +138,7 @@ class MiniPlayer extends StatelessWidget {
             ),
             if (wide) const SeekButton(forward: false),
             IconButton.filled(
-              tooltip: 'Abspielen/Pause${keyHint('Leertaste')}',
+              tooltip: 'Play/Pause${keyHint('Leertaste')}',
               onPressed: player.queue.isEmpty ? null : player.playPause,
               icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
             ),
@@ -461,7 +458,7 @@ class _RepeatButton extends StatelessWidget {
     final mode = player.queue.repeat;
     final (icon, tip) = switch (mode) {
       QueueRepeat.off => (Icons.repeat, 'Wiederholen: aus'),
-      QueueRepeat.all => (Icons.repeat_on, 'Wiederholen: Warteschlange'),
+      QueueRepeat.all => (Icons.repeat_on, 'Wiederholen: alle'),
       QueueRepeat.one => (Icons.repeat_one_on, 'Wiederholen: Titel'),
     };
     return IconButton(
@@ -564,7 +561,7 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
                             child: Text(
                               i < 0
                                   ? '${player.chapters.length} Kapitel'
-                                  : 'Kapitel ${i + 1}/${player.chapters.length} · ${player.chapters.chapters[i].title}',
+                                  : '${i + 1}/${player.chapters.length} · ${player.chapters.chapters[i].title}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -777,16 +774,6 @@ class ChapterListView extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              list.source == ChapterSource.tags
-                  ? 'Kapitel aus den Tags'
-                  : 'Kapitel aus dem Beschreibungstext',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
             Expanded(
               child: ListView.builder(
                 itemCount: list.length,
@@ -881,7 +868,7 @@ class _LyricsViewState extends State<LyricsView> {
           top: 0,
           right: 0,
           child: IconButton(
-            tooltip: 'Lyrics synchronisieren',
+            tooltip: 'Lyrics',
             icon: const Icon(Icons.edit_note),
             onPressed: () => showLrcEditor(context, widget.track),
           ),
@@ -900,10 +887,10 @@ class _LyricsViewState extends State<LyricsView> {
         final l = snap.data;
         if (l == null) {
           return Center(
-            child: Text(
-              'Keine Lyrics vorhanden.\nÜber ✎ oben rechts Text einfügen und synchronisieren\noder eine .lrc-Datei neben den Titel legen.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
+            child: Icon(
+              Icons.lyrics_outlined,
+              size: 48,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           );
         }

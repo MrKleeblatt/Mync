@@ -118,18 +118,18 @@ class SyncSession extends ChangeNotifier {
   Future<void> start() async {
     unawaited(_receiveLoop());
     try {
-      _setStatus('Lese Bibliothek ein …');
+      _setStatus('Einlesen …');
       await host.rescan();
       _local = await _localEntries();
       _scanned.complete();
-      _setStatus('Hole Dateiliste von ${peer.name} …');
+      _setStatus('${peer.name} …');
       final remote = await request('manifest') as List;
       _remote = [
         for (final e in remote) SyncEntry.fromJson(e as Map<String, dynamic>),
       ];
       await _computeInbox();
     } catch (e, st) {
-      _fail('Sync fehlgeschlagen', e, st);
+      _fail('Fehlgeschlagen', e, st);
     }
   }
 
@@ -167,11 +167,7 @@ class SyncSession extends ChangeNotifier {
     }
     items = list;
     ready = true;
-    _setStatus(
-      list.isEmpty
-          ? 'Alles auf dem gleichen Stand.'
-          : '${list.length} Änderung(en) von ${peer.name}',
-    );
+    _setStatus(list.isEmpty ? 'Gleicher Stand ✓' : '${list.length} Änderungen');
   }
 
   /// Erster Abgleich (noch kein gemeinsamer Stand): Identisches gilt als
@@ -241,7 +237,7 @@ class SyncSession extends ChangeNotifier {
         }
       }
     } catch (e) {
-      if (!closed) _fail('Verbindung unterbrochen', e);
+      if (!closed) _fail('Unterbrochen', e);
     }
     for (final c in _pending.values) {
       c.completeError(SyncProtocolException('Verbindung beendet'));
@@ -373,7 +369,7 @@ class SyncSession extends ChangeNotifier {
         .toList();
     var n = 0;
     for (final item in todo) {
-      _setStatus('Übernehme ${n + 1} von ${todo.length} …');
+      _setStatus('${n + 1} / ${todo.length} …');
       try {
         final localPath = item.isConflict
             ? item.local!.resultPath
@@ -411,9 +407,7 @@ class SyncSession extends ChangeNotifier {
     applying = false;
     final failed = todo.where((i) => i.error != null).length;
     _setStatus(
-      failed == 0
-          ? '${todo.length - failed} Änderung(en) übernommen.'
-          : '$failed Änderung(en) fehlgeschlagen.',
+      failed == 0 ? '${todo.length - failed} ✓' : '$failed fehlgeschlagen',
     );
   }
 
@@ -578,7 +572,7 @@ class SyncSession extends ChangeNotifier {
   Future<void> finish() async {
     if (finished) return;
     try {
-      _setStatus('Schließe ab …');
+      _setStatus('Abschluss …');
       await host.rescan();
       final local = await _localEntries();
       final remote = [
@@ -594,14 +588,10 @@ class SyncSession extends ChangeNotifier {
       await store.savePeers();
       finished = true;
       await channel.sendJson({'t': 'note', 'what': 'finished'});
-      _setStatus(
-        peerFinished
-            ? 'Abgeschlossen.'
-            : 'Abgeschlossen – ${peer.name} entscheidet noch …',
-      );
+      _setStatus(peerFinished ? 'Fertig ✓' : 'Fertig ✓ – ${peer.name} …');
       if (peerFinished) await close();
     } catch (e, st) {
-      _fail('Abschluss fehlgeschlagen', e, st);
+      _fail('Fehlgeschlagen', e, st);
     }
   }
 

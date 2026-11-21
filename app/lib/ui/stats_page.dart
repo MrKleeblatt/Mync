@@ -105,7 +105,7 @@ class _StatsPageState extends State<StatsPage>
           children: [
             Expanded(
               child: Text(
-                'Am meisten gehört · ${_range.label}',
+                'Top · ${_range.label}',
                 style: theme.textTheme.titleMedium,
               ),
             ),
@@ -117,13 +117,13 @@ class _StatsPageState extends State<StatsPage>
                 icon: const Icon(Icons.play_arrow),
               ),
               IconButton(
-                tooltip: 'Zufällig abspielen',
+                tooltip: 'Zufällig',
                 onPressed: () =>
                     runTrackAction(context, TrackAction.shuffle, topTracks),
                 icon: const Icon(Icons.shuffle),
               ),
               IconButton(
-                tooltip: 'In neuer Warteschlange',
+                tooltip: 'Neue Warteschlange',
                 onPressed: () => player.newQueue(
                   paths: topTracks.map((t) => t.path).toList(),
                   name: 'Top · ${_range.label}',
@@ -136,11 +136,7 @@ class _StatsPageState extends State<StatsPage>
         if (top.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              'In diesem Zeitraum noch nichts gehört. Ein Titel zählt, sobald er mindestens 30 Sekunden '
-              '(bzw. die Hälfte) gelaufen ist.',
-              style: theme.textTheme.bodyMedium,
-            ),
+            child: Text('–', style: theme.textTheme.bodyMedium),
           )
         else
           for (var i = 0; i < top.length && i < 25; i++)
@@ -159,14 +155,14 @@ class _StatsPageState extends State<StatsPage>
         LayoutBuilder(
           builder: (context, c) {
             final hourChart = BarChart(
-              title: 'Hörzeit nach Tageszeit',
+              title: 'Uhrzeit',
               values: s.byHour,
               labels: [for (var h = 0; h < 24; h++) '$h Uhr'],
               labelEvery: 6,
               format: formatListening,
             );
             final dayChart = BarChart(
-              title: 'Hörzeit nach Wochentag',
+              title: 'Wochentag',
               values: s.byWeekday,
               labels: weekdays,
               format: formatListening,
@@ -187,7 +183,7 @@ class _StatsPageState extends State<StatsPage>
           },
         ),
         const SizedBox(height: 24),
-        Text('Meistgehörte Ordner', style: theme.textTheme.titleMedium),
+        Text('Ordner', style: theme.textTheme.titleMedium),
         for (final f in s.topFolders.take(8))
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -197,7 +193,7 @@ class _StatsPageState extends State<StatsPage>
               '${f.folder.isEmpty ? '/' : f.folder} · ${f.plays}× · ${formatListening(f.listenedMs)}',
             ),
             trailing: IconButton(
-              tooltip: 'Ordner zufällig abspielen',
+              tooltip: 'Zufällig',
               icon: const Icon(Icons.shuffle),
               onPressed: () => runTrackAction(
                 context,
@@ -229,32 +225,25 @@ class _StatsPageState extends State<StatsPage>
   }
 
   Widget _suggestionsView(BuildContext context) {
-    final theme = Theme.of(context);
     final player = context.player;
     final list = _currentSuggestions(context);
     final tracks = list.map((s) => s.track).toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       children: [
-        Text(
-          'Aus der eigenen Bibliothek, passend zu den Hörgewohnheiten: lange nicht Gehörtes, '
-          'Unbekanntes aus viel gehörten Ordnern, Titel für diese Tageszeit. '
-          'Oft übersprungene Titel bleiben außen vor.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton.icon(
+            IconButton.filled(
+              tooltip: 'Abspielen',
               onPressed: tracks.isEmpty
                   ? null
                   : () => player.playTracks(tracks.map((t) => t.path).toList()),
               icon: const Icon(Icons.play_arrow),
-              label: const Text('Mix abspielen'),
             ),
-            OutlinedButton.icon(
+            IconButton.outlined(
+              tooltip: 'Neue Warteschlange',
               onPressed: tracks.isEmpty
                   ? null
                   : () => player.newQueue(
@@ -262,22 +251,18 @@ class _StatsPageState extends State<StatsPage>
                       name: 'Vorschläge',
                     ),
               icon: const Icon(Icons.add_to_queue),
-              label: const Text('In neuer Warteschlange'),
             ),
-            OutlinedButton.icon(
+            IconButton.outlined(
+              tooltip: 'Neu würfeln',
               onPressed: () =>
                   setState(() => _currentSuggestions(context, reroll: true)),
               icon: const Icon(Icons.casino_outlined),
-              label: const Text('Neu würfeln'),
             ),
           ],
         ),
         const SizedBox(height: 8),
         if (list.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Keine Titel in der Bibliothek.'),
-          ),
+          const Padding(padding: EdgeInsets.all(16), child: Text('–')),
         for (var i = 0; i < list.length; i++)
           TrackTile(
             track: list[i].track,

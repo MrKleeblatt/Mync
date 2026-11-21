@@ -5,10 +5,8 @@ import 'dart:io';
 
 import '../backup/backup.dart';
 import '../core/music_fs.dart';
-import '../core/mync_core.dart';
 import '../log.dart';
 import 'folder_picker.dart';
-import 'global_shortcuts.dart';
 import 'scope.dart';
 import 'log_page.dart';
 import 'status_line.dart';
@@ -35,10 +33,8 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.folder),
             title: const Text('Musikordner'),
-            subtitle: Text(
-              '${folderLabel(s.musicDir)}\nHauptordner, wird mit dem Handy abgeglichen',
-            ),
-            isThreeLine: true,
+            subtitle: Text(folderLabel(s.musicDir)),
+            trailing: const Tooltip(message: 'Sync', child: Icon(Icons.sync)),
             onTap: () async {
               final old = s.musicDir;
               final p = await pickMusicFolder(initial: old);
@@ -57,12 +53,9 @@ class SettingsPage extends StatelessWidget {
                         .lastOrNull ??
                     d,
               ),
-              subtitle: Text(
-                '${folderLabel(d)}\nWeiterer Ordner, erscheint unter „Ordner“ als eigener Ordner',
-              ),
-              isThreeLine: true,
+              subtitle: Text(folderLabel(d)),
               trailing: IconButton(
-                tooltip: 'Ordner entfernen (Dateien bleiben erhalten)',
+                tooltip: 'Entfernen',
                 icon: const Icon(Icons.remove_circle_outline),
                 onPressed: () async {
                   await s.setExtraMusicDirs([...s.extraMusicDirs]..remove(d));
@@ -72,7 +65,7 @@ class SettingsPage extends StatelessWidget {
             ),
           ListTile(
             leading: const Icon(Icons.create_new_folder_outlined),
-            title: const Text('Weiteren Musikordner hinzufügen …'),
+            title: const Text('Ordner hinzufügen'),
             onTap: () async {
               final p = await pickMusicFolder(confirm: 'Hinzufügen');
               if (p == null) return;
@@ -83,32 +76,24 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.block),
             title: Text('Ausschlüsse'),
-            subtitle: Text(
-              s.excludes.isEmpty
-                  ? 'Keine – alle Audiodateien werden eingelesen'
-                  : s.excludes.join(' · '),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
+            subtitle: s.excludes.isEmpty
+                ? null
+                : Text(
+                    s.excludes.join(' · '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
             onTap: () => _editExcludes(context),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.autorenew),
-            title: const Text('Beim Start neu einlesen'),
-            subtitle: const Text(
-              'Neue, geänderte und gelöschte Dateien erkennen',
-            ),
+            title: const Text('Beim Start einlesen'),
             value: s.scanOnStart,
             onChanged: s.setScanOnStart,
           ),
           ListTile(
             leading: const Icon(Icons.timer_off_outlined),
             title: const Text('Kurze Titel ausblenden'),
-            subtitle: Text(
-              s.hideShorterThan == 0
-                  ? 'Alle anzeigen'
-                  : 'Kürzer als ${s.hideShorterThan} s',
-            ),
             trailing: DropdownButton<int>(
               value: s.hideShorterThan,
               onChanged: (v) => s.setHideShorterThan(v ?? 0),
@@ -124,15 +109,13 @@ class SettingsPage extends StatelessWidget {
           const _Section('Wiedergabe'),
           ListTile(
             leading: const Icon(Icons.tune),
-            title: const Text('Klang (Balance, ReplayGain)'),
+            title: const Text('Klang'),
+            trailing: const Icon(Icons.chevron_right),
             onTap: () => showSoundSheet(context),
           ),
           ListTile(
             leading: const Icon(Icons.fast_forward),
             title: const Text('Spulen'),
-            subtitle: Text(
-              '${s.seekStep} s pro Schritt${keyHint('Umschalt+Pfeil: 1 min')}',
-            ),
             trailing: DropdownButton<int>(
               value: s.seekStep,
               onChanged: (v) => s.setSeekStep(v ?? 10),
@@ -144,19 +127,16 @@ class SettingsPage extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.speed),
-            title: const Text('Geschwindigkeit und Tonhöhe'),
-            subtitle: Text(
+            title: const Text('Tempo'),
+            trailing: Text(
               '${s.speed.toStringAsFixed(2)}×'
-              '${s.pitch == 0 ? '' : ' · ${s.pitch > 0 ? '+' : ''}${s.pitch.toStringAsFixed(1)} Halbtöne'}',
+              '${s.pitch == 0 ? '' : ' · ${s.pitch > 0 ? '+' : ''}${s.pitch.toStringAsFixed(1)}'}',
             ),
             onTap: () => showSpeedDialog(context),
           ),
           ListTile(
             leading: const Icon(Icons.swap_horiz),
             title: const Text('Überblenden'),
-            subtitle: const Text(
-              'Ende und Anfang zweier Titel ineinander blenden',
-            ),
             trailing: DropdownButton<int>(
               value: s.crossfadeSec,
               onChanged: (v) => s.setCrossfadeSec(v ?? 0),
@@ -172,29 +152,19 @@ class SettingsPage extends StatelessWidget {
           if (s.crossfadeSec > 0)
             SwitchListTile(
               secondary: const Icon(Icons.album_outlined),
-              title: const Text('Nicht innerhalb eines Albums'),
-              subtitle: const Text(
-                'Aufeinanderfolgende Albumtitel lückenlos spielen',
-              ),
+              title: const Text('Nicht im Album'),
               value: s.crossfadeSkipAlbum,
               onChanged: s.setCrossfadeSkipAlbum,
             ),
           SwitchListTile(
             secondary: const Icon(Icons.sign_language),
-            title: const Text('Applaus automatisch überspringen'),
-            subtitle: const Text(
-              'Bei Live-Aufnahmen Applaus am Anfang und Ende auslassen '
-              '(sonst erscheint ein Knopf „Applaus überspringen“)',
-            ),
+            title: const Text('Applaus überspringen'),
             value: s.autoSkipApplause,
             onChanged: s.setAutoSkipApplause,
           ),
           ListTile(
             leading: const Icon(Icons.bookmark_outline),
-            title: const Text('Position je Datei merken'),
-            subtitle: const Text(
-              'Hörbücher und lange Titel später an derselben Stelle fortsetzen',
-            ),
+            title: const Text('Position merken'),
             trailing: DropdownButton<int>(
               value: s.resumeMinutes,
               onChanged: (v) => s.setResumeMinutes(v ?? 0),
@@ -211,7 +181,6 @@ class SettingsPage extends StatelessWidget {
           SwitchListTile(
             secondary: const Icon(Icons.graphic_eq),
             title: const Text('Visualisierung'),
-            subtitle: const Text('Wellenform des Titels hinter der Zeitleiste'),
             value: s.visualizer,
             onChanged: s.setVisualizer,
           ),
@@ -222,24 +191,16 @@ class SettingsPage extends StatelessWidget {
           ],
           const _Section('Sicherung'),
           const _BackupSection(),
-          const _Section('Info und Updates'),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('mync'),
-            subtitle: Text('Kern ${_coreVersion()} · Daten in ${s.dataDir}'),
-          ),
+          const _Section('Info'),
           ListenableBuilder(
             listenable: appLog,
             builder: (context, _) => ListTile(
-              leading: const Icon(Icons.receipt_long_outlined),
-              title: const Text('Logbuch'),
-              subtitle: Text(
-                appLog.problems == 0
-                    ? 'Was die App seit dem Start getan hat'
-                    : appLog.problems == 1
-                    ? '1 Warnung oder Fehler seit dem Start'
-                    : '${appLog.problems} Warnungen oder Fehler seit dem Start',
+              leading: Badge(
+                isLabelVisible: appLog.problems > 0,
+                label: Text('${appLog.problems}'),
+                child: const Icon(Icons.receipt_long_outlined),
               ),
+              title: const Text('Logbuch'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => openLogPage(context),
             ),
@@ -248,14 +209,6 @@ class SettingsPage extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  static String _coreVersion() {
-    try {
-      return coreVersion();
-    } catch (_) {
-      return '?';
-    }
   }
 }
 
@@ -277,16 +230,16 @@ class _Shortcuts extends StatelessWidget {
   const _Shortcuts();
 
   static const rows = [
-    ('Leertaste', 'Abspielen / Pause'),
-    ('Strg + → / ←', 'Nächster / vorheriger Titel'),
-    ('→ / ←', 'Spulen (Schrittweite einstellbar)'),
-    ('Umschalt + → / ←', '1 min vor / zurück'),
-    ('Strg + ↑ / ↓', 'Lauter / leiser'),
-    ('Bild ↑ / Bild ↓', 'Vorheriges / nächstes Kapitel'),
+    ('Leertaste', 'Play / Pause'),
+    ('Strg + → / ←', 'Titel ±'),
+    ('→ / ←', 'Spulen'),
+    ('Umschalt + → / ←', '± 1 min'),
+    ('Strg + ↑ / ↓', 'Lautstärke'),
+    ('Bild ↑ / Bild ↓', 'Kapitel ±'),
     ('Strg + F', 'Suche'),
-    ('Strg + R', 'Wiederholen umschalten'),
-    ('Strg + S', 'Warteschlange mischen'),
-    ('F5', 'Ordner neu einlesen'),
+    ('Strg + R', 'Wiederholen'),
+    ('Strg + S', 'Mischen'),
+    ('F5', 'Einlesen'),
   ];
 
   @override
@@ -329,23 +282,15 @@ Future<void> _editExcludes(BuildContext context) async {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Ein Muster pro Zeile. Ohne „/“ gilt es für jeden Datei- oder '
-              'Ordnernamen, mit „/“ für den Pfad ab dem Musikordner. '
-              '„*“ steht für beliebige Zeichen, „**“ auch über Ordner hinweg.',
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Beispiele: *.wav · Hörproben · Podcasts/Alt · Hörbücher/**/*.m4b',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               autofocus: true,
               minLines: 5,
               maxLines: 10,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '*.wav\nHörproben\nPodcasts/**/*.mp3',
+              ),
             ),
           ],
         ),
@@ -379,10 +324,10 @@ Future<bool?> _askPairings(BuildContext context, String title, String action) {
           child: CheckboxListTile(
             value: pairings,
             onChanged: (v) => setState(() => pairings = v ?? false),
-            title: const Text('Kopplungen einschließen'),
-            subtitle: const Text(
-              'Enthält den geheimen Schlüssel dieses Geräts – die Datei '
-              'sicher aufbewahren.',
+            title: const Text('Mit Kopplungen'),
+            secondary: const Tooltip(
+              message: 'Enthält geheime Schlüssel',
+              child: Icon(Icons.key),
             ),
           ),
         ),
@@ -423,18 +368,13 @@ class _BackupSectionState extends State<_BackupSection> {
       children: [
         ListTile(
           leading: const Icon(Icons.save_alt),
-          title: const Text('Sicherung erstellen …'),
-          subtitle: const Text(
-            'Einstellungen, Warteschlangen, Hörstatistik, gemerkte '
-            'Positionen und Kopplungen in eine Datei',
-          ),
+          title: const Text('Sichern'),
           enabled: !busy,
           onTap: () => _createBackup(context, _report),
         ),
         ListTile(
           leading: const Icon(Icons.settings_backup_restore),
-          title: const Text('Sicherung wiederherstellen …'),
-          subtitle: const Text('Ersetzt den aktuellen Stand; mync startet neu'),
+          title: const Text('Wiederherstellen'),
           enabled: !busy,
           onTap: () => _restoreBackup(context, _report),
         ),
@@ -457,11 +397,7 @@ Future<void> _createBackup(
 ) async {
   final settings = context.settings;
   final player = context.player;
-  final pairings = await _askPairings(
-    context,
-    'Sicherung erstellen',
-    'Speichern unter …',
-  );
+  final pairings = await _askPairings(context, 'Sichern', 'Speichern');
   if (pairings == null) return;
   final d = DateTime.now();
   final name =
@@ -487,8 +423,8 @@ Future<void> _createBackup(
         }
       },
       busy: 'Sichere …',
-      ok: (n) => n == null ? 'Abgebrochen' : 'Gesichert (${formatSize(n)})',
-      failText: 'Sicherung fehlgeschlagen',
+      ok: (n) => n == null ? 'Abgebrochen' : formatSize(n),
+      failText: 'Fehlgeschlagen',
       logWhat: 'Sicherung',
     );
     return;
@@ -539,15 +475,15 @@ Future<void> _restoreBackup(
     info = await Backup.inspect(file.path);
   } catch (e, st) {
     logError('Sicherung nicht lesbar: ${file.name}', e, st);
-    report(const OpStatus.error('Keine gültige mync-Sicherung'));
+    report(const OpStatus.error('Ungültige Datei'));
     return;
   }
   if (!context.mounted) return;
   final c = info.created;
   final pairings = await _askPairings(
     context,
-    'Sicherung vom ${c.day}.${c.month}.${c.year}, '
-        '${c.hour}:${c.minute.toString().padLeft(2, '0')} wiederherstellen?',
+    '${c.day}.${c.month}.${c.year}, '
+        '${c.hour}:${c.minute.toString().padLeft(2, '0')}',
     'Wiederherstellen',
   );
   if (pairings == null) return;
@@ -565,7 +501,7 @@ Future<void> _restoreBackup(
     },
     busy: 'Stelle wieder her …',
     ok: (_) => 'Wiederhergestellt',
-    failText: 'Wiederherstellen fehlgeschlagen',
+    failText: 'Fehlgeschlagen',
     logWhat: 'Wiederherstellen',
   );
   if (done == null) {
@@ -577,12 +513,8 @@ Future<void> _restoreBackup(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => AlertDialog(
-      title: const Text('Wiederhergestellt'),
-      content: Text(
-        Platform.isAndroid
-            ? 'mync wird jetzt beendet. Bitte die App wieder öffnen.'
-            : 'mync startet jetzt neu.',
-      ),
+      title: const Icon(Icons.check_circle_outline, size: 40),
+      content: Text(Platform.isAndroid ? 'Neu öffnen' : 'Neustart'),
       actions: [
         FilledButton(
           onPressed: () => Navigator.pop(ctx),

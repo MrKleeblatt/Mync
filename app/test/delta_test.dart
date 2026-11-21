@@ -154,7 +154,7 @@ void main() {
         report: (_, t) => texts.add(t),
       );
       expect(await File(path).readAsBytes(), neu);
-      expect(texts.single, startsWith('Lade nur'));
+      expect(texts.single, contains(' / '));
       // nur einzelne Bereiche, die Umleitung wurde einmal aufgelöst
       expect(log.where((l) => l.startsWith('/apk')).length, 1);
       expect(log.where((l) => l.contains(',')), isEmpty);

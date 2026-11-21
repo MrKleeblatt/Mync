@@ -9,13 +9,13 @@ import 'tag_editor.dart';
 /// Aktionen für einen oder mehrere Titel (Kontextmenü, Gruppen-Menü).
 enum TrackAction {
   play('Abspielen', Icons.play_arrow),
-  shuffle('Zufällig abspielen', Icons.shuffle),
-  playNext('Als Nächstes spielen', Icons.playlist_play),
-  append('Zur Warteschlange hinzufügen', Icons.playlist_add),
-  newQueue('In neuer Warteschlange', Icons.add_to_queue),
-  editTags('Tags bearbeiten …', Icons.edit),
-  syncLyrics('Lyrics synchronisieren …', Icons.lyrics_outlined),
-  rename('Nach Tags umbenennen …', Icons.drive_file_rename_outline),
+  shuffle('Zufällig', Icons.shuffle),
+  playNext('Als Nächstes', Icons.playlist_play),
+  append('Anhängen', Icons.playlist_add),
+  newQueue('Neue Warteschlange', Icons.add_to_queue),
+  editTags('Tags', Icons.edit),
+  syncLyrics('Lyrics', Icons.lyrics_outlined),
+  rename('Umbenennen', Icons.drive_file_rename_outline),
   details('Details', Icons.info_outline);
 
   const TrackAction(this.label, this.icon);
@@ -110,13 +110,13 @@ Future<void> runTrackAction(
       await player.playTracks(paths..shuffle());
     case TrackAction.playNext:
       await player.playNext(paths);
-      toast('$what wird als Nächstes gespielt');
+      toast('↪ $what');
     case TrackAction.append:
       await player.append(paths);
-      toast('$what zur Warteschlange hinzugefügt');
+      toast('+ $what');
     case TrackAction.newQueue:
       await player.newQueue(paths: paths);
-      toast('Neue Warteschlange „${player.queue.name}“');
+      toast('+ ${player.queue.name}');
     case TrackAction.editTags:
       if (context.mounted) await showTagEditor(context, tracks);
     case TrackAction.syncLyrics:

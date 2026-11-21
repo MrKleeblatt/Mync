@@ -23,47 +23,34 @@ class UpdateBanner extends StatelessWidget {
         final info = u.available;
         Widget? content;
         List<Widget> actions = const [];
+        final details = IconButton(
+          tooltip: 'Details',
+          onPressed: () => showUpdateDetails(context),
+          icon: const Icon(Icons.info_outline),
+        );
         switch (u.state) {
           case UpdateState.available when info != null && !u.canInstall:
-            // Nix/AppImage: nur Hinweis, wie man aktualisiert
-            content = Text(
-              'mync ${info.version} ist verfügbar – ${u.externalUpdateHint}',
-            );
-            actions = [
-              TextButton(
-                onPressed: () => showUpdateDetails(context),
-                child: const Text('Details'),
-              ),
-              const ExternalUpdateButton(),
-            ];
+            content = Text('mync ${info.version}');
+            actions = [details, const ExternalUpdateButton()];
           case UpdateState.available when info != null:
-            content = Text(
-              'Update auf ${info.version} verfügbar – ${info.summary}',
-            );
+            content = Text('mync ${info.version} · ${info.summary}');
             actions = [
-              TextButton(
-                onPressed: () => showUpdateDetails(context),
-                child: const Text('Details'),
-              ),
-              FilledButton(
+              details,
+              IconButton.filled(
+                tooltip: 'Installieren',
                 onPressed: u.install,
-                child: const Text('Installieren'),
+                icon: const Icon(Icons.download),
               ),
             ];
           case UpdateState.downloading:
-            content = Row(
-              children: [
-                const Text('Update wird geladen …'),
-                const SizedBox(width: 12),
-                Expanded(child: LinearProgressIndicator(value: u.progress)),
-              ],
-            );
+            content = LinearProgressIndicator(value: u.progress);
           case UpdateState.installed:
-            content = Text('Version ${u.installedVersion} installiert.');
+            content = Text('mync ${u.installedVersion} ✓');
             actions = [
-              FilledButton(
+              IconButton.filled(
+                tooltip: 'Neu starten',
                 onPressed: u.restart,
-                child: const Text('Jetzt neu starten'),
+                icon: const Icon(Icons.restart_alt),
               ),
             ];
           default:
@@ -90,7 +77,7 @@ class UpdateBanner extends StatelessWidget {
                 ),
                 ...[
                   for (final a in actions)
-                    Padding(padding: const EdgeInsets.only(left: 8), child: a),
+                    Padding(padding: const EdgeInsets.only(left: 4), child: a),
                 ],
               ],
             ),
@@ -108,30 +95,30 @@ Future<void> showUpdateDetails(BuildContext context) {
   return showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text('mync ${info.version}'),
+      title: Row(
+        children: [
+          Text('${u.currentVersion} → ${info.version}'),
+          const Spacer(),
+          Tooltip(
+            message: info.signed ? 'Signiert' : 'Nicht signiert',
+            child: Icon(
+              info.signed ? Icons.verified_user : Icons.gpp_maybe_outlined,
+            ),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 480,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Installiert: ${u.currentVersion}'),
               if (u.canInstall)
-                Text('Teil-Update: ${info.summary}')
+                Text(info.summary)
               else
                 SelectableText(u.externalUpdateHint),
-              Text(
-                info.signed
-                    ? 'Signatur geprüft ✓'
-                    : 'Nicht signiert (nur Prüfsummen geprüft)',
-              ),
               if (info.notes.trim().isNotEmpty) ...[
                 const SizedBox(height: 12),
-                const Text(
-                  'Änderungen',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
                 SelectableText(info.notes.trim()),
               ],
             ],
@@ -139,17 +126,19 @@ Future<void> showUpdateDetails(BuildContext context) {
         ),
       ),
       actions: [
-        TextButton(
+        IconButton(
+          tooltip: 'Später',
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Später'),
+          icon: const Icon(Icons.close),
         ),
         if (u.canInstall)
-          FilledButton(
+          IconButton.filled(
+            tooltip: 'Installieren',
             onPressed: () {
               Navigator.pop(ctx);
               u.install();
             },
-            child: const Text('Installieren'),
+            icon: const Icon(Icons.download),
           )
         else
           const ExternalUpdateButton(),
@@ -166,29 +155,16 @@ class UpdateSettings extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = UpdateService.instance;
     final s = context.settings;
-    if (u == null || !u.supported) {
-      return ListTile(
-        leading: const Icon(Icons.system_update),
-        title: const Text('Updates'),
-        subtitle: Text(
-          u?.unsupportedReason ??
-              'Auf diesem Gerät über die APK aus den GitHub-Releases.',
-        ),
-      );
-    }
+    if (u == null || !u.supported) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: Listenable.merge([u, s]),
       builder: (context, _) => Column(
         children: [
           ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: Text('Installiert: mync ${u.currentVersion}'),
+            leading: const Icon(Icons.system_update),
+            title: Text('mync ${u.currentVersion}'),
             subtitle: u.message == null
-                ? Text(
-                    u.signatureRequired
-                        ? 'Updates werden auf ihre Signatur geprüft.'
-                        : '',
-                  )
+                ? null
                 : StatusLine(
                     OpStatus(switch (u.state) {
                       UpdateState.checking ||
@@ -198,76 +174,59 @@ class UpdateSettings extends StatelessWidget {
                     }, u.message!),
                     dense: true,
                   ),
-            trailing:
-                u.state == UpdateState.checking ||
-                    u.state == UpdateState.downloading
-                ? const SizedBox.square(
-                    dimension: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : OutlinedButton(
-                    onPressed: () => u.check(manual: true),
-                    child: const Text('Jetzt suchen'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (u.state == UpdateState.available) ...[
+                  IconButton(
+                    tooltip: 'Details',
+                    onPressed: () => showUpdateDetails(context),
+                    icon: const Icon(Icons.info_outline),
                   ),
+                  if (u.canInstall)
+                    IconButton.filled(
+                      tooltip: 'Installieren',
+                      onPressed: u.install,
+                      icon: const Icon(Icons.download),
+                    )
+                  else
+                    const ExternalUpdateButton(),
+                ] else if (u.state == UpdateState.installed)
+                  IconButton.filled(
+                    tooltip: 'Neu starten',
+                    onPressed: u.restart,
+                    icon: const Icon(Icons.restart_alt),
+                  )
+                else if (u.state == UpdateState.checking ||
+                    u.state == UpdateState.downloading)
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Suchen',
+                    onPressed: () => u.check(manual: true),
+                    icon: const Icon(Icons.refresh),
+                  ),
+              ],
+            ),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.update),
-            title: const Text('Automatisch nach Updates suchen'),
-            subtitle: const Text(
-              'Beim Start und alle 6 Stunden (GitHub-Releases)',
-            ),
+            title: const Text('Automatisch suchen'),
             value: s.updateCheck,
             onChanged: s.setUpdateCheck,
           ),
-          if (!u.canInstall)
-            ListTile(
-              leading: const Icon(Icons.inventory_2_outlined),
-              title: Text(
-                u.isAppImage ? 'Läuft als AppImage' : 'Installiert über Nix',
-              ),
-              subtitle: Text(
-                'mync meldet neue Versionen – ${u.externalUpdateHint}.',
-              ),
-              trailing: const ExternalUpdateButton(),
-            ),
           if (u.canInstall && !Platform.isAndroid)
             SwitchListTile(
               secondary: const Icon(Icons.download_for_offline_outlined),
-              title: const Text(
-                'Updates automatisch herunterladen und installieren',
-              ),
-              subtitle: const Text(
-                'Nur geänderte Dateien; aktiv nach dem nächsten Start',
-              ),
+              title: const Text('Automatisch installieren'),
               value: s.autoUpdate,
               onChanged: s.updateCheck ? s.setAutoUpdate : null,
-            ),
-          if (u.state == UpdateState.available)
-            ListTile(
-              leading: const Icon(Icons.new_releases_outlined),
-              title: Text('Version ${u.available!.version} verfügbar'),
-              subtitle: Text(
-                u.canInstall
-                    ? '${formatBytes(u.available!.downloadBytes)} herunterzuladen'
-                          '${u.available!.apk != null ? ' (Teil-Update)' : ''}'
-                    : u.externalUpdateHint,
-              ),
-              trailing: u.canInstall
-                  ? FilledButton(
-                      onPressed: u.install,
-                      child: const Text('Installieren'),
-                    )
-                  : const ExternalUpdateButton(),
-              onTap: () => showUpdateDetails(context),
-            ),
-          if (u.state == UpdateState.installed)
-            ListTile(
-              leading: const Icon(Icons.restart_alt),
-              title: Text('Version ${u.installedVersion} installiert'),
-              trailing: FilledButton(
-                onPressed: u.restart,
-                child: const Text('Neu starten'),
-              ),
             ),
         ],
       ),
@@ -283,24 +242,24 @@ class ExternalUpdateButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = UpdateService.instance;
     if (u != null && u.isAppImage) {
-      return FilledButton.icon(
+      return IconButton.filled(
+        tooltip: 'Release öffnen',
         onPressed: u.openReleasePage,
-        icon: const Icon(Icons.open_in_new, size: 18),
-        label: const Text('Release öffnen'),
+        icon: const Icon(Icons.open_in_new),
       );
     }
-    return FilledButton.icon(
+    return IconButton.filled(
+      tooltip: UpdateService.nixUpgradeCommand,
       onPressed: () async {
         await Clipboard.setData(
           const ClipboardData(text: UpdateService.nixUpgradeCommand),
         );
         if (context.mounted) {
           ScaffoldMessenger.maybeOf(context)
-              ?.showSnackBar(const SnackBar(content: Text('Befehl kopiert')));
+              ?.showSnackBar(const SnackBar(content: Text('Kopiert')));
         }
       },
-      icon: const Icon(Icons.copy, size: 18),
-      label: const Text('Befehl kopieren'),
+      icon: const Icon(Icons.copy),
     );
   }
 }

@@ -41,7 +41,7 @@ class StatusLine extends StatelessWidget {
         const SizedBox(width: 8),
         Flexible(
           child: Text(
-            s.failed ? '${s.text} – Details im Logbuch' : s.text,
+            s.text,
             style: style,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

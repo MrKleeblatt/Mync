@@ -174,8 +174,7 @@ Future<String> prepareApk({
     try {
       final total = plan.download;
       var done = 0;
-      final info =
-          'Lade nur ${_mb(total)} von ${_mb(manifest.size)} (Teil-Update)';
+      final info = '${_mb(total)} / ${_mb(manifest.size)}';
       report(0, info);
       final fetched = await RangeLoader(client, manifest.url).load(
         plan.ranges,
@@ -183,9 +182,7 @@ Future<String> prepareApk({
       );
       await assemble(plan, installedApk, fetched, part);
       if (!await _valid(part, manifest)) {
-        throw const FormatException(
-          'Prüfsumme der zusammengesetzten APK stimmt nicht',
-        );
+        throw const FormatException('Prüfsumme falsch');
       }
       await File(part).rename(out);
       logInfo('Teil-Update: ${_mb(total)} von ${_mb(manifest.size)} geladen');
@@ -195,7 +192,7 @@ Future<String> prepareApk({
     }
   }
   var done = 0;
-  final info = 'Lade ${_mb(manifest.size)}';
+  final info = _mb(manifest.size);
   report(0, info);
   await downloadWhole(
     client,
@@ -204,7 +201,7 @@ Future<String> prepareApk({
     onBytes: (n) => report((done += n) / manifest.size, info),
   );
   if (!await _valid(part, manifest)) {
-    throw const FormatException('Prüfsumme der geladenen APK stimmt nicht');
+    throw const FormatException('Prüfsumme falsch');
   }
   await File(part).rename(out);
   return out;
