@@ -3,8 +3,9 @@ name: Release
 # Jeder Merge nach master (nur per Pull Request, siehe docs/updates.md) wird
 # ein Release: Version prüfen, Linux-App mit Teil-Update, Nix-Flake (im
 # Tarball, mit flake.lock, geprüft), AppImage (+ .zsync) und Android-APK
-# bauen, den Tag v<version> auf den Merge-Commit setzen und das Release mit
-# allen Dateien anlegen. Die Version steht nur in app/pubspec.yaml.
+# (+ Bausteinliste für Teil-Updates) bauen, den Tag v<version> auf den
+# Merge-Commit setzen und das Release mit allen Dateien anlegen. Die Version
+# steht nur in app/pubspec.yaml.
 #
 # Secrets (optional, empfohlen):
 #   MYNC_UPDATE_KEY      Ed25519-Schlüssel für die Signatur der Teil-Updates
@@ -162,6 +163,23 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
             "$GITHUB_WORKSPACE/dist/mync-$TAG-android-arm64.apk"
           rm -f "$RUNNER_TEMP/release.jks"
+
+      # Bausteinliste für Teil-Updates der App (wie Kassenbon): die App lädt
+      # nur die Bausteine, die ihrer installierten APK fehlen
+      - name: Bausteinliste der APK
+        env:
+          MYNC_UPDATE_KEY: ${{ secrets.MYNC_UPDATE_KEY }}
+        run: |
+          (cd core && zig build -Doptimize=ReleaseSafe)
+          sign=()
+          if [ -n "$MYNC_UPDATE_KEY" ]; then
+            printf '%s' "$MYNC_UPDATE_KEY" > "$RUNNER_TEMP/key"
+            sign=(--sign-key "$RUNNER_TEMP/key")
+          fi
+          python3 tools/release/make_apk_chunks.py "dist/mync-$TAG-android-arm64.apk" \
+            --version "${TAG#v}" --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
+            --mync core/zig-out/bin/mync "${sign[@]}"
+          rm -f "$RUNNER_TEMP/key"
 
       - uses: actions/upload-artifact@v6
         with:

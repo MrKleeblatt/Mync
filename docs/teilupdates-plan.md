@@ -1,5 +1,9 @@
 # Plan: Teil-Updates nach dem Vorbild von Kassenbon
 
+> **Stand:** Android ist umgesetzt (Schritte 1, 3 ohne Wiederaufnahme, 5, 6 –
+> siehe [updates.md](updates.md#android-teil-updates-der-apk)). Linux nutzt
+> weiter das Manifest mit geänderten Dateien (Schritte 2 und 4 offen).
+
 Stand heute (siehe [updates.md](updates.md)): Unter Linux lädt mync nur
 **geänderte Dateien** (Manifest mit SHA-256 je Datei, unveränderte Dateien
 verweisen auf frühere Releases). Zwei Schwächen:

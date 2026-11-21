@@ -274,6 +274,22 @@ export fn mync_extract_cover(path: [*:0]const u8, out_path: [*:0]const u8) ?[*:0
 
 // ───────────────────────────── Updates ─────────────────────────────────────
 
+/// Baustein für JSON: [hash, offset, länge].
+const ChunkJson = struct { []const u8, usize, usize };
+
+fn chunkFile(a: std.mem.Allocator, io: Io, path: []const u8) ![]ChunkJson {
+    const chunks = try core.chunker.splitFile(a, io, Io.Dir.cwd(), path);
+    const out = try a.alloc(ChunkJson, chunks.len);
+    for (chunks, out) |c, *o| o.* = .{ try a.dupe(u8, &c.hash), c.offset, c.len };
+    return out;
+}
+
+/// Zerlegt eine Datei in Bausteine (Teil-Updates der APK, siehe chunker.zig):
+/// `[[hash, offset, länge], …]`.
+export fn mync_chunk_file(path: [*:0]const u8) ?[*:0]u8 {
+    return call(chunkFile, .{std.mem.span(path)});
+}
+
 fn verifySig(_: std.mem.Allocator, _: Io, public_hex: []const u8, msg: []const u8, sig_hex: []const u8) error{InvalidInput}!bool {
     return core.sign.verify(public_hex, msg, sig_hex);
 }

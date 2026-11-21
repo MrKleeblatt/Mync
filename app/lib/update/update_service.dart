@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import '../core/mync_core.dart';
 import '../log.dart';
 import '../settings.dart';
+import 'android_update.dart';
+import 'delta.dart';
 import 'update_key.dart';
 
 /// Eine Datei des Programms laut Update-Manifest.
@@ -36,7 +38,14 @@ class UpdateInfo {
     required this.files,
     required this.missing,
     required this.signed,
+    this.apk,
+    this.apkPlan,
   });
+
+  /// Android: Bausteinliste der neuen APK und was davon zu laden ist
+  /// (null, wenn die installierte APK nicht zerlegt werden konnte).
+  final ChunkManifest? apk;
+  final DeltaPlan? apkPlan;
 
   final String version;
   final String notes;
@@ -46,8 +55,15 @@ class UpdateInfo {
   final List<UpdateFile> missing;
   final bool signed;
 
-  int get downloadBytes => missing.fold(0, (a, f) => a + f.gzSize);
-  int get fullBytes => files.fold(0, (a, f) => a + f.gzSize);
+  int get downloadBytes => apk != null
+      ? (apkPlan?.download ?? apk!.size)
+      : missing.fold(0, (a, f) => a + f.gzSize);
+  int get fullBytes => apk?.size ?? files.fold(0, (a, f) => a + f.gzSize);
+
+  /// Kurz, was geladen wird (Linux: Dateien, Android: Teil der APK).
+  String get summary => apk != null
+      ? '${formatBytes(downloadBytes)} statt ${formatBytes(fullBytes)}'
+      : '${formatBytes(downloadBytes)} (${missing.length} von ${files.length} Dateien)';
 }
 
 enum UpdateState {
@@ -104,8 +120,12 @@ class UpdateService extends ChangeNotifier {
   String? installedVersion;
   Timer? _timer;
 
-  /// Nach Updates suchen: nur Linux-Desktop (Android: APK aus dem Release).
-  bool get supported => Platform.isLinux;
+  /// Nach Updates suchen: Linux (Teil-Update der Programmdateien) und
+  /// Android (Teil-Update der APK, siehe android_update.dart).
+  bool get supported => Platform.isLinux || Platform.isAndroid;
+
+  /// Android: installierte Version (aus dem Paket, beim Start gelesen).
+  String? _androidVersion;
 
   /// Von Nix verwaltet (der Wrapper der Flake setzt MYNC_NO_SELF_UPDATE):
   /// Dann nur benachrichtigen – geladene Dateien wären dort nicht lauffähig,
@@ -159,6 +179,7 @@ class UpdateService extends ChangeNotifier {
   String get bundleDir => File(Platform.resolvedExecutable).parent.path;
 
   String get currentVersion {
+    if (Platform.isAndroid) return _androidVersion ?? '0.0.0';
     try {
       return File('$bundleDir/VERSION').readAsStringSync().trim();
     } catch (_) {
@@ -195,7 +216,15 @@ class UpdateService extends ChangeNotifier {
 
   void start() {
     if (!supported) return;
-    if (canInstall && restartPending) {
+    if (Platform.isAndroid && _androidVersion == null) {
+      AndroidApp.version()
+          .then((v) {
+            _androidVersion = v;
+            notifyListeners();
+          })
+          .catchError((Object e) => logWarning('Version unbekannt: $e'));
+    }
+    if (Platform.isLinux && canInstall && restartPending) {
       installedVersion = userCurrentVersion;
       _set(
         UpdateState.installed,
@@ -267,9 +296,23 @@ class UpdateService extends ChangeNotifier {
       return null;
     }
 
-    final m = find('update-$platform.json');
+    final name = Platform.isAndroid
+        ? _assetName(rel, (n) => n.endsWith('-android-arm64.apk.chunks.json'))
+        : 'update-$platform.json';
+    final m = name == null ? null : find(name);
     if (m == null) return null;
-    return (m, find('update-$platform.json.sig'), rel['body'] as String? ?? '');
+    return (m, find('$name.sig'), rel['body'] as String? ?? '');
+  }
+
+  static String? _assetName(
+    Map<String, dynamic> rel,
+    bool Function(String) test,
+  ) {
+    for (final a in (rel['assets'] as List? ?? const [])) {
+      final n = (a as Map<String, dynamic>)['name'] as String;
+      if (test(n)) return n;
+    }
+    return null;
   }
 
   /// Sucht nach einem Update; bei aktivierter Option wird es gleich installiert.
@@ -316,6 +359,10 @@ class UpdateService extends ChangeNotifier {
         throw const FormatException('Update ist nicht signiert – abgelehnt.');
       }
       final j = jsonDecode(text) as Map<String, dynamic>;
+      if (Platform.isAndroid) {
+        await _offerApk(j, relNotes, signed);
+        return;
+      }
       if (j['format'] != 1 || j['platform'] != platform) {
         throw const FormatException(
           'Manifest passt nicht zu dieser Plattform.',
@@ -378,9 +425,94 @@ class UpdateService extends ChangeNotifier {
     }
   }
 
+  /// Android: neue APK anbieten, mit Größe des Teil-Updates.
+  Future<void> _offerApk(
+    Map<String, dynamic> j,
+    String notes,
+    bool signed,
+  ) async {
+    final m = ChunkManifest.fromJson(j);
+    _androidVersion ??= await AndroidApp.version();
+    if (compareVersions(m.version, currentVersion) <= 0) {
+      available = null;
+      _set(UpdateState.upToDate, 'mync $currentVersion ist aktuell.');
+      return;
+    }
+    if (await AndroidApp.abi() != 'arm64-v8a') {
+      _set(UpdateState.error, 'Updates gibt es nur für arm64-Geräte.');
+      return;
+    }
+    DeltaPlan? p;
+    try {
+      p = plan(m, await chunkFile(await AndroidApp.apkPath()));
+    } catch (e, st) {
+      logError('Installierte APK nicht zerlegbar – ganze APK nötig', e, st);
+    }
+    available = UpdateInfo(
+      version: m.version,
+      notes: notes,
+      files: const [],
+      missing: const [],
+      signed: signed,
+      apk: m,
+      apkPlan: p,
+    );
+    logInfo(
+      'APK ${m.version}: ${formatBytes(available!.downloadBytes)} von '
+      '${formatBytes(m.size)} zu laden',
+    );
+    _set(UpdateState.available, 'Version ${m.version} verfügbar.');
+  }
+
+  /// Android: neue APK laden (Teil-Update) und den Installer öffnen.
+  Future<void> _installApk(UpdateInfo info) async {
+    _set(UpdateState.downloading, 'Bereite das Update vor …');
+    progress = 0;
+    try {
+      final path = await prepareApk(
+        manifest: info.apk!,
+        plan: info.apkPlan,
+        installedApk: await AndroidApp.apkPath(),
+        dir: await AndroidApp.updateDir(),
+        client: _client,
+        report: (f, text) {
+          progress = f.clamp(0, 1);
+          message = '$text – ${(progress * 100).round()} %';
+          notifyListeners();
+        },
+      );
+      if (!await AndroidApp.canInstall()) {
+        await AndroidApp.openInstallSettings();
+        _set(
+          UpdateState.available,
+          'Bitte „Apps aus dieser Quelle zulassen“ einschalten und erneut '
+          'auf „Installieren“ tippen.',
+        );
+        return;
+      }
+      await AndroidApp.install(path);
+      _set(
+        UpdateState.available,
+        'Installation gestartet – Android fragt nach.',
+      );
+    } catch (e, st) {
+      logError('Update fehlgeschlagen', e, st);
+      _set(
+        UpdateState.error,
+        e is FormatException ? e.message : 'Update fehlgeschlagen',
+      );
+    }
+  }
+
   /// Lädt die fehlenden Dateien, prüft alles und schaltet auf die neue Version um.
   Future<void> install() async {
     final info = available;
+    if (Platform.isAndroid) {
+      if (info?.apk != null && state != UpdateState.downloading) {
+        await _installApk(info!);
+      }
+      return;
+    }
     if (info == null || state == UpdateState.downloading || !canInstall) {
       return;
     }

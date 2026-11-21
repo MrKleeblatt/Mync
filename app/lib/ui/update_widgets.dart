@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -36,8 +38,7 @@ class UpdateBanner extends StatelessWidget {
             ];
           case UpdateState.available when info != null:
             content = Text(
-              'Update auf ${info.version} verfügbar – ${formatBytes(info.downloadBytes)} '
-              '(${info.missing.length} von ${info.files.length} Dateien)',
+              'Update auf ${info.version} verfügbar – ${info.summary}',
             );
             actions = [
               TextButton(
@@ -116,10 +117,7 @@ Future<void> showUpdateDetails(BuildContext context) {
             children: [
               Text('Installiert: ${u.currentVersion}'),
               if (u.canInstall)
-                Text(
-                  'Teil-Update: ${info.missing.length} von ${info.files.length} Dateien, '
-                  '${formatBytes(info.downloadBytes)} statt ${formatBytes(info.fullBytes)}',
-                )
+                Text('Teil-Update: ${info.summary}')
               else
                 SelectableText(u.externalUpdateHint),
               Text(
@@ -232,7 +230,7 @@ class UpdateSettings extends StatelessWidget {
               ),
               trailing: const ExternalUpdateButton(),
             ),
-          if (u.canInstall)
+          if (u.canInstall && !Platform.isAndroid)
             SwitchListTile(
               secondary: const Icon(Icons.download_for_offline_outlined),
               title: const Text(
@@ -251,6 +249,7 @@ class UpdateSettings extends StatelessWidget {
               subtitle: Text(
                 u.canInstall
                     ? '${formatBytes(u.available!.downloadBytes)} herunterzuladen'
+                          '${u.available!.apk != null ? ' (Teil-Update)' : ''}'
                     : u.externalUpdateHint,
               ),
               trailing: u.canInstall

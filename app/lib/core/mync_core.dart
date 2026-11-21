@@ -148,6 +148,7 @@ class MyncCoreException implements Exception {
 class _Lib {
   _Lib._(DynamicLibrary lib)
     : scan = lib.lookupFunction<_ScanC, _ScanD>('mync_scan'),
+      chunkFile = lib.lookupFunction<_OneStr, _OneStr>('mync_chunk_file'),
       pendingHashes = lib.lookupFunction<_OneStr, _OneStr>(
         'mync_pending_hashes',
       ),
@@ -179,6 +180,7 @@ class _Lib {
       version = lib.lookupFunction<_VersionC, _VersionC>('mync_version');
 
   final _ScanD scan;
+  final _OneStr chunkFile;
   final _OneStr pendingHashes;
   final _FillC fillHashes;
   final _ScanListingD scanListing;
@@ -595,6 +597,16 @@ Future<FileTags> _writeTagsAt(String path, String json, String cover) =>
 Future<bool> extractCover(String path, String outPath) => Isolate.run(() {
   final lib = _Lib.instance;
   return lib.call2(lib.extractCover, path, outPath) as bool;
+});
+
+/// Zerlegt die Datei [path] in Bausteine (Teil-Updates, wie Kassenbon):
+/// (hash, offset, länge).
+Future<List<(String, int, int)>> chunkFile(String path) => Isolate.run(() {
+  final lib = _Lib.instance;
+  return [
+    for (final c in lib.call1(lib.chunkFile, path) as List)
+      (c[0] as String, (c[1] as num).toInt(), (c[2] as num).toInt()),
+  ];
 });
 
 /// Prüft eine Ed25519-Signatur (Schlüssel und Signatur hexadezimal).
