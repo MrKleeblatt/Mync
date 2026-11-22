@@ -277,7 +277,11 @@ class UpdateService extends ChangeNotifier {
     try {
       body = await _get('https://api.github.com/repos/$repo/releases/latest');
     } on HttpException catch (e) {
-      if (e.message.contains('404')) return null; // noch kein Release
+      // 404: kein Release – oder das Repository ist privat (ohne Anmeldung
+      // sieht die App es dann gar nicht)
+      if (e.message.contains('404')) {
+        throw const FormatException('Release nicht erreichbar (privat?)');
+      }
       rethrow;
     }
     final rel = jsonDecode(utf8.decode(body)) as Map<String, dynamic>;
@@ -396,6 +400,9 @@ class UpdateService extends ChangeNotifier {
       }
       _set(UpdateState.available, '$version verfügbar');
       if (settings.autoUpdate && !manual) await install();
+    } on SocketException catch (e) {
+      logWarning('Update-Prüfung: offline ($e)');
+      _set(UpdateState.error, 'Offline');
     } catch (e, st) {
       logError('Update-Prüfung fehlgeschlagen', e, st);
       _set(

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -102,11 +103,7 @@ class AnalysisService extends ChangeNotifier {
   Future<void> _analyse(TrackAnalysis r, String path, Duration dur) async {
     if (dur > Duration.zero && dur <= _maxWaveform) {
       // Betrag bilden und auf 200 Hz glätten = Hüllkurve
-      final env = await _decoder.decode(
-        path,
-        rate: _envRate,
-        filter: 'aeval=exprs=abs(val(0))',
-      );
+      final env = await _envelope(path);
       r.waveform = await Isolate.run(() => buildWaveform(env, rate: _envRate));
       version++;
       notifyListeners();
@@ -130,6 +127,28 @@ class AnalysisService extends ChangeNotifier {
       r.outroApplause = outro != null && outro * 2 < dur ? outro : null;
     }
     r.applauseDone = true;
+  }
+
+  /// mpv mit lavfi-Filter `aeval` (Betrag) – fehlt der Filter (libmpv
+  /// unter Android), mit [_envRate] × 20 dekodieren und hier mitteln.
+  bool _noFilter = false;
+  Future<Int16List> _envelope(String path) async {
+    if (!_noFilter) {
+      try {
+        return await _decoder.decode(
+          path,
+          rate: _envRate,
+          filter: 'aeval=exprs=abs(val(0))',
+        );
+      } on StateError catch (e) {
+        if (!'$e'.contains('filter')) rethrow;
+        _noFilter = true;
+        logInfo('Analyse: ohne Audiofilter (Hüllkurve selbst berechnet)');
+      }
+    }
+    const factor = 20;
+    final pcm = await _decoder.decode(path, rate: _envRate * factor);
+    return Isolate.run(() => absEnvelope(pcm, factor));
   }
 
   File _file(String key, String ext) => File('${_dir.path}/$key.$ext');
@@ -175,4 +194,19 @@ class AnalysisService extends ChangeNotifier {
     version++;
     notifyListeners();
   }
+}
+
+/// Mittelt den Betrag von je [factor] Werten (Hüllkurve wie `aeval=abs` mit
+/// anschließendem Herunterrechnen).
+Int16List absEnvelope(Int16List pcm, int factor) {
+  final out = Int16List(pcm.length ~/ factor);
+  for (var i = 0; i < out.length; i++) {
+    var sum = 0;
+    for (var k = i * factor; k < (i + 1) * factor; k++) {
+      final v = pcm[k];
+      sum += v < 0 ? -v : v;
+    }
+    out[i] = (sum ~/ factor).clamp(0, 32767);
+  }
+  return out;
 }
