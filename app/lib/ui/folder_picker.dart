@@ -19,4 +19,5 @@ Future<String?> pickMusicFolder({
 }
 
 /// Lesbarer Name eines Musikordners.
-String folderLabel(String dir) => dir.isEmpty ? '–' : MusicFs.describe(dir);
+String folderLabel(String dir) =>
+    dir.isEmpty ? 'Kein Ordner gewählt' : MusicFs.describe(dir);

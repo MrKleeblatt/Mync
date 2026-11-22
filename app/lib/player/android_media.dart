@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/services.dart';
 
 import '../library/track.dart';
 import '../log.dart';
@@ -21,6 +22,13 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
   StreamSubscription<Duration>? _posSub;
 
   static Future<AndroidMedia?> start(PlayerController player) async {
+    logInfo('Mediensitzung: starte …');
+    // AudioService.init wartet auf die Verbindung zum Wiedergabedienst und
+    // kann dabei hängen, ohne Fehler – dann wenigstens im Logbuch sichtbar
+    final slow = Timer(
+      const Duration(seconds: 10),
+      () => logWarning('Mediensitzung: Dienst antwortet nach 10 s nicht'),
+    );
     try {
       final h = await AudioService.init(
         builder: () => AndroidMedia._(player),
@@ -36,10 +44,13 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
           rewindInterval: Duration(seconds: 10),
         ),
       );
+      slow.cancel();
       h._attach();
+      logInfo('Mediensitzung bereit');
       return h;
-    } catch (e) {
-      logError('Android-Mediensitzung nicht verfügbar', e);
+    } catch (e, st) {
+      slow.cancel();
+      logError('Mediensitzung nicht verfügbar', e, st);
       return null;
     }
   }
@@ -86,6 +97,9 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
   );
 
   void _publishState() {
+    if (player.playing != _lastPlaying) {
+      logInfo('Mediensitzung: ${player.playing ? 'spielt' : 'pausiert'}');
+    }
     _lastPlaying = player.playing;
     _lastPos = player.position;
     _lastAt = DateTime.now();
@@ -216,4 +230,14 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
     player.removeListener(_sync);
     unawaited(_posSub?.cancel());
   }
+}
+
+/// Medienlautstärke des Systems (Lautstärketasten des Handys, Kanal
+/// „mync/volume“, SystemVolume.kt): bei 0 pausieren, beim Aufdrehen weiter.
+void listenSystemVolume(PlayerController player) {
+  const MethodChannel('mync/volume').setMethodCallHandler((call) async {
+    if (call.method == 'musicVolume') {
+      await player.onSystemVolume((call.arguments as num).toInt());
+    }
+  });
 }

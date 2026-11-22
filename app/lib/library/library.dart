@@ -173,7 +173,9 @@ class Library extends ChangeNotifier {
     }
     loaded = true;
     notifyListeners();
-    unawaited(ensureHashed()); // offene vom letzten Mal
+    // offene Prüfsummen vom letzten Mal – aber nicht vor einem Scan beim
+    // Start (der startet gleich danach und hätte sonst zu warten)
+    if (!settings.scanOnStart) unawaited(ensureHashed());
   }
 
   /// Scannt den Musikordner und lädt danach neu.
@@ -193,7 +195,7 @@ class Library extends ChangeNotifier {
       notifyListeners();
       return null;
     }
-    status = const OpStatus.busy('…');
+    status = const OpStatus.busy('Lese ein …');
     logInfo('Einlesen gestartet: $root');
     final watch = Stopwatch()..start();
     notifyListeners();
@@ -237,7 +239,7 @@ class Library extends ChangeNotifier {
       for (final m in missing) {
         logWarning('Weiterer Musikordner nicht gefunden: $m');
       }
-      final summary = '$total · +$added · −$removed';
+      final summary = '$total Dateien · +$added · −$removed';
       logInfo(
         'Einlesen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s: '
         '$summary, $hashed neu eingelesen, ${errors.length} Fehler',
@@ -245,7 +247,9 @@ class Library extends ChangeNotifier {
       unawaited(ensureHashed());
       status = errors.isEmpty && missing.isEmpty
           ? OpStatus.ok(summary)
-          : OpStatus.error('$summary · ${errors.length + missing.length} ✗');
+          : OpStatus.error(
+              '$summary · ${errors.length + missing.length} nicht lesbar',
+            );
       return ScanSummary(
         total: total,
         hashed: hashed,
@@ -272,7 +276,16 @@ class Library extends ChangeNotifier {
     notifyListeners();
   });
 
+  /// Wiederholt, bis nichts mehr offen ist – kommen während des
+  /// Nachberechnens neue Dateien hinzu (Scan), werden sie mit erfasst.
   Future<void> _hashAll() async {
+    for (var round = 0; round < 5; round++) {
+      if (!await _hashRound()) return;
+    }
+  }
+
+  /// Eine Runde; true, wenn etwas berechnet wurde (dann noch eine Runde).
+  Future<bool> _hashRound() async {
     final roots = [
       if (root.isNotEmpty) (root, settings.manifestDb),
       for (final r in _extra) (r.dir, r.db),
@@ -288,16 +301,22 @@ class Library extends ChangeNotifier {
       }
     }
     final total = todo.fold(0, (n, t) => n + t.$3.length);
-    if (total == 0) return;
+    if (total == 0) return false;
     logInfo('Prüfsummen für den Sync: $total Dateien im Hintergrund');
     final watch = Stopwatch()..start();
     var done = 0, failed = 0;
     hashProgress = (0, total);
     notifyListeners();
-    const batch = 32;
+    // kleine Portionen: jede hält den Kern so lange, wie sie ganze Dateien
+    // liest – ein Scan soll dazwischen drankommen
+    const batch = 8;
     for (final (dir, db, paths) in todo) {
       final tree = MusicFs.isTree(dir);
       for (var i = 0; i < paths.length; i += batch) {
+        // Einlesen hat Vorrang
+        while (scanning) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
         final part = paths.sublist(i, min(i + batch, paths.length));
         final fds = tree ? await MusicFs.openFds(dir, part) : const <int>[];
         try {
@@ -328,6 +347,22 @@ class Library extends ChangeNotifier {
       'Prüfsummen fertig in ${(watch.elapsedMilliseconds / 1000).toStringAsFixed(1)} s'
       '${failed > 0 ? ', $failed fehlgeschlagen' : ''}',
     );
+    return failed < total;
+  }
+
+  /// Während des Einlesens das schon Gelesene zeigen (höchstens alle 2 s).
+  final _partialWatch = Stopwatch();
+  Future<void> _showPartial() async {
+    if (_partialWatch.isRunning && _partialWatch.elapsedMilliseconds < 2000) {
+      return;
+    }
+    _partialWatch
+      ..reset()
+      ..start();
+    try {
+      _set(await _listAll());
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<bool> _rootReadable(String dir) async {
@@ -346,6 +381,7 @@ class Library extends ChangeNotifier {
           db: db,
           excludes: settings.excludes,
           onProgress: _onScanProgress,
+          onBatch: _showPartial,
         )
       : scanLibrary(
           root: dir,

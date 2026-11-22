@@ -187,7 +187,7 @@ class _QueueListState extends State<_QueueList> {
     messenger?.hideCurrentSnackBar();
     messenger?.showSnackBar(
       SnackBar(
-        content: Text('− $name'),
+        content: Text('Entfernt: $name'),
         action: wasCurrent
             ? null
             : SnackBarAction(
@@ -212,7 +212,7 @@ class _QueueListState extends State<_QueueList> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('–', textAlign: TextAlign.center),
+          child: Text('Leer', textAlign: TextAlign.center),
         ),
       );
     }

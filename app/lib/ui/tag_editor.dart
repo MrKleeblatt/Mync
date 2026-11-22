@@ -203,9 +203,9 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
     if (_coverFile != null) {
       status = _coverFile!.split(Platform.pathSeparator).last;
     } else if (_removeCover) {
-      status = '−';
+      status = 'Wird entfernt';
     } else if (counts.length > 1) {
-      status = '≠';
+      status = 'Verschiedene Cover';
     } else {
       final n = loaded.first.pictures;
       status = n <= 1 ? '' : '$n';
@@ -226,14 +226,13 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                 spacing: 8,
                 runSpacing: 4,
                 children: [
-                  IconButton.outlined(
-                    tooltip: 'Bild wählen',
+                  OutlinedButton.icon(
                     onPressed: enabled ? _pickCover : null,
                     icon: const Icon(Icons.image_outlined),
+                    label: const Text('Bild wählen'),
                   ),
                   if (hasAny && !_removeCover)
-                    IconButton.outlined(
-                      tooltip: 'Entfernen',
+                    OutlinedButton.icon(
                       onPressed: enabled
                           ? () => setState(() {
                               _removeCover = true;
@@ -241,6 +240,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
                             })
                           : null,
                       icon: const Icon(Icons.hide_image_outlined),
+                      label: const Text('Entfernen'),
                     ),
                   if (_coverFile != null || _removeCover)
                     IconButton(
@@ -281,7 +281,7 @@ class _TagEditorDialogState extends State<TagEditorDialog> {
         minLines: maxLines > 1 ? 4 : 1,
         decoration: InputDecoration(
           labelText: label,
-          hintText: _mixed.contains(key) ? '≠' : null,
+          hintText: _mixed.contains(key) ? 'verschieden' : null,
           border: const OutlineInputBorder(),
           isDense: true,
         ),

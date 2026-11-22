@@ -219,7 +219,10 @@ class UpdateService extends ChangeNotifier {
     }
     if (Platform.isLinux && canInstall && restartPending) {
       installedVersion = userCurrentVersion;
-      _set(UpdateState.installed, '$installedVersion ✓ – Neustart');
+      _set(
+        UpdateState.installed,
+        '$installedVersion installiert – Neustart nötig',
+      );
     }
     _timer?.cancel();
     if (!settings.updateCheck) return;
@@ -461,7 +464,10 @@ class UpdateService extends ChangeNotifier {
       );
       if (!await AndroidApp.canInstall()) {
         await AndroidApp.openInstallSettings();
-        _set(UpdateState.available, '„Zulassen“ einschalten, dann erneut');
+        _set(
+          UpdateState.available,
+          '„Apps aus dieser Quelle zulassen“, dann erneut installieren',
+        );
         return;
       }
       await AndroidApp.install(path);
@@ -524,7 +530,10 @@ class UpdateService extends ChangeNotifier {
       await _cleanup(versions, keep: {info.version, _versionOf(bundleDir)});
       installedVersion = info.version;
       available = null;
-      _set(UpdateState.installed, '${info.version} ✓ – Neustart');
+      _set(
+        UpdateState.installed,
+        '${info.version} installiert – Neustart nötig',
+      );
     } catch (e, st) {
       logError('Update-Installation fehlgeschlagen', e, st);
       try {

@@ -36,21 +36,21 @@ class UpdateBanner extends StatelessWidget {
             content = Text('mync ${info.version} · ${info.summary}');
             actions = [
               details,
-              IconButton.filled(
-                tooltip: 'Installieren',
+              FilledButton.icon(
                 onPressed: u.install,
                 icon: const Icon(Icons.download),
+                label: const Text('Installieren'),
               ),
             ];
           case UpdateState.downloading:
             content = LinearProgressIndicator(value: u.progress);
           case UpdateState.installed:
-            content = Text('mync ${u.installedVersion} ✓');
+            content = Text('mync ${u.installedVersion} installiert');
             actions = [
-              IconButton.filled(
-                tooltip: 'Neu starten',
+              FilledButton.icon(
                 onPressed: u.restart,
                 icon: const Icon(Icons.restart_alt),
+                label: const Text('Neu starten'),
               ),
             ];
           default:
@@ -132,13 +132,13 @@ Future<void> showUpdateDetails(BuildContext context) {
           icon: const Icon(Icons.close),
         ),
         if (u.canInstall)
-          IconButton.filled(
-            tooltip: 'Installieren',
+          FilledButton.icon(
             onPressed: () {
               Navigator.pop(ctx);
               u.install();
             },
             icon: const Icon(Icons.download),
+            label: const Text('Installieren'),
           )
         else
           const ExternalUpdateButton(),
@@ -184,18 +184,18 @@ class UpdateSettings extends StatelessWidget {
                     icon: const Icon(Icons.info_outline),
                   ),
                   if (u.canInstall)
-                    IconButton.filled(
-                      tooltip: 'Installieren',
+                    FilledButton.icon(
                       onPressed: u.install,
                       icon: const Icon(Icons.download),
+                      label: const Text('Installieren'),
                     )
                   else
                     const ExternalUpdateButton(),
                 ] else if (u.state == UpdateState.installed)
-                  IconButton.filled(
-                    tooltip: 'Neu starten',
+                  FilledButton.icon(
                     onPressed: u.restart,
                     icon: const Icon(Icons.restart_alt),
+                    label: const Text('Neu starten'),
                   )
                 else if (u.state == UpdateState.checking ||
                     u.state == UpdateState.downloading)
@@ -242,10 +242,10 @@ class ExternalUpdateButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = UpdateService.instance;
     if (u != null && u.isAppImage) {
-      return IconButton.filled(
-        tooltip: 'Release öffnen',
+      return FilledButton.icon(
         onPressed: u.openReleasePage,
         icon: const Icon(Icons.open_in_new),
+        label: const Text('Release öffnen'),
       );
     }
     return IconButton.filled(

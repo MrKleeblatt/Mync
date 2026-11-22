@@ -887,10 +887,17 @@ class _LyricsViewState extends State<LyricsView> {
         final l = snap.data;
         if (l == null) {
           return Center(
-            child: Icon(
-              Icons.lyrics_outlined,
-              size: 48,
-              color: theme.colorScheme.onSurfaceVariant,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.lyrics_outlined,
+                  size: 48,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 8),
+                const Text('Keine Lyrics'),
+              ],
             ),
           );
         }

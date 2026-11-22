@@ -108,7 +108,7 @@ List<Suggestion> suggest({
 
     // Lange nicht gehört
     if (plays >= 3 && nowMs - k!.lastMs > 45 * day) {
-      consider(0.6 + min(plays, 20) / 40, '⏳ $plays×');
+      consider(0.6 + min(plays, 20) / 40, 'Lange nicht gehört ($plays×)');
     }
     // Passt zur Tageszeit (nur für zuletzt regelmäßig Gehörtes)
     if (plays >= 2 && nowMs - k!.lastMs <= 60 * day) {
@@ -118,7 +118,7 @@ List<Suggestion> suggest({
       }
       final share = near / plays;
       if (share >= 0.5) {
-        consider(0.5 + share * 0.4, '🕒');
+        consider(0.5 + share * 0.4, 'Passt zur Uhrzeit');
       }
     }
     // Neu aus Lieblingsordnern
@@ -143,7 +143,7 @@ List<Suggestion> suggest({
       consider(0.55, 'Neu');
     }
     // Ohne Verlauf: Zufall aus der Bibliothek
-    if (events.isEmpty) consider(0.1, '🎲');
+    if (events.isEmpty) consider(0.1, 'Zufällig');
     if (score > 0) out.add(Suggestion(t, reason, score + jitter));
   }
 
@@ -175,7 +175,7 @@ List<Suggestion> suggest({
           );
     for (final t in rest.take(count - picked.length)) {
       final k = known[t.fileId];
-      picked.add(Suggestion(t, k == null ? 'Neu' : '⏳', 0));
+      picked.add(Suggestion(t, k == null ? 'Neu' : 'Lange nicht gehört', 0));
     }
   }
   return picked;

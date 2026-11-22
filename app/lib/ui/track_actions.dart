@@ -110,13 +110,13 @@ Future<void> runTrackAction(
       await player.playTracks(paths..shuffle());
     case TrackAction.playNext:
       await player.playNext(paths);
-      toast('↪ $what');
+      toast('Als Nächstes: $what');
     case TrackAction.append:
       await player.append(paths);
-      toast('+ $what');
+      toast('Angehängt: $what');
     case TrackAction.newQueue:
       await player.newQueue(paths: paths);
-      toast('+ ${player.queue.name}');
+      toast('Neue Warteschlange: ${player.queue.name}');
     case TrackAction.editTags:
       if (context.mounted) await showTagEditor(context, tracks);
     case TrackAction.syncLyrics:

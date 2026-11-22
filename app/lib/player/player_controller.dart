@@ -783,6 +783,21 @@ class PlayerController extends ChangeNotifier {
   /// Aufdrehen weiter – nicht, wenn der Nutzer selbst pausiert hat).
   bool _pausedByVolume = false;
 
+  /// Android: Medienlautstärke des Systems (Lautstärketasten) – bei 0
+  /// pausieren, beim Aufdrehen weiter (nur nach dieser Pause).
+  Future<void> onSystemVolume(int level) async {
+    if (level <= 0 && playing) {
+      _pausedByVolume = true;
+      await player.pause();
+      _debug('Systemlautstärke 0: pausiert');
+    } else if (level > 0 && _pausedByVolume) {
+      _pausedByVolume = false;
+      if (!playing) await playPause();
+      _debug('Systemlautstärke $level: weiter');
+    }
+    notifyListeners();
+  }
+
   Future<void> setVolume(double v) async {
     await player.setVolume(v);
     await settings.setVolume(v);

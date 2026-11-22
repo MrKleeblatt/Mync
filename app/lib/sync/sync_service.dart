@@ -31,7 +31,7 @@ class Pairing {
   String get peerName => channel.peerName;
 
   final localDecision = Completer<bool>();
-  String status = 'Gleicher Code?';
+  String status = 'Steht auf beiden Geräten derselbe Code?';
   bool? result;
 }
 

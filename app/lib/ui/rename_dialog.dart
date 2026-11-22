@@ -106,11 +106,11 @@ class _RenameDialogState extends State<RenameDialog> {
     if (failed == 0) {
       Navigator.pop(context);
       ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(SnackBar(content: Text('$ok ✓')));
+          ?.showSnackBar(SnackBar(content: Text('$ok umbenannt')));
     } else {
       setState(() {
         _running = false;
-        _status = OpStatus.error('$ok ✓ · $failed ✗');
+        _status = OpStatus.error('$ok umbenannt, $failed fehlgeschlagen');
       });
     }
   }
@@ -239,17 +239,17 @@ class _RenameDialogState extends State<RenameDialog> {
                     _State.same => (
                       Icons.check,
                       theme.colorScheme.outline,
-                      '=',
+                      'unverändert',
                     ),
                     _State.conflict => (
                       Icons.warning_amber,
                       theme.colorScheme.error,
-                      '${p.target} ✗',
+                      '${p.target} – existiert schon',
                     ),
                     _State.invalid => (
                       Icons.block,
                       theme.colorScheme.error,
-                      '✗',
+                      'leerer Name',
                     ),
                   };
                   return ListTile(
@@ -276,7 +276,7 @@ class _RenameDialogState extends State<RenameDialog> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '$conflicts ✗',
+                  '$conflicts Konflikte (übersprungen)',
                   style: TextStyle(color: theme.colorScheme.error),
                 ),
               ),
@@ -295,7 +295,7 @@ class _RenameDialogState extends State<RenameDialog> {
         ),
         FilledButton(
           onPressed: _running || count == 0 ? null : () => _run(plan),
-          child: Text('$count ✓'),
+          child: Text('$count umbenennen'),
         ),
       ],
     );

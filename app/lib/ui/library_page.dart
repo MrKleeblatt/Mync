@@ -124,7 +124,7 @@ class LibraryPageState extends State<LibraryPage> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        '$done / $total',
+                        'Prüfsummen für den Sync: $done / $total',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -180,16 +180,16 @@ class _EmptyLibrary extends StatelessWidget {
           Wrap(
             spacing: 8,
             children: [
-              IconButton.outlined(
-                tooltip: 'Ordner wählen',
+              OutlinedButton.icon(
                 onPressed: onPick,
                 icon: const Icon(Icons.folder_open),
+                label: const Text('Ordner wählen'),
               ),
               if (context.settings.musicDir.isNotEmpty)
-                IconButton.filled(
-                  tooltip: 'Einlesen',
+                FilledButton.icon(
                   onPressed: onScan,
                   icon: const Icon(Icons.refresh),
+                  label: const Text('Einlesen'),
                 ),
             ],
           ),
@@ -218,7 +218,7 @@ class _SearchResults extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (folders.isNotEmpty) ...[
-            _SectionTitle('${folders.length}', Icons.folder_outlined),
+            _SectionTitle('Ordner (${folders.length})', Icons.folder_outlined),
             for (final f in folders)
               GestureDetector(
                 onSecondaryTapUp: (d) => showTrackMenu(
@@ -236,7 +236,10 @@ class _SearchResults extends StatelessWidget {
               ),
           ],
           if (tracks.isNotEmpty)
-            _SectionTitle('${tracks.length}', Icons.music_note_outlined),
+            _SectionTitle(
+              'Titel (${tracks.length})',
+              Icons.music_note_outlined,
+            ),
         ],
       ),
     );
@@ -372,7 +375,7 @@ class _ScanStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final (found, total, done) = progress;
     final theme = Theme.of(context);
-    final text = total == 0 ? '$found …' : '$done / $total';
+    final text = total == 0 ? 'Suche … $found' : 'Lese ein … $done / $total';
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
       child: Column(

@@ -38,7 +38,10 @@ Future<void> main() async {
   final mpris = Mpris(player);
   unawaited(mpris.start());
   // Android: Mediensitzung (Benachrichtigung, Medienausgabe, Tasten)
-  if (Platform.isAndroid) unawaited(AndroidMedia.start(player));
+  if (Platform.isAndroid) {
+    unawaited(AndroidMedia.start(player));
+    listenSystemVolume(player);
+  }
   if (settings.scanOnStart) unawaited(library.refresh());
 
   // Sync mit gekoppelten Geräten im Heimnetz
