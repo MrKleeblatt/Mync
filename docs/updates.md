@@ -103,8 +103,8 @@ deren unveränderte Dateien (bis zur Umstellung nach
   `packaging/nix/flake.nix`, Version eingesetzt) und `flake.lock`
   (nixpkgs festgelegt); der Workflow prüft beides mit `nix flake check`.
 - **Im Repository:** `flake.nix` bindet das Release ihrer Version ein
-  (`nix run github:MrKleeblatt/mync`, Tags = Versionen) und bietet
-  `nixosModules.default` und `overlays.default`. Vor dem Release gibt es
+  (`nix run github:MrKleeblatt/mync`, Tags = Versionen) und bietet das
+  Paket (`packages`) und `overlays.default` – bewusst kein NixOS-Modul. Vor dem Release gibt es
   dessen Tarball noch nicht – PR- und Release-Workflow prüfen die Flake
   deshalb mit `--override-input release path:stage`.
 - **Updates:** In der Nix-Variante setzt der Wrapper `MYNC_NO_SELF_UPDATE`.

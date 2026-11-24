@@ -5,16 +5,17 @@
   # das prüft tools/release/release_check.py in jedem Pull Request.
   #
   #   nix run github:MrKleeblatt/mync                  # neueste Version
-  #   nix profile install github:MrKleeblatt/mync/v0.8.3
+  #   nix profile install github:MrKleeblatt/mync/v0.8.4
   #
-  # In einer NixOS-Konfiguration:
+  # In einer NixOS- oder Home-Manager-Konfiguration als Paket:
   #   inputs.mync.url = "github:MrKleeblatt/mync";
-  #   modules = [ mync.nixosModules.default ];   # oder mync.overlays.default
+  #   home.packages = [ mync.packages.${pkgs.stdenv.hostPlatform.system}.default ];
+  #   # oder nixpkgs.overlays = [ mync.overlays.default ]; und pkgs.mync
   # Eigenes nixpkgs statt des im Release festgelegten:
   #   inputs.mync.inputs.release.inputs.nixpkgs.follows = "nixpkgs";
   description = "mync – Musikplayer mit Handy-Sync";
 
-  inputs.release.url = "https://github.com/MrKleeblatt/mync/releases/download/v0.8.3/mync-linux-x86_64.tar.gz";
+  inputs.release.url = "https://github.com/MrKleeblatt/mync/releases/download/v0.8.4/mync-linux-x86_64.tar.gz";
 
   outputs = { self, release }:
     let
@@ -26,14 +27,6 @@
 
       overlays.default = final: prev: {
         mync = release.packages.${final.stdenv.hostPlatform.system}.default;
-      };
-
-      nixosModules.default = { pkgs, lib, ... }: {
-        environment.systemPackages = [
-          release.packages.${pkgs.stdenv.hostPlatform.system}.default
-        ];
-        # Flutter zeichnet mit OpenGL
-        hardware.graphics.enable = lib.mkDefault true;
       };
     };
 }
