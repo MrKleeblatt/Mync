@@ -258,7 +258,9 @@ pub fn readSource(gpa: Allocator, s: Source, format: audiohash.Format) !Tags {
         },
         .flac => try readFlac(&b, s),
         .ogg => try readOgg(&b, s),
-        .mp4 => try readMp4(&b, s),
+        // „.aac“ ist oft rohes ADTS-AAC ohne MP4-Container (z. B. Signal-
+        // Sprachnachrichten): dann gibt es keine Tags, aber kein Fehler
+        .mp4 => if (try audiohash.isMp4(s)) try readMp4(&b, s),
         .wav => try readWav(&b, s),
         .other => {},
     }
@@ -894,4 +896,16 @@ test "track mit Gesamtzahl und Sortierung" {
     try std.testing.expectEqualStrings("A", t.get("artist").?[0]);
     try std.testing.expectEqualStrings("2", t.get("track").?[0]);
     try std.testing.expectEqualStrings("11", t.get("tracktotal").?[0]);
+}
+
+test "rohes AAC (ADTS) ohne MP4-Container: keine Tags, kein Fehler" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.testing.io;
+    // ADTS-Kopf (0xFFF1 …) gefolgt von etwas Nutzlast
+    try tmp.dir.writeFile(io, .{ .sub_path = "note.aac", .data = &([_]u8{ 0xFF, 0xF1, 0x50, 0x80, 0x02, 0x1F, 0xFC } ++ @as([32]u8, @splat(0))) });
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const t = try readFile(arena.allocator(), io, tmp.dir, "note.aac");
+    try std.testing.expectEqual(@as(usize, 0), t.fields.len);
 }

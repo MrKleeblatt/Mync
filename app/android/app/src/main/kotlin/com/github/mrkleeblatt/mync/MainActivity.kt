@@ -15,6 +15,11 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceActivity() {
     private var fs: MusicFs? = null
 
+    companion object {
+        /** Einmal je Prozess (die Engine wird mit dem Wiedergabedienst geteilt). */
+        private var volume: SystemVolume? = null
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val handler = MusicFs(this)
@@ -23,6 +28,12 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler(handler)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/app")
             .setMethodCallHandler(AppUpdate(this))
+        if (volume == null) {
+            volume = SystemVolume(
+                this,
+                MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/volume"),
+            ).apply { start() }
+        }
     }
 
     @Deprecated("Ordnerauswahl über startActivityForResult")

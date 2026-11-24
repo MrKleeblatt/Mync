@@ -15,7 +15,12 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileNotFoundException
+import java.util.Collections
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Kanal „mync/fs“: Zugriff auf die Musikordner über die Ordnerfreigabe
@@ -28,6 +33,9 @@ import java.util.concurrent.Executors
  */
 class MusicFs(private val activity: Activity) : MethodChannel.MethodCallHandler {
     private val io = Executors.newFixedThreadPool(2)
+
+    /** Für parallele Abfragen beim Speicheranbieter (Auflisten, Öffnen). */
+    private val parallel = Executors.newFixedThreadPool(8)
     private val main = Handler(Looper.getMainLooper())
     private val resolver: ContentResolver get() = activity.contentResolver
     private var pending: MethodChannel.Result? = null
@@ -109,13 +117,18 @@ class MusicFs(private val activity: Activity) : MethodChannel.MethodCallHandler 
             }
             "openFds" -> {
                 val mode = call.argument<String>("mode") ?: "r"
-                call.argument<List<String>>("rels")!!.map { r ->
-                    try {
-                        resolver.openFileDescriptor(uri(tree!!, resolve(tree, r)), mode)!!.detachFd()
-                    } catch (e: Exception) {
-                        -1
-                    }
-                }
+                // parallel: jedes Öffnen ist ein Aufruf beim Speicheranbieter
+                parallel.invokeAll(
+                    call.argument<List<String>>("rels")!!.map { r ->
+                        Callable {
+                            try {
+                                resolver.openFileDescriptor(uri(tree!!, resolve(tree, r)), mode)!!.detachFd()
+                            } catch (e: Exception) {
+                                -1
+                            }
+                        }
+                    },
+                ).map { it.get() }
             }
             "closeFds" -> {
                 for (fd in call.argument<List<Int>>("fds")!!) {
@@ -271,23 +284,39 @@ class MusicFs(private val activity: Activity) : MethodChannel.MethodCallHandler 
         return mapOf("dir" to c.dir, "size" to c.size, "mtime" to c.mtime)
     }
 
-    /** Alle Dateien unter der Freigabe (ohne versteckte Ordner wie .mync-trash). */
+    /**
+     * Alle Dateien unter der Freigabe (ohne versteckte Ordner wie .mync-trash).
+     * Ordner werden parallel abgefragt – jede Abfrage ist ein Aufruf beim
+     * Speicheranbieter und kostet vor allem Wartezeit.
+     */
     private fun listFiles(tree: Uri): List<Map<String, Any>> {
-        val out = ArrayList<Map<String, Any>>()
-        val todo = ArrayDeque<Pair<String, String>>()
-        todo.add(DocumentsContract.getTreeDocumentId(tree) to "")
-        while (todo.isNotEmpty()) {
-            val (id, prefix) = todo.removeFirst()
-            for (c in children(tree, id)) {
-                val rel = if (prefix.isEmpty()) c.name else "$prefix/${c.name}"
-                if (c.dir) {
-                    if (!c.name.startsWith(".")) todo.add(c.id to rel)
-                } else {
-                    out.add(mapOf("path" to rel, "size" to c.size, "mtime_ns" to c.mtime * 1_000_000))
+        val out = Collections.synchronizedList(ArrayList<Map<String, Any>>())
+        val pending = AtomicInteger(0)
+        val done = CountDownLatch(1)
+        val error = AtomicReference<Throwable?>(null)
+        fun visit(id: String, prefix: String) {
+            pending.incrementAndGet()
+            parallel.execute {
+                try {
+                    for (c in children(tree, id)) {
+                        val rel = if (prefix.isEmpty()) c.name else "$prefix/${c.name}"
+                        if (c.dir) {
+                            if (!c.name.startsWith(".")) visit(c.id, rel)
+                        } else {
+                            out.add(mapOf("path" to rel, "size" to c.size, "mtime_ns" to c.mtime * 1_000_000))
+                        }
+                    }
+                } catch (e: Throwable) {
+                    error.compareAndSet(null, e)
+                } finally {
+                    if (pending.decrementAndGet() == 0) done.countDown()
                 }
             }
         }
-        return out
+        visit(DocumentsContract.getTreeDocumentId(tree), "")
+        done.await()
+        error.get()?.let { throw it }
+        return ArrayList(out)
     }
 
     private fun ensureDir(tree: Uri, rel: String): String {

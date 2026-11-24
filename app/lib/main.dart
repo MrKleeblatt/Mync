@@ -38,7 +38,10 @@ Future<void> main() async {
   final mpris = Mpris(player);
   unawaited(mpris.start());
   // Android: Mediensitzung (Benachrichtigung, Medienausgabe, Tasten)
-  if (Platform.isAndroid) unawaited(AndroidMedia.start(player));
+  if (Platform.isAndroid) {
+    unawaited(AndroidMedia.start(player));
+    listenSystemVolume(player);
+  }
   if (settings.scanOnStart) unawaited(library.refresh());
 
   // Sync mit gekoppelten Geräten im Heimnetz
@@ -54,6 +57,7 @@ Future<void> main() async {
   // Teil-Updates über GitHub-Releases (nur Linux)
   final updates = UpdateService(settings, beforeRestart: player.endListening);
   UpdateService.instance = updates;
+  await updates.auth.load();
   updates.start();
   settings.addListener(() {
     // Einstellung „Nach Updates suchen“ geändert → Zeitplan neu

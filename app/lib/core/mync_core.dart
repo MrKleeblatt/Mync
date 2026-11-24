@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../library/chapters.dart';
+import '../log.dart';
 import 'music_fs.dart';
 
 typedef _OneStr = Pointer<Utf8> Function(Pointer<Utf8>);
@@ -495,9 +496,15 @@ Future<ScanSummary> scanTree({
   required String db,
   List<String> excludes = const [],
   void Function(int found, int total, int done)? onProgress,
+  Future<void> Function()? onBatch,
   int batch = 256,
 }) async {
+  final watch = Stopwatch()..start();
   final files = await MusicFs.listFiles(tree);
+  logInfo(
+    'Einlesen: ${files.length} Dateien aufgelistet in '
+    '${watch.elapsedMilliseconds} ms',
+  );
   final listing = [for (final f in files) f.toJson()];
   final first = await scanListing(db: db, listing: listing, excludes: excludes);
   final needed = first.needed;
@@ -529,6 +536,13 @@ Future<ScanSummary> scanTree({
       first.total,
       needed.length,
       min(start + batch, needed.length),
+    );
+    await onBatch?.call(); // schon Eingelesenes anzeigen
+  }
+  if (needed.isNotEmpty) {
+    logInfo(
+      'Einlesen: ${needed.length} Dateien gelesen, gesamt '
+      '${watch.elapsedMilliseconds} ms',
     );
   }
   final done = await scanListing(

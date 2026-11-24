@@ -33,8 +33,10 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.folder),
             title: const Text('Musikordner'),
-            subtitle: Text(folderLabel(s.musicDir)),
-            trailing: const Tooltip(message: 'Sync', child: Icon(Icons.sync)),
+            subtitle: Text(
+              '${folderLabel(s.musicDir)}\nWird mit dem Handy abgeglichen',
+            ),
+            isThreeLine: true,
             onTap: () async {
               final old = s.musicDir;
               final p = await pickMusicFolder(initial: old);
@@ -94,6 +96,7 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.timer_off_outlined),
             title: const Text('Kurze Titel ausblenden'),
+            subtitle: const Text('Z. B. Jingles, Intros'),
             trailing: DropdownButton<int>(
               value: s.hideShorterThan,
               onChanged: (v) => s.setHideShorterThan(v ?? 0),
@@ -137,6 +140,7 @@ class SettingsPage extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.swap_horiz),
             title: const Text('Überblenden'),
+            subtitle: const Text('Titelübergänge'),
             trailing: DropdownButton<int>(
               value: s.crossfadeSec,
               onChanged: (v) => s.setCrossfadeSec(v ?? 0),
@@ -153,18 +157,21 @@ class SettingsPage extends StatelessWidget {
             SwitchListTile(
               secondary: const Icon(Icons.album_outlined),
               title: const Text('Nicht im Album'),
+              subtitle: const Text('Alben lückenlos spielen'),
               value: s.crossfadeSkipAlbum,
               onChanged: s.setCrossfadeSkipAlbum,
             ),
           SwitchListTile(
             secondary: const Icon(Icons.sign_language),
             title: const Text('Applaus überspringen'),
+            subtitle: const Text('Bei Live-Aufnahmen'),
             value: s.autoSkipApplause,
             onChanged: s.setAutoSkipApplause,
           ),
           ListTile(
             leading: const Icon(Icons.bookmark_outline),
             title: const Text('Position merken'),
+            subtitle: const Text('Hörbücher an derselben Stelle fortsetzen'),
             trailing: DropdownButton<int>(
               value: s.resumeMinutes,
               onChanged: (v) => s.setResumeMinutes(v ?? 0),
@@ -181,6 +188,7 @@ class SettingsPage extends StatelessWidget {
           SwitchListTile(
             secondary: const Icon(Icons.graphic_eq),
             title: const Text('Visualisierung'),
+            subtitle: const Text('Wellenform hinter der Zeitleiste'),
             value: s.visualizer,
             onChanged: s.setVisualizer,
           ),
@@ -325,6 +333,7 @@ Future<bool?> _askPairings(BuildContext context, String title, String action) {
             value: pairings,
             onChanged: (v) => setState(() => pairings = v ?? false),
             title: const Text('Mit Kopplungen'),
+            subtitle: const Text('Enthält geheime Schlüssel'),
             secondary: const Tooltip(
               message: 'Enthält geheime Schlüssel',
               child: Icon(Icons.key),
@@ -369,12 +378,14 @@ class _BackupSectionState extends State<_BackupSection> {
         ListTile(
           leading: const Icon(Icons.save_alt),
           title: const Text('Sichern'),
+          subtitle: const Text('Einstellungen, Listen, Statistik'),
           enabled: !busy,
           onTap: () => _createBackup(context, _report),
         ),
         ListTile(
           leading: const Icon(Icons.settings_backup_restore),
           title: const Text('Wiederherstellen'),
+          subtitle: const Text('Ersetzt den aktuellen Stand'),
           enabled: !busy,
           onTap: () => _restoreBackup(context, _report),
         ),
@@ -514,7 +525,9 @@ Future<void> _restoreBackup(
     barrierDismissible: false,
     builder: (ctx) => AlertDialog(
       title: const Icon(Icons.check_circle_outline, size: 40),
-      content: Text(Platform.isAndroid ? 'Neu öffnen' : 'Neustart'),
+      content: Text(
+        Platform.isAndroid ? 'Bitte mync neu öffnen.' : 'mync startet neu.',
+      ),
       actions: [
         FilledButton(
           onPressed: () => Navigator.pop(ctx),

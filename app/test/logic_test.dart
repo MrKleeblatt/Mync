@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mync/library/lrc.dart';
+import 'package:mync/player/player_controller.dart';
 import 'package:mync/player/queue.dart';
 import 'package:mync/update/update_service.dart';
 
@@ -102,5 +103,29 @@ void main() {
     expect(compareVersions('1.0.0', '1.0.0+7'), 0);
     expect(compareVersions('0.4', '0.4.0'), 0);
     expect(compareVersions('0.3.9', '0.4.0'), lessThan(0));
+  });
+
+  test('Auswahl „Als Nächstes“: hinter den laufenden, Reihenfolge bleibt', () {
+    List<String> apply(List<String> items, int current, List<int> sel) {
+      final q = PlayQueue(id: 't', name: 't')
+        ..items.addAll(items)
+        ..index = current;
+      for (final (from, to) in PlayerController.planMoveAfter(
+        items.length,
+        current,
+        sel,
+      )) {
+        q.move(from, to);
+      }
+      expect(q.items[q.index], items[current]); // läuft weiter
+      return q.items;
+    }
+
+    final x = ['a', 'b', 'c', 'd', 'e', 'f'];
+    expect(apply(x, 1, [4, 5]), ['a', 'b', 'e', 'f', 'c', 'd']);
+    expect(apply(x, 3, [0, 5]), ['b', 'c', 'd', 'a', 'f', 'e']);
+    expect(apply(x, 2, [0, 2, 4]), ['b', 'c', 'a', 'e', 'd', 'f']);
+    // doppelte Pfade
+    expect(apply(['a', 'x', 'b', 'x'], 0, [3]), ['a', 'x', 'x', 'b']);
   });
 }

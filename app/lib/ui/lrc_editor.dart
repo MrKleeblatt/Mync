@@ -294,10 +294,10 @@ class _LrcEditorState extends State<LrcEditor> {
                           color: theme.colorScheme.secondaryContainer,
                           child: ListTile(
                             title: const Text('Titel abspielen'),
-                            trailing: IconButton.filled(
-                              tooltip: 'Abspielen',
+                            trailing: FilledButton.icon(
                               onPressed: _playThis,
                               icon: const Icon(Icons.play_arrow),
+                              label: const Text('Abspielen'),
                             ),
                           ),
                         ),
@@ -418,19 +418,18 @@ class _LrcEditorState extends State<LrcEditor> {
                       // auf dem Handy: „Zeit setzen“ antippen statt Tasten
                       Row(
                         children: [
-                          IconButton.filled(
-                            tooltip: 'Zeit setzen${keyHint('Eingabe')}',
-                            iconSize: 32,
+                          FilledButton.icon(
                             onPressed: _isCurrent && lines.isNotEmpty
                                 ? _stamp
                                 : null,
                             icon: const Icon(Icons.timer_outlined),
+                            label: Text('Zeit setzen${keyHint('Eingabe')}'),
                           ),
                           const SizedBox(width: 8),
-                          IconButton.outlined(
-                            tooltip: 'Zurück${keyHint('Rücktaste')}',
+                          OutlinedButton.icon(
                             onPressed: lines.isEmpty ? null : _back,
                             icon: const Icon(Icons.undo),
+                            label: Text('Zurück${keyHint('Rücktaste')}'),
                           ),
                           const Spacer(),
                           SegmentedButton<bool>(

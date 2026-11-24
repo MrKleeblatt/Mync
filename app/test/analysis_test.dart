@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mync/analysis/analysis_service.dart';
 import 'package:mync/analysis/applause.dart';
 import 'package:mync/analysis/waveform.dart';
 
@@ -135,5 +136,13 @@ void main() {
     final back = Waveform.fromBytes(w.toBytes())!;
     expect(back.bars, w.bars);
     expect(back.level, w.level);
+  });
+
+  test('Hüllkurve ohne Audiofilter (Android): Betrag gemittelt', () {
+    final pcm = Int16List.fromList([
+      for (var i = 0; i < 40; i++) i.isEven ? 1000 : -1000,
+      for (var i = 0; i < 20; i++) 0,
+    ]);
+    expect(absEnvelope(pcm, 20), [1000, 1000, 0]);
   });
 }

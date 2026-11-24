@@ -100,7 +100,11 @@ class _OverviewState extends State<_Overview> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(sync.store.identity.name),
-          subtitle: sync.running ? Text(':${sync.listeningPort}') : null,
+          subtitle: Text(
+            sync.running
+                ? 'Erreichbar (Port ${sync.listeningPort})'
+                : 'Nicht erreichbar',
+          ),
           value: settings.syncEnabled,
           onChanged: (v) async {
             await settings.setSyncEnabled(v);
@@ -139,16 +143,16 @@ class _OverviewState extends State<_Overview> {
             title: Text(peer.name),
             subtitle: Text(
               peer.lastSyncMs == 0
-                  ? '–'
+                  ? 'Noch nie abgeglichen'
                   : _date(DateTime.fromMillisecondsSinceEpoch(peer.lastSyncMs)),
             ),
             trailing: Wrap(
               spacing: 4,
               children: [
-                IconButton.filled(
-                  tooltip: 'Abgleichen',
+                FilledButton.icon(
                   onPressed: () => sync.syncWith(peer),
                   icon: const Icon(Icons.sync),
+                  label: const Text('Abgleichen'),
                 ),
                 PopupMenuButton<String>(
                   onSelected: (v) async {
@@ -181,18 +185,17 @@ class _OverviewState extends State<_Overview> {
           runSpacing: 8,
           children: [
             sync.pairingAllowed
-                ? IconButton.filled(
-                    tooltip: 'Sichtbar – beenden',
+                ? FilledButton.icon(
                     onPressed: sync.stopPairing,
                     icon: const Icon(Icons.hourglass_top),
+                    label: const Text('Sichtbar – beenden'),
                   )
-                : IconButton.outlined(
-                    tooltip: 'Sichtbar machen (2 min)',
+                : OutlinedButton.icon(
                     onPressed: sync.running ? sync.allowPairing : null,
                     icon: const Icon(Icons.wifi_tethering),
+                    label: const Text('Sichtbar machen (2 min)'),
                   ),
-            IconButton.filledTonal(
-              tooltip: 'Suchen',
+            FilledButton.tonalIcon(
               onPressed: _searching ? null : _search,
               icon: _searching
                   ? const SizedBox.square(
@@ -200,21 +203,22 @@ class _OverviewState extends State<_Overview> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.search),
+              label: const Text('Suchen'),
             ),
-            IconButton.outlined(
-              tooltip: 'Adresse',
+            OutlinedButton.icon(
               onPressed: () async {
                 final a = await _askAddress('Adresse');
                 if (a != null) await _pair(a.$1, a.$2);
               },
               icon: const Icon(Icons.lan_outlined),
+              label: const Text('Adresse'),
             ),
           ],
         ),
         if (_found case final found?) ...[
           const SizedBox(height: 8),
           if (found.where((d) => !sync.store.peers.containsKey(d.id)).isEmpty)
-            const Text('–'),
+            const Text('Kein Gerät gefunden'),
           for (final d in found.where(
             (d) => !sync.store.peers.containsKey(d.id),
           ))
@@ -222,11 +226,13 @@ class _OverviewState extends State<_Overview> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.devices),
               title: Text(d.name),
-              subtitle: Text('${d.host}:${d.port}${d.pairing ? ' · ⏳' : ''}'),
-              trailing: IconButton.filled(
-                tooltip: 'Koppeln',
+              subtitle: Text(
+                '${d.host}:${d.port}${d.pairing ? ' · wartet' : ''}',
+              ),
+              trailing: FilledButton.icon(
                 onPressed: () => _pair(d.host, d.port),
                 icon: const Icon(Icons.link),
+                label: const Text('Koppeln'),
               ),
             ),
         ],
@@ -269,15 +275,15 @@ class _PairingCard extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 children: [
-                  IconButton.filled(
-                    tooltip: 'Code gleich',
+                  FilledButton.icon(
                     onPressed: () => sync.confirmPairing(true),
                     icon: const Icon(Icons.check),
+                    label: const Text('Code gleich'),
                   ),
-                  IconButton.outlined(
-                    tooltip: 'Abbrechen',
+                  OutlinedButton.icon(
                     onPressed: () => sync.confirmPairing(false),
                     icon: const Icon(Icons.close),
+                    label: const Text('Abbrechen'),
                   ),
                 ],
               )
@@ -373,10 +379,10 @@ class _SessionView extends StatelessWidget {
                 icon: const Icon(Icons.check),
                 label: Text('$accepted'),
               ),
-              IconButton.filledTonal(
-                tooltip: 'Fertig',
+              FilledButton.tonalIcon(
                 onPressed: s.applying ? null : s.finish,
                 icon: const Icon(Icons.flag_outlined),
+                label: const Text('Fertig'),
               ),
             ],
           ),
@@ -483,20 +489,20 @@ class _ItemTile extends StatelessWidget {
               segments: [
                 ButtonSegment(
                   value: Decision.accept,
-                  tooltip: item.isConflict ? 'Von $peer' : 'Annehmen',
                   icon: const Icon(Icons.check),
+                  label: Text(item.isConflict ? peer : 'Annehmen'),
                 ),
                 ButtonSegment(
                   value: Decision.reject,
-                  tooltip: item.isConflict ? 'Eigene' : 'Später',
                   icon: Icon(
                     item.isConflict ? Icons.home_outlined : Icons.schedule,
                   ),
+                  label: Text(item.isConflict ? 'Eigene' : 'Später'),
                 ),
                 const ButtonSegment(
                   value: Decision.ignore,
-                  tooltip: 'Ignorieren',
                   icon: Icon(Icons.visibility_off_outlined),
+                  label: Text('Ignorieren'),
                 ),
               ],
               selected: item.decision == Decision.open

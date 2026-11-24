@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -45,12 +46,46 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
   final _libraryKey = GlobalKey<LibraryPageState>();
+  final _queuesKey = GlobalKey<QueuesPageState>();
+
+  /// Handy: Reiter per Wischen nach links/rechts wechseln.
+  final _pages = PageController();
+
+  void _go(int i) {
+    setState(() => _index = i);
+    if (_pages.hasClients && (_pages.page?.round() ?? i) != i) {
+      _pages.animateToPage(
+        i,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  /// Zurücktaste (Android): im Ordner eine Ebene nach oben bis zum
+  /// Musikordner; aus einem anderen Reiter zurück zu „Ordner“; sonst Ende.
+  void _back() {
+    if (_index == 0 && (_libraryKey.currentState?.handleBack() ?? false)) {
+      return;
+    }
+    if (_index == 1 && (_queuesKey.currentState?.handleBack() ?? false)) {
+      return;
+    }
+    if (_index != 0) return _go(0);
+    SystemNavigator.pop();
+  }
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
 
   void _openNowPlaying() => openNowPlaying(context);
 
-  Widget _page(bool sidePanel) => switch (_index) {
+  Widget _page(int index) => switch (index) {
     0 => LibraryPage(key: _libraryKey),
-    1 => const QueuesPage(),
+    1 => QueuesPage(key: _queuesKey),
     2 => const StatsPage(),
     3 => const SyncPage(),
     _ => const SettingsPage(),
@@ -59,7 +94,7 @@ class _HomeShellState extends State<HomeShell> {
   Map<ShortcutActivator, VoidCallback> _shortcuts() => {
     const SingleActivator(LogicalKeyboardKey.f5): context.library.refresh,
     const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
-      setState(() => _index = 0);
+      _go(0);
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _libraryKey.currentState?.focusSearch(),
       );
@@ -73,7 +108,28 @@ class _HomeShellState extends State<HomeShell> {
     final sidePanel = width >= 1200 && _index == 0;
     final mini = MiniPlayer(onOpen: _openNowPlaying);
 
-    Widget body = _page(sidePanel);
+    if (!wide) {
+      // z. B. Fenster schmaler gezogen: Seite zum gewählten Reiter
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pages.hasClients && _pages.page?.round() != _index) {
+          _pages.jumpToPage(_index);
+        }
+      });
+    }
+    Widget body = wide
+        ? _page(_index)
+        : ScrollConfiguration(
+            // Wischen auch mit Maus/Touchpad (schmales Fenster am PC)
+            behavior: ScrollConfiguration.of(context)
+                .copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+            child: PageView(
+              controller: _pages,
+              onPageChanged: (i) => setState(() => _index = i),
+              children: [
+                for (var i = 0; i < _dests.length; i++) _KeepAlive(_page(i)),
+              ],
+            ),
+          );
     if (sidePanel) {
       body = Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,7 +177,7 @@ class _HomeShellState extends State<HomeShell> {
                         selectedIndex: _index,
                         onDestinationSelected: (i) =>
                             setState(() => _index = i),
-                        labelType: NavigationRailLabelType.none,
+                        labelType: NavigationRailLabelType.all,
                         groupAlignment: 0, // Navigation senkrecht mittig
                         destinations: [
                           for (final d in _dests)
@@ -151,7 +207,7 @@ class _HomeShellState extends State<HomeShell> {
               child: Column(
                 children: [
                   const UpdateBanner(),
-                  SyncBanner(onOpen: () => setState(() => _index = 3)),
+                  SyncBanner(onOpen: () => _go(3)),
                   Expanded(child: body),
                 ],
               ),
@@ -161,10 +217,8 @@ class _HomeShellState extends State<HomeShell> {
               children: [
                 mini,
                 NavigationBar(
-                  labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
-                  height: 56,
                   selectedIndex: _index,
-                  onDestinationSelected: (i) => setState(() => _index = i),
+                  onDestinationSelected: _go,
                   destinations: [
                     for (final d in _dests)
                       NavigationDestination(
@@ -178,6 +232,33 @@ class _HomeShellState extends State<HomeShell> {
             ),
           );
 
-    return CallbackShortcuts(bindings: _shortcuts(), child: scaffold);
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: CallbackShortcuts(bindings: _shortcuts(), child: scaffold),
+    );
+  }
+}
+
+/// Hält eine Seite im PageView am Leben (Ordnerposition, Scrollstand).
+class _KeepAlive extends StatefulWidget {
+  const _KeepAlive(this.child);
+  final Widget child;
+
+  @override
+  State<_KeepAlive> createState() => _KeepAliveState();
+}
+
+class _KeepAliveState extends State<_KeepAlive>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

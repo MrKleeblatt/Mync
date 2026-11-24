@@ -167,7 +167,7 @@ class SyncSession extends ChangeNotifier {
     }
     items = list;
     ready = true;
-    _setStatus(list.isEmpty ? 'Gleicher Stand ✓' : '${list.length} Änderungen');
+    _setStatus(list.isEmpty ? 'Gleicher Stand' : '${list.length} Änderungen');
   }
 
   /// Erster Abgleich (noch kein gemeinsamer Stand): Identisches gilt als
@@ -407,7 +407,9 @@ class SyncSession extends ChangeNotifier {
     applying = false;
     final failed = todo.where((i) => i.error != null).length;
     _setStatus(
-      failed == 0 ? '${todo.length - failed} ✓' : '$failed fehlgeschlagen',
+      failed == 0
+          ? '${todo.length - failed} übernommen'
+          : '$failed fehlgeschlagen',
     );
   }
 
@@ -588,7 +590,9 @@ class SyncSession extends ChangeNotifier {
       await store.savePeers();
       finished = true;
       await channel.sendJson({'t': 'note', 'what': 'finished'});
-      _setStatus(peerFinished ? 'Fertig ✓' : 'Fertig ✓ – ${peer.name} …');
+      _setStatus(
+        peerFinished ? 'Fertig' : 'Fertig – ${peer.name} entscheidet noch',
+      );
       if (peerFinished) await close();
     } catch (e, st) {
       _fail('Fehlgeschlagen', e, st);

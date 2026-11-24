@@ -12,6 +12,9 @@ name: Release
 #                        (Variable MYNC_UPDATE_PUBKEY = öffentlicher Schlüssel)
 #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
 #                        fester Android-Signaturschlüssel
+# Variable (nicht geheim):
+#   MYNC_GITHUB_CLIENT_ID  Client-ID der GitHub-App für die Anmeldung in der
+#                          App (Updates aus dem privaten Repository)
 on:
   push:
     branches: [master]
@@ -76,7 +79,7 @@ jobs:
 
       - name: Linux-App bauen
         working-directory: app
-        run: flutter build linux --release --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
+        run: flutter build linux --release --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }} --dart-define=MYNC_GITHUB_CLIENT_ID=${{ vars.MYNC_GITHUB_CLIENT_ID }}
 
       # Flake für Nix mitliefern: zusammenstellen, nixpkgs festlegen (flake.lock),
       # prüfen – ohne bestandene Prüfung kein Release
@@ -158,7 +161,7 @@ jobs:
           ../tools/release/retry.sh flutter pub get
           ../tools/release/retry.sh flutter build apk --release --split-per-abi --target-platform android-arm64 \
             --build-name "${TAG#v}" --build-number "$(( $(date +%s) / 60 ))" \
-            --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }}
+            --dart-define=MYNC_UPDATE_PUBKEY=${{ vars.MYNC_UPDATE_PUBKEY }} --dart-define=MYNC_GITHUB_CLIENT_ID=${{ vars.MYNC_GITHUB_CLIENT_ID }}
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
             "$GITHUB_WORKSPACE/dist/mync-$TAG-android-arm64.apk"

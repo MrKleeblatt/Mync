@@ -174,7 +174,7 @@ fn hashOgg(s: Source, h: *Sha256) !void {
     if (headers == null) return error.InvalidOgg;
 }
 
-fn isMp4(s: Source) !bool {
+pub fn isMp4(s: Source) !bool {
     var b: [8]u8 = undefined;
     return try s.readAt(&b, 0) == 8 and std.mem.eql(u8, b[4..8], "ftyp");
 }

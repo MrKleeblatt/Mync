@@ -649,6 +649,49 @@ class PlayerController extends ChangeNotifier {
   }
 
   /// Verschiebt einen Eintrag; [to] ist der Zielindex nach dem Verschieben.
+  /// Entfernt mehrere Titel (Indizes der aktuellen Warteschlange).
+  Future<void> removeItems(Iterable<int> indices) async {
+    final list = indices.toSet().toList()..sort((a, b) => b.compareTo(a));
+    for (final i in list) {
+      await removeAt(i);
+    }
+  }
+
+  /// Setzt mehrere Titel direkt hinter den laufenden (Reihenfolge bleibt).
+  Future<void> moveAfterCurrent(Iterable<int> indices) async {
+    for (final (from, to) in planMoveAfter(
+      queue.items.length,
+      queue.index,
+      indices,
+    )) {
+      await moveItem(from, to);
+    }
+  }
+
+  /// Schritte (von, nach) für [moveAfterCurrent]; „nach“ ist die Position
+  /// nach dem Herausnehmen (wie `PlayQueue.move`).
+  @visibleForTesting
+  static List<(int, int)> planMoveAfter(
+    int length,
+    int current,
+    Iterable<int> indices,
+  ) {
+    // Positionen über eine Kennung je Eintrag verfolgen (Pfade können doppelt sein)
+    final order = List<int>.generate(length, (i) => i);
+    final sel = indices.where((i) => i != current).toSet().toList()..sort();
+    final out = <(int, int)>[];
+    var k = 0;
+    for (final s in sel) {
+      final from = order.indexOf(s);
+      order.removeAt(from);
+      final to = order.indexOf(current) + 1 + k;
+      order.insert(to, s);
+      out.add((from, to));
+      k++;
+    }
+    return out;
+  }
+
   Future<void> moveItem(int from, int to) async {
     if (from == to) return;
     queue.move(from, to);
@@ -782,6 +825,21 @@ class PlayerController extends ChangeNotifier {
   /// Pausiert, weil die Lautstärke auf 0 gezogen wurde (geht beim
   /// Aufdrehen weiter – nicht, wenn der Nutzer selbst pausiert hat).
   bool _pausedByVolume = false;
+
+  /// Android: Medienlautstärke des Systems (Lautstärketasten) – bei 0
+  /// pausieren, beim Aufdrehen weiter (nur nach dieser Pause).
+  Future<void> onSystemVolume(int level) async {
+    if (level <= 0 && playing) {
+      _pausedByVolume = true;
+      await player.pause();
+      _debug('Systemlautstärke 0: pausiert');
+    } else if (level > 0 && _pausedByVolume) {
+      _pausedByVolume = false;
+      if (!playing) await playPause();
+      _debug('Systemlautstärke $level: weiter');
+    }
+    notifyListeners();
+  }
 
   Future<void> setVolume(double v) async {
     await player.setVolume(v);

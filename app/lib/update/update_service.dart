@@ -10,6 +10,8 @@ import '../log.dart';
 import '../settings.dart';
 import 'android_update.dart';
 import 'delta.dart';
+import 'github_assets.dart';
+import 'github_auth.dart';
 import 'update_key.dart';
 
 /// Eine Datei des Programms laut Update-Manifest.
@@ -100,7 +102,14 @@ int compareVersions(String a, String b) {
 /// `~/.local/share/mync/current` atomar umstellen. Das Startskript `mync`
 /// startet die neueste vorhandene Version; die alte bleibt als Rückfall.
 class UpdateService extends ChangeNotifier {
-  UpdateService(this.settings, {this.beforeRestart});
+  UpdateService(this.settings, {this.beforeRestart})
+    : auth = GithubAuth(settings.dataDir) {
+    assets = GithubAssets(auth, _client);
+  }
+
+  /// Anmeldung bei GitHub (privates Repository, siehe github_auth.dart).
+  final GithubAuth auth;
+  late final GithubAssets assets;
 
   /// Die eine Instanz der App (in main gesetzt).
   static UpdateService? instance;
@@ -219,7 +228,10 @@ class UpdateService extends ChangeNotifier {
     }
     if (Platform.isLinux && canInstall && restartPending) {
       installedVersion = userCurrentVersion;
-      _set(UpdateState.installed, '$installedVersion ✓ – Neustart');
+      _set(
+        UpdateState.installed,
+        '$installedVersion installiert – Neustart nötig',
+      );
     }
     _timer?.cancel();
     if (!settings.updateCheck) return;
@@ -240,15 +252,23 @@ class UpdateService extends ChangeNotifier {
     ..connectionTimeout = const Duration(seconds: 20);
 
   Future<List<int>> _get(String url) async {
+    final api = url.startsWith(GithubAuth.apiBase);
+    // Release-Dateien (privates Repository) über die API auflösen
+    final target = api ? url : await assets.direct(url);
     final c = _client();
     final watch = Stopwatch()..start();
     try {
-      final req = await c.getUrl(Uri.parse(url));
-      req.headers.set(
-        HttpHeaders.acceptHeader,
-        'application/vnd.github+json, application/json, */*',
-      );
+      final req = await c.getUrl(Uri.parse(target));
+      if (api) {
+        assets.apiHeaders.forEach(req.headers.set);
+      } else {
+        req.headers.set(HttpHeaders.acceptHeader, 'application/json, */*');
+      }
       final res = await req.close();
+      if (res.statusCode == 401 && api) {
+        await auth.invalidate();
+        throw const FormatException('Anmeldung abgelaufen');
+      }
       if (res.statusCode == 404) {
         throw const HttpException('nicht gefunden (404)');
       }
@@ -272,12 +292,21 @@ class UpdateService extends ChangeNotifier {
     }
     final List<int> body;
     try {
-      body = await _get('https://api.github.com/repos/$repo/releases/latest');
+      body = await _get('${GithubAuth.apiBase}/repos/$repo/releases/latest');
     } on HttpException catch (e) {
-      if (e.message.contains('404')) return null; // noch kein Release
+      // 404: kein Release – oder das Repository ist privat (ohne Anmeldung
+      // sieht die App es dann gar nicht)
+      if (e.message.contains('404')) {
+        throw FormatException(
+          auth.signedIn
+              ? 'Kein Zugriff auf das Repository'
+              : 'Bei GitHub anmelden, um Updates zu laden',
+        );
+      }
       rethrow;
     }
     final rel = jsonDecode(utf8.decode(body)) as Map<String, dynamic>;
+    assets.remember(rel);
     String? find(String name) {
       for (final a in (rel['assets'] as List? ?? const [])) {
         final m = a as Map<String, dynamic>;
@@ -393,6 +422,9 @@ class UpdateService extends ChangeNotifier {
       }
       _set(UpdateState.available, '$version verfügbar');
       if (settings.autoUpdate && !manual) await install();
+    } on SocketException catch (e) {
+      logWarning('Update-Prüfung: offline ($e)');
+      _set(UpdateState.error, 'Offline');
     } catch (e, st) {
       logError('Update-Prüfung fehlgeschlagen', e, st);
       _set(
@@ -453,6 +485,7 @@ class UpdateService extends ChangeNotifier {
         installedApk: await AndroidApp.apkPath(),
         dir: await AndroidApp.updateDir(),
         client: _client,
+        direct: assets.direct,
         report: (f, text) {
           progress = f.clamp(0, 1);
           message = '$text · ${(progress * 100).round()} %';
@@ -461,7 +494,10 @@ class UpdateService extends ChangeNotifier {
       );
       if (!await AndroidApp.canInstall()) {
         await AndroidApp.openInstallSettings();
-        _set(UpdateState.available, '„Zulassen“ einschalten, dann erneut');
+        _set(
+          UpdateState.available,
+          '„Apps aus dieser Quelle zulassen“, dann erneut installieren',
+        );
         return;
       }
       await AndroidApp.install(path);
@@ -524,7 +560,10 @@ class UpdateService extends ChangeNotifier {
       await _cleanup(versions, keep: {info.version, _versionOf(bundleDir)});
       installedVersion = info.version;
       available = null;
-      _set(UpdateState.installed, '${info.version} ✓ – Neustart');
+      _set(
+        UpdateState.installed,
+        '${info.version} installiert – Neustart nötig',
+      );
     } catch (e, st) {
       logError('Update-Installation fehlgeschlagen', e, st);
       try {
@@ -540,7 +579,7 @@ class UpdateService extends ChangeNotifier {
   Future<void> _download(UpdateFile f, File dst) async {
     final c = _client();
     try {
-      final req = await c.getUrl(Uri.parse(f.url));
+      final req = await c.getUrl(Uri.parse(await assets.direct(f.url)));
       final res = await req.close();
       if (res.statusCode != 200) {
         throw HttpException('HTTP ${res.statusCode} für ${f.path}');

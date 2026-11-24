@@ -34,7 +34,14 @@ class StateStore {
     });
   }
 
-  Future<void> saveNow() async {
+  /// Schreibt sofort. Gleichzeitige Aufrufe (Timer, App in den Hintergrund,
+  /// Beenden) laufen nacheinander – sonst benennt einer die temporäre Datei
+  /// um, während der andere sie noch schreibt oder selbst umbenennen will.
+  Future<void> saveNow() =>
+      _last = _last.then((_) => _write(), onError: (_) => _write());
+  Future<void> _last = Future.value();
+
+  Future<void> _write() async {
     _timer?.cancel();
     _timer = null;
     final snap = _snapshot;

@@ -136,7 +136,10 @@ class _StatsPageState extends State<StatsPage>
         if (top.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text('–', style: theme.textTheme.bodyMedium),
+            child: Text(
+              'Noch nichts gehört',
+              style: theme.textTheme.bodyMedium,
+            ),
           )
         else
           for (var i = 0; i < top.length && i < 25; i++)
@@ -235,15 +238,14 @@ class _StatsPageState extends State<StatsPage>
           spacing: 8,
           runSpacing: 8,
           children: [
-            IconButton.filled(
-              tooltip: 'Abspielen',
+            FilledButton.icon(
               onPressed: tracks.isEmpty
                   ? null
                   : () => player.playTracks(tracks.map((t) => t.path).toList()),
               icon: const Icon(Icons.play_arrow),
+              label: const Text('Abspielen'),
             ),
-            IconButton.outlined(
-              tooltip: 'Neue Warteschlange',
+            OutlinedButton.icon(
               onPressed: tracks.isEmpty
                   ? null
                   : () => player.newQueue(
@@ -251,18 +253,22 @@ class _StatsPageState extends State<StatsPage>
                       name: 'Vorschläge',
                     ),
               icon: const Icon(Icons.add_to_queue),
+              label: const Text('Neue Warteschlange'),
             ),
-            IconButton.outlined(
-              tooltip: 'Neu würfeln',
+            OutlinedButton.icon(
               onPressed: () =>
                   setState(() => _currentSuggestions(context, reroll: true)),
               icon: const Icon(Icons.casino_outlined),
+              label: const Text('Neu würfeln'),
             ),
           ],
         ),
         const SizedBox(height: 8),
         if (list.isEmpty)
-          const Padding(padding: EdgeInsets.all(16), child: Text('–')),
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Keine Titel'),
+          ),
         for (var i = 0; i < list.length; i++)
           TrackTile(
             track: list[i].track,

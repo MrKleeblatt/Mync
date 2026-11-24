@@ -50,7 +50,7 @@ class _LogPageState extends State<LogPage> {
                       await Clipboard.setData(
                         ClipboardData(text: widget.log.text),
                       );
-                      setState(() => _copied = '${all.length} ✓');
+                      setState(() => _copied = '${all.length} kopiert');
                     },
             ),
             IconButton(
@@ -106,7 +106,9 @@ class _LogPageState extends State<LogPage> {
                 const Divider(height: 1),
                 Expanded(
                   child: shown.isEmpty
-                      ? Center(child: Text('–', style: t.bodyMedium))
+                      ? Center(
+                          child: Text('Keine Einträge', style: t.bodyMedium),
+                        )
                       : ListView.separated(
                           padding: const EdgeInsets.only(bottom: 24),
                           itemCount: shown.length,

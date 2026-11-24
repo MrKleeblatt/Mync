@@ -6,337 +6,699 @@ import 'cover_art.dart';
 import 'scope.dart';
 import 'track_actions.dart';
 
-/// Alle Warteschlangen (oben) und der Inhalt der aktuellen (darunter).
-/// Jede Warteschlange merkt sich Titel und Position.
-class QueuesPage extends StatelessWidget {
+/// Die aktuelle Warteschlange (nach dem Vorbild von Musicolet): oben die
+/// Auswahl der Warteschlange, darunter ihre Titel, unten die Suche.
+/// Bearbeiten (verschieben, entfernen) nach langem Drücken auf einen Titel.
+class QueuesPage extends StatefulWidget {
   const QueuesPage({super.key, this.compact = false});
 
   /// Kompakt: als Seitenleiste neben der Bibliothek.
   final bool compact;
 
   @override
+  State<QueuesPage> createState() => QueuesPageState();
+}
+
+class QueuesPageState extends State<QueuesPage> {
+  /// Bearbeitung: ausgewählte Einträge (Indizes); null = nicht bearbeiten.
+  Set<int>? _selected;
+  final _search = TextEditingController();
+  String _query = '';
+  int _queueId = -1;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Zurücktaste: Bearbeitung beenden bzw. Suche leeren.
+  bool handleBack() {
+    if (_selected != null) {
+      _done();
+      return true;
+    }
+    if (_query.isNotEmpty) {
+      _search.clear();
+      setState(() => _query = '');
+      return true;
+    }
+    return false;
+  }
+
+  void _edit(int i) => setState(() => _selected = {i});
+  void _done() => setState(() => _selected = null);
+
+  void _toggle(int i) => setState(() {
+    final s = _selected!;
+    if (!s.remove(i)) s.add(i);
+  });
+
+  @override
   Widget build(BuildContext context) {
     final player = context.player;
-    final theme = Theme.of(context);
     return ListenableBuilder(
       listenable: player,
       builder: (context, _) {
+        // andere Warteschlange gewählt: Bearbeitung und Suche zurücksetzen
+        if (_queueId != player.currentQueueIndex) {
+          _queueId = player.currentQueueIndex;
+          _selected = null;
+        }
+        final sel = _selected;
+        if (sel != null) {
+          sel.removeWhere((i) => i >= player.queue.items.length);
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
-              child: Row(
-                children: [
-                  Text(
-                    'Warteschlangen',
-                    style: compact
-                        ? theme.textTheme.titleMedium
-                        : theme.textTheme.headlineSmall,
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    tooltip: 'Neue Warteschlange',
-                    onPressed: () => player.newQueue(),
-                    icon: const Icon(Icons.add),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(
-              height: 56,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                itemCount: player.queues.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (context, i) {
-                  final q = player.queues[i];
-                  final sel = i == player.currentQueueIndex;
-                  return GestureDetector(
-                    onSecondaryTapUp: (d) =>
-                        _queueMenu(context, player, i, d.globalPosition),
-                    onLongPressStart: (d) =>
-                        _queueMenu(context, player, i, d.globalPosition),
-                    child: ChoiceChip(
-                      selected: sel,
-                      avatar: sel && player.playing
-                          ? const Icon(Icons.graphic_eq, size: 18)
-                          : null,
-                      label: Text(
-                        '${q.name} · ${q.items.isEmpty ? 0 : q.index + 1}/${q.items.length}',
-                      ),
-                      onSelected: (_) => player.switchQueue(i),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${player.queue.items.length} Titel · ${formatDuration(_total(context, player))}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Mischen',
-                    onPressed: player.queue.items.length < 2
-                        ? null
-                        : player.shuffleQueue,
-                    icon: const Icon(Icons.shuffle),
-                  ),
-                  Builder(
-                    builder: (c) => IconButton(
-                      tooltip: 'Weitere Aktionen',
-                      onPressed: () {
-                        final box = c.findRenderObject() as RenderBox;
-                        _queueMenu(
-                          c,
-                          player,
-                          player.currentQueueIndex,
-                          box.localToGlobal(box.size.center(Offset.zero)),
-                        );
-                      },
-                      icon: const Icon(Icons.more_vert),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _Header(player: player, compact: widget.compact),
             const Divider(height: 1),
-            Expanded(child: _QueueList(player: player)),
+            Expanded(
+              child: _QueueList(
+                player: player,
+                query: _query,
+                selected: sel,
+                onEdit: _edit,
+                onToggle: _toggle,
+              ),
+            ),
+            if (sel != null)
+              _EditBar(player: player, selected: sel, onDone: _done)
+            else
+              _SearchField(
+                controller: _search,
+                onChanged: (v) => setState(() => _query = v.trim()),
+              ),
           ],
         );
       },
     );
   }
-
-  static Duration _total(BuildContext context, PlayerController p) {
-    final lib = context.library;
-    return p.queue.items.fold(
-      Duration.zero,
-      (a, path) => a + (lib.byPath(path)?.duration ?? Duration.zero),
-    );
-  }
-
-  static Future<void> _queueMenu(
-    BuildContext context,
-    PlayerController player,
-    int i,
-    Offset pos,
-  ) async {
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final choice = await showMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        pos & const Size(1, 1),
-        Offset.zero & overlay.size,
-      ),
-      items: const [
-        PopupMenuItem(value: 'rename', child: Text('Umbenennen …')),
-        PopupMenuItem(value: 'clear', child: Text('Leeren')),
-        PopupMenuItem(value: 'delete', child: Text('Löschen')),
-      ],
-    );
-    if (!context.mounted) return;
-    switch (choice) {
-      case 'rename':
-        final n = await askText(
-          context,
-          title: 'Umbenennen',
-          label: 'Name',
-          initial: player.queues[i].name,
-        );
-        if (n != null) player.renameQueue(i, n);
-      case 'clear':
-        if (i != player.currentQueueIndex) await player.switchQueue(i);
-        await player.clearQueue();
-      case 'delete':
-        await player.deleteQueue(i);
-    }
-  }
 }
 
-/// Titel der Warteschlange. Bearbeiten nur durch seitliches Wischen:
-/// nach links nimmt den Titel heraus (rückgängig machbar), nach rechts
-/// schaltet ihn zum Verschieben frei (Griff zum Ziehen, Pfeile).
-class _QueueList extends StatefulWidget {
-  const _QueueList({required this.player});
+// ─── Kopf: Auswahl der Warteschlange, Position, Gesamtdauer ─────────────
+
+class _Header extends StatelessWidget {
+  const _Header({required this.player, required this.compact});
   final PlayerController player;
+  final bool compact;
 
   @override
-  State<_QueueList> createState() => _QueueListState();
-}
-
-class _QueueListState extends State<_QueueList> {
-  String? _moving; // Pfad des Titels, der gerade verschoben werden darf
-
-  Future<void> _remove(BuildContext context, int i, String path) async {
-    final player = widget.player;
-    final name = context.library.byPath(path)?.title ?? path.split('/').last;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final wasCurrent = i == player.queue.index;
-    await player.removeAt(i);
-    messenger?.hideCurrentSnackBar();
-    messenger?.showSnackBar(
-      SnackBar(
-        content: Text('− $name'),
-        action: wasCurrent
-            ? null
-            : SnackBarAction(
-                label: 'Rückgängig',
-                onPressed: () async {
-                  await player.append([path]);
-                  final last = player.queue.items.length - 1;
-                  if (i < last) await player.moveItem(last, i);
-                },
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final q = player.queue;
+    final total = _total(context, player);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // „3. Name ⌄“ öffnet die Liste aller Warteschlangen
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              alignment: Alignment.centerLeft,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
+            ),
+            onPressed: () => _chooseQueue(context, player),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${player.currentQueueIndex + 1}. ${q.name}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: compact
+                        ? theme.textTheme.titleMedium
+                        : theme.textTheme.titleLarge,
+                  ),
+                ),
+                const Icon(Icons.expand_more),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  q.items.isEmpty
+                      ? 'Leer'
+                      : '${q.index + 1} / ${q.items.length} · ⏱ ${formatDuration(total)}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Mischen',
+                onPressed: q.items.length < 2 ? null : player.shuffleQueue,
+                icon: const Icon(Icons.shuffle),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Mehr',
+                onSelected: (v) =>
+                    _queueAction(context, player, player.currentQueueIndex, v),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'new',
+                    child: Text('Neue Warteschlange'),
+                  ),
+                  PopupMenuItem(value: 'rename', child: Text('Umbenennen …')),
+                  PopupMenuItem(value: 'clear', child: Text('Leeren')),
+                  PopupMenuItem(value: 'delete', child: Text('Löschen')),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
+  }
+}
+
+Duration _total(BuildContext context, PlayerController p) {
+  final lib = context.library;
+  return p.queue.items.fold(
+    Duration.zero,
+    (a, path) => a + (lib.byPath(path)?.duration ?? Duration.zero),
+  );
+}
+
+Future<void> _queueAction(
+  BuildContext context,
+  PlayerController player,
+  int i,
+  String action,
+) async {
+  switch (action) {
+    case 'new':
+      await player.newQueue();
+    case 'rename':
+      final n = await askText(
+        context,
+        title: 'Umbenennen',
+        label: 'Name',
+        initial: player.queues[i].name,
+      );
+      if (n != null) player.renameQueue(i, n);
+    case 'clear':
+      if (i != player.currentQueueIndex) await player.switchQueue(i);
+      await player.clearQueue();
+    case 'delete':
+      await player.deleteQueue(i);
+  }
+}
+
+/// Alle Warteschlangen: wechseln, umbenennen, löschen, neu.
+Future<void> _chooseQueue(BuildContext context, PlayerController player) =>
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => ListenableBuilder(
+        listenable: player,
+        builder: (ctx, _) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.queue_music),
+              SizedBox(width: 12),
+              Text('Warteschlangen'),
+            ],
+          ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+          content: SizedBox(
+            width: 420,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: player.queues.length,
+              itemBuilder: (ctx, i) {
+                final q = player.queues[i];
+                final current = i == player.currentQueueIndex;
+                return ListTile(
+                  selected: current,
+                  leading: Icon(
+                    current
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
+                  title: Text(
+                    '${i + 1}. ${q.name}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text('${q.items.length} Titel'),
+                  onTap: () {
+                    player.switchQueue(i);
+                    Navigator.pop(ctx);
+                  },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Umbenennen',
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => _queueAction(ctx, player, i, 'rename'),
+                      ),
+                      IconButton(
+                        tooltip: 'Löschen',
+                        icon: const Icon(Icons.close),
+                        onPressed: player.queues.length < 2
+                            ? null
+                            : () => _queueAction(ctx, player, i, 'delete'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                await player.newQueue();
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Neue Warteschlange'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+// ─── Titel ───────────────────────────────────────────────────────────────
+
+class _QueueList extends StatelessWidget {
+  const _QueueList({
+    required this.player,
+    required this.query,
+    required this.selected,
+    required this.onEdit,
+    required this.onToggle,
+  });
+  final PlayerController player;
+  final String query;
+  final Set<int>? selected;
+  final void Function(int) onEdit;
+  final void Function(int) onToggle;
+
+  bool _matches(Track? t, String path) {
+    if (query.isEmpty) return true;
+    final q = query.toLowerCase();
+    return [
+      t?.title,
+      t?.artist,
+      t?.album,
+      path,
+    ].any((s) => s != null && s.toLowerCase().contains(q));
   }
 
   @override
   Widget build(BuildContext context) {
-    final player = widget.player;
     final q = player.queue;
     final lib = context.library;
-    final theme = Theme.of(context);
     if (q.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text('–', textAlign: TextAlign.center),
-        ),
+      return const Center(child: Text('Leer'));
+    }
+    final editing = selected != null;
+    // Suche: nur passende Einträge, ohne Verschieben
+    final shown = [
+      for (var i = 0; i < q.items.length; i++)
+        if (_matches(lib.byPath(q.items[i]), q.items[i])) i,
+    ];
+    Widget tile(BuildContext context, int i) => _QueueTile(
+      key: ValueKey('$i:${q.items[i]}'),
+      player: player,
+      index: i,
+      editing: editing,
+      checked: selected?.contains(i) ?? false,
+      onTap: editing ? () => onToggle(i) : () => player.jumpTo(i),
+      onLongPress: editing ? () => onToggle(i) : () => onEdit(i),
+    );
+    if (query.isNotEmpty || !editing) {
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: shown.length,
+        itemBuilder: (context, k) => tile(context, shown[k]),
       );
     }
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
+      padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: q.items.length,
       onReorderItem: player.moveItem,
-      itemBuilder: (context, i) {
-        final path = q.items[i];
-        final t = lib.byPath(path);
-        final current = i == q.index;
-        final moving = _moving == path;
-        return Dismissible(
-          key: ValueKey('$i:$path'),
-          background: Container(
-            color: theme.colorScheme.secondaryContainer,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.swap_vert,
-                  color: theme.colorScheme.onSecondaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  moving ? 'Fertig' : 'Verschieben',
-                  style: TextStyle(
-                    color: theme.colorScheme.onSecondaryContainer,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          secondaryBackground: Container(
-            color: theme.colorScheme.errorContainer,
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  'Herausnehmen',
-                  style: TextStyle(color: theme.colorScheme.onErrorContainer),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.remove_circle_outline,
-                  color: theme.colorScheme.onErrorContainer,
-                ),
-              ],
-            ),
-          ),
-          confirmDismiss: (dir) async {
-            if (dir == DismissDirection.startToEnd) {
-              setState(() => _moving = moving ? null : path);
-              return false;
-            }
-            return true;
-          },
-          onDismissed: (_) => _remove(context, i, path),
-          child: ListTile(
-            selected: current,
-            dense: true,
-            tileColor: moving
-                ? theme.colorScheme.secondaryContainer.withValues(alpha: 0.35)
-                : null,
-            leading: t == null
-                ? const Icon(Icons.help_outline)
-                : CoverArt(track: t, size: 36),
-            title: Text(
-              t?.title ?? path.split('/').last,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: current
-                  ? const TextStyle(fontWeight: FontWeight.w600)
-                  : null,
-            ),
-            subtitle: Text(
-              t?.artist ?? 'Datei fehlt',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (current)
-                  Icon(
-                    player.playing ? Icons.graphic_eq : Icons.pause,
-                    size: 18,
-                    color: theme.colorScheme.primary,
-                  ),
-                if (moving) ...[
-                  IconButton(
-                    tooltip: 'Nach oben',
-                    onPressed: i == 0 ? null : () => player.moveItem(i, i - 1),
-                    icon: const Icon(Icons.arrow_upward, size: 18),
-                  ),
-                  IconButton(
-                    tooltip: 'Nach unten',
-                    onPressed: i == q.items.length - 1
-                        ? null
-                        : () => player.moveItem(i, i + 1),
-                    icon: const Icon(Icons.arrow_downward, size: 18),
-                  ),
-                  ReorderableDragStartListener(
-                    index: i,
-                    child: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Icon(Icons.drag_handle),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Fertig',
-                    onPressed: () => setState(() => _moving = null),
-                    icon: const Icon(Icons.check, size: 18),
-                  ),
-                ],
-              ],
-            ),
-            onTap: () => player.jumpTo(i),
-          ),
-        );
-      },
+      itemBuilder: tile,
     );
   }
+}
+
+class _QueueTile extends StatelessWidget {
+  const _QueueTile({
+    super.key,
+    required this.player,
+    required this.index,
+    required this.editing,
+    required this.checked,
+    required this.onTap,
+    required this.onLongPress,
+  });
+  final PlayerController player;
+  final int index;
+  final bool editing;
+  final bool checked;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final c = theme.colorScheme;
+    final path = player.queue.items[index];
+    final t = context.library.byPath(path);
+    final current = index == player.queue.index;
+    final accent = current ? c.primary : null;
+    Widget cover = t == null
+        ? const SizedBox.square(dimension: 52, child: Icon(Icons.help_outline))
+        : CoverArt(track: t, size: 52);
+    if (editing) {
+      cover = Stack(
+        alignment: Alignment.center,
+        children: [
+          Opacity(opacity: checked ? 0.4 : 1, child: cover),
+          if (checked) Icon(Icons.check, size: 32, color: c.onSurface),
+        ],
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Material(
+        color: checked
+            ? c.primaryContainer.withValues(alpha: 0.35)
+            : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: current
+              ? BorderSide(color: c.primary, width: 1.5)
+              : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 0, 6),
+            child: Row(
+              children: [
+                if (editing)
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.drag_handle),
+                    ),
+                  )
+                else
+                  const SizedBox(width: 8),
+                cover,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t?.title ?? path.split('/').last,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: accent,
+                          fontWeight: current ? FontWeight.w600 : null,
+                        ),
+                      ),
+                      Text(
+                        t?.artist ?? 'Datei fehlt',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: accent ?? c.onSurfaceVariant,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              t?.album ?? t?.folder ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: accent ?? c.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (t != null)
+                            Text(
+                              formatDuration(t.duration),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: accent,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (current && player.playing)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Icon(Icons.graphic_eq, size: 18, color: c.primary),
+                  ),
+                if (!editing)
+                  Builder(
+                    builder: (b) => IconButton(
+                      tooltip: 'Mehr',
+                      icon: Icon(Icons.more_horiz, color: accent),
+                      onPressed: () => _tileMenu(b, player, index, t),
+                    ),
+                  )
+                else
+                  const SizedBox(width: 12),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// „⋯“ an einem Titel der Warteschlange.
+Future<void> _tileMenu(
+  BuildContext context,
+  PlayerController player,
+  int index,
+  Track? t,
+) async {
+  final box = context.findRenderObject() as RenderBox;
+  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+  final pos = box.localToGlobal(box.size.center(Offset.zero));
+  PopupMenuItem<Object> item(Object v, IconData icon, String label) =>
+      PopupMenuItem(
+        value: v,
+        child: ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(icon),
+          title: Text(label),
+        ),
+      );
+  final chosen = await showMenu<Object>(
+    context: context,
+    position: RelativeRect.fromRect(
+      pos & const Size(1, 1),
+      Offset.zero & overlay.size,
+    ),
+    items: [
+      item(
+        'remove',
+        Icons.remove_circle_outline,
+        'Aus Warteschlange entfernen',
+      ),
+      if (index != player.queue.index)
+        item('next', Icons.playlist_play, 'Als Nächstes'),
+      if (t != null) ...[
+        const PopupMenuDivider(),
+        for (final a in const [
+          TrackAction.newQueue,
+          TrackAction.editTags,
+          TrackAction.syncLyrics,
+          TrackAction.details,
+        ])
+          item(a, a.icon, a.label),
+      ],
+    ],
+  );
+  if (!context.mounted) return;
+  switch (chosen) {
+    case 'remove':
+      await _removeWithUndo(context, player, [index]);
+    case 'next':
+      await player.moveAfterCurrent([index]);
+    case final TrackAction a when t != null:
+      await runTrackAction(context, a, [t]);
+  }
+}
+
+/// Entfernt Titel, mit „Rückgängig“ (wieder an alter Stelle einfügen).
+Future<void> _removeWithUndo(
+  BuildContext context,
+  PlayerController player,
+  List<int> indices,
+) async {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final sorted = indices.toList()..sort();
+  final removed = [for (final i in sorted) (i, player.queue.items[i])];
+  final hadCurrent = sorted.contains(player.queue.index);
+  await player.removeItems(sorted);
+  messenger
+    ?..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(
+          removed.length == 1
+              ? 'Entfernt: ${context.mounted ? context.library.byPath(removed.first.$2)?.title ?? removed.first.$2 : removed.first.$2}'
+              : '${removed.length} Titel entfernt',
+        ),
+        action: hadCurrent
+            ? null
+            : SnackBarAction(
+                label: 'Rückgängig',
+                onPressed: () async {
+                  for (final (i, path) in removed) {
+                    await player.append([path]);
+                    final last = player.queue.items.length - 1;
+                    if (i < last) await player.moveItem(last, i);
+                  }
+                },
+              ),
+      ),
+    );
+}
+
+// ─── Unten: Bearbeiten bzw. Suche ───────────────────────────────────────
+
+class _EditBar extends StatelessWidget {
+  const _EditBar({
+    required this.player,
+    required this.selected,
+    required this.onDone,
+  });
+  final PlayerController player;
+  final Set<int> selected;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final lib = context.library;
+    final time = selected.fold(
+      Duration.zero,
+      (a, i) =>
+          a + (lib.byPath(player.queue.items[i])?.duration ?? Duration.zero),
+    );
+    final none = selected.isEmpty;
+    Widget action(IconData icon, String label, VoidCallback? onTap) => Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Opacity(
+            opacity: onTap == null ? 0.4 : 1,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [Icon(icon), const SizedBox(height: 2), Text(label)],
+            ),
+          ),
+        ),
+      ),
+    );
+    return Material(
+      color: theme.colorScheme.surfaceContainerHigh,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${selected.length} ausgewählt · ⏱ ${formatDuration(time)}'
+                ' · Griff ≡ zum Verschieben',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  action(
+                    Icons.remove_circle_outline,
+                    'Entfernen',
+                    none
+                        ? null
+                        : () async {
+                            final s = selected.toList();
+                            onDone();
+                            await _removeWithUndo(context, player, s);
+                          },
+                  ),
+                  action(
+                    Icons.playlist_play,
+                    'Als Nächstes',
+                    none
+                        ? null
+                        : () async {
+                            final s = selected.toList();
+                            onDone();
+                            await player.moveAfterCurrent(s);
+                          },
+                  ),
+                  action(Icons.check, 'Fertig', onDone),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchField extends StatelessWidget {
+  const _SearchField({required this.controller, required this.onChanged});
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+    child: TextField(
+      controller: controller,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        isDense: true,
+        prefixIcon: const Icon(Icons.search),
+        hintText: 'In dieser Warteschlange suchen …',
+        border: InputBorder.none,
+        suffixIcon: controller.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Leeren',
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  controller.clear();
+                  onChanged('');
+                },
+              ),
+      ),
+    ),
+  );
 }
