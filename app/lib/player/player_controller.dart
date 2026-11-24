@@ -649,6 +649,49 @@ class PlayerController extends ChangeNotifier {
   }
 
   /// Verschiebt einen Eintrag; [to] ist der Zielindex nach dem Verschieben.
+  /// Entfernt mehrere Titel (Indizes der aktuellen Warteschlange).
+  Future<void> removeItems(Iterable<int> indices) async {
+    final list = indices.toSet().toList()..sort((a, b) => b.compareTo(a));
+    for (final i in list) {
+      await removeAt(i);
+    }
+  }
+
+  /// Setzt mehrere Titel direkt hinter den laufenden (Reihenfolge bleibt).
+  Future<void> moveAfterCurrent(Iterable<int> indices) async {
+    for (final (from, to) in planMoveAfter(
+      queue.items.length,
+      queue.index,
+      indices,
+    )) {
+      await moveItem(from, to);
+    }
+  }
+
+  /// Schritte (von, nach) für [moveAfterCurrent]; „nach“ ist die Position
+  /// nach dem Herausnehmen (wie `PlayQueue.move`).
+  @visibleForTesting
+  static List<(int, int)> planMoveAfter(
+    int length,
+    int current,
+    Iterable<int> indices,
+  ) {
+    // Positionen über eine Kennung je Eintrag verfolgen (Pfade können doppelt sein)
+    final order = List<int>.generate(length, (i) => i);
+    final sel = indices.where((i) => i != current).toSet().toList()..sort();
+    final out = <(int, int)>[];
+    var k = 0;
+    for (final s in sel) {
+      final from = order.indexOf(s);
+      order.removeAt(from);
+      final to = order.indexOf(current) + 1 + k;
+      order.insert(to, s);
+      out.add((from, to));
+      k++;
+    }
+    return out;
+  }
+
   Future<void> moveItem(int from, int to) async {
     if (from == to) return;
     queue.move(from, to);

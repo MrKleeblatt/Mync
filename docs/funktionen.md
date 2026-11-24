@@ -6,7 +6,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 ## Bibliothek & Navigation
 | Funktion | Stand | Anmerkung |
 |---|---|---|
-| Ansicht „Ordner“ mit Brotkrumen | ✅ | einzige Ansicht der Musik; Antippen eines Titels öffnet das Kontextmenü (Abspielen, Als Nächstes …); Kontextmenü auch für ganze Ordner |
+| Ansicht „Ordner“ mit Brotkrumen | ✅ | einzige Ansicht der Musik; Zurücktaste geht einen Ordner nach oben bis zum Musikordner; am Handy wischt man zwischen Ordner, Warteschlangen, Statistik, Sync und Einstellungen; Antippen eines Titels öffnet das Kontextmenü (Abspielen, Als Nächstes …); Kontextmenü auch für ganze Ordner |
 | Schnelles Einlesen | ✅ | liest nur Dateiköpfe (Tags, Dauer); die Prüfsummen für den Sync (ganze Datei) entstehen danach im Hintergrund, der Sync wartet auf sie |
 | Liste „Alle Titel“ | – | entfernt; Suche und Ordner genügen |
 | Suche über Titel, Künstler, Album, Pfad – findet auch Ordner | ✅ | Strg+F |
@@ -37,7 +37,7 @@ Abgleich mit dem Plan in [player-plan.md](player-plan.md).
 |---|---|---|
 | **Mehrere Warteschlangen**, jede mit eigener Position | ✅ | Wechsel setzt exakt dort fort, wo die Warteschlange stand |
 | Als Nächstes / ans Ende / in neue Warteschlange | ✅ | ohne Unterbrechung des laufenden Titels |
-| Umsortieren, Entfernen, Mischen, Leeren, Umbenennen | ✅ | Titel nur per Wischen bearbeiten: nach links herausnehmen (rückgängig machbar), nach rechts zum Verschieben freischalten (Pfeile, Ziehen) |
+| Umsortieren, Entfernen, Mischen, Leeren, Umbenennen | ✅ | wie Musicolet: lange auf einen Titel drücken → auswählen, mit Griff ≡ verschieben, „Entfernen“ (rückgängig machbar) / „Als Nächstes“; „⋯“ je Titel; Suche in der Warteschlange; Wechsel über „N. Name ⌄“ |
 | Fortsetzen nach Neustart | ✅ | Zustand in `state.json` (atomar gespeichert) |
 | Wiederholen aus / Warteschlange / Titel | ✅ | je Warteschlange |
 | Lückenlose Wiedergabe | ✅ | mpv `gapless-audio` |

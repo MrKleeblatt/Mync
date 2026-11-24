@@ -31,6 +31,17 @@ class LibraryPageState extends State<LibraryPage> {
 
   void focusSearch() => searchFocus.requestFocus();
 
+  /// Zurücktaste: erst die Suche schließen, dann Ordner für Ordner nach
+  /// oben. false, wenn nichts mehr zurückzugehen ist.
+  bool handleBack() {
+    if (_query.isNotEmpty) {
+      _search.clear();
+      setState(() => _query = '');
+      return true;
+    }
+    return _folderKey.currentState?.goUp() ?? false;
+  }
+
   Future<void> _scan() async {
     if (context.settings.musicDir.isEmpty) return _pickFolder();
     await context.library.refresh();
@@ -278,6 +289,14 @@ class FolderViewState extends State<FolderView>
 
   /// Öffnet einen Ordner (z. B. aus der Suche).
   void open(String folder) => setState(() => _folder = folder);
+
+  /// Zurücktaste: einen Ordner nach oben; false im Musikordner selbst.
+  bool goUp() {
+    if (_folder.isEmpty) return false;
+    final i = _folder.lastIndexOf('/');
+    setState(() => _folder = i < 0 ? '' : _folder.substring(0, i));
+    return true;
+  }
 
   @override
   bool get wantKeepAlive => true;
