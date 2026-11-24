@@ -57,6 +57,7 @@ Future<void> main() async {
   // Teil-Updates über GitHub-Releases (nur Linux)
   final updates = UpdateService(settings, beforeRestart: player.endListening);
   UpdateService.instance = updates;
+  await updates.auth.load();
   updates.start();
   settings.addListener(() {
     // Einstellung „Nach Updates suchen“ geändert → Zeitplan neu

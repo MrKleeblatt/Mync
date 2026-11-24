@@ -48,13 +48,19 @@ abstract final class AndroidApp {
 /// Release-URL leitet auf eine signierte Adresse um (≈ 1 h gültig); sie
 /// wird einmal aufgelöst und bei Ablauf neu geholt.
 class RangeLoader {
-  RangeLoader(this.client, this.url, {this.parallel = 4});
+  RangeLoader(this.client, this.url, {this.parallel = 4, this.resolve});
   final HttpClient Function() client;
   final String url;
   final int parallel;
+
+  /// Liefert die direkte Download-Adresse (privates Repository: über die
+  /// API mit Anmeldung, siehe GithubAssets); sonst wird die Umleitung von
+  /// [url] aufgelöst.
+  final Future<String> Function()? resolve;
   String? _resolved;
 
   Future<String> _resolve() async {
+    if (resolve != null) return resolve!();
     final c = client();
     try {
       final req = await c.getUrl(Uri.parse(url))
@@ -160,6 +166,7 @@ Future<String> prepareApk({
   required String dir,
   required HttpClient Function() client,
   required void Function(double fraction, String text) report,
+  Future<String> Function(String url)? direct,
 }) async {
   final out = '$dir/${manifest.name}';
   // schon geladen (z. B. Installer vorhin abgebrochen)?
@@ -176,10 +183,15 @@ Future<String> prepareApk({
       var done = 0;
       final info = '${_mb(total)} / ${_mb(manifest.size)}';
       report(0, info);
-      final fetched = await RangeLoader(client, manifest.url).load(
-        plan.ranges,
-        onBytes: (n) => report(total == 0 ? 1 : (done += n) / total, info),
-      );
+      final fetched =
+          await RangeLoader(
+            client,
+            manifest.url,
+            resolve: direct == null ? null : () => direct(manifest.url),
+          ).load(
+            plan.ranges,
+            onBytes: (n) => report(total == 0 ? 1 : (done += n) / total, info),
+          );
       await assemble(plan, installedApk, fetched, part);
       if (!await _valid(part, manifest)) {
         throw const FormatException('Prüfsumme falsch');
@@ -196,7 +208,7 @@ Future<String> prepareApk({
   report(0, info);
   await downloadWhole(
     client,
-    manifest.url,
+    direct == null ? manifest.url : await direct(manifest.url),
     part,
     onBytes: (n) => report((done += n) / manifest.size, info),
   );

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../log.dart';
+import '../core/open_url.dart';
 import '../update/update_service.dart';
 import 'scope.dart';
 import 'status_line.dart';
@@ -215,6 +216,7 @@ class UpdateSettings extends StatelessWidget {
               ],
             ),
           ),
+          if (u.auth.available) _GithubTile(u: u),
           SwitchListTile(
             secondary: const Icon(Icons.update),
             title: const Text('Automatisch suchen'),
@@ -262,4 +264,116 @@ class ExternalUpdateButton extends StatelessWidget {
       icon: const Icon(Icons.copy),
     );
   }
+}
+
+/// Anmeldung bei GitHub (Updates aus dem privaten Repository).
+class _GithubTile extends StatelessWidget {
+  const _GithubTile({required this.u});
+  final UpdateService u;
+
+  @override
+  Widget build(BuildContext context) {
+    final a = u.auth;
+    return ListenableBuilder(
+      listenable: a,
+      builder: (context, _) => ListTile(
+        leading: const Icon(Icons.account_circle_outlined),
+        title: const Text('GitHub'),
+        subtitle: Text(
+          a.signedIn
+              ? 'Angemeldet als ${a.login ?? '?'}'
+              : a.error ?? 'Für Updates anmelden',
+        ),
+        trailing: a.signedIn
+            ? TextButton.icon(
+                onPressed: a.signOut,
+                icon: const Icon(Icons.logout),
+                label: const Text('Abmelden'),
+              )
+            : FilledButton.icon(
+                onPressed: () => signInToGithub(context, u),
+                icon: const Icon(Icons.login),
+                label: const Text('Anmelden'),
+              ),
+      ),
+    );
+  }
+}
+
+/// Anmeldung mit Code (Device Flow); danach gleich nach Updates suchen.
+Future<void> signInToGithub(BuildContext context, UpdateService u) async {
+  final a = u.auth;
+  final done = a.signIn();
+  // warten, bis GitHub den Code geliefert hat
+  while (a.pending == null && a.error == null) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    if (await done.timeout(Duration.zero, onTimeout: () => false)) break;
+  }
+  if (!context.mounted || a.pending == null) return;
+  final code = a.pending!.userCode;
+  final url = a.pending!.verificationUri;
+  await openUrl(url);
+  if (!context.mounted) return;
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) {
+      done.then((v) {
+        if (ctx.mounted) Navigator.pop(ctx, v);
+      });
+      return AlertDialog(
+        title: const Text('Bei GitHub anmelden'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Auf GitHub diesen Code eingeben:'),
+            const SizedBox(height: 12),
+            SelectableText(
+              code,
+              style: Theme.of(ctx).textTheme.displaySmall
+                  ?.copyWith(letterSpacing: 4, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => Clipboard.setData(ClipboardData(text: code)),
+                  icon: const Icon(Icons.copy),
+                  label: const Text('Code kopieren'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => openUrl(url),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('GitHub öffnen'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('Warte auf Bestätigung …'),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              a.cancel();
+              Navigator.pop(ctx, false);
+            },
+            child: const Text('Abbrechen'),
+          ),
+        ],
+      );
+    },
+  );
+  if (ok == true) await u.check(manual: true);
 }

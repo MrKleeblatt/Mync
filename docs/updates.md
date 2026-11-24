@@ -170,6 +170,36 @@ Neue Rechte dafür: `REQUEST_INSTALL_PACKAGES` und ein `FileProvider` für den
 Update-Ordner der App. **Voraussetzung ist ein fester Signaturschlüssel**
 (nächster Abschnitt) – sonst lehnt Android jedes Update ab.
 
+## Anmeldung bei GitHub (privates Repository)
+
+Ist das Repository privat, sieht die App ohne Anmeldung keine Releases. In
+*Einstellungen → Info* gibt es dafür **GitHub → Anmelden**: mync zeigt einen
+Code, öffnet github.com/login/device, man gibt den Code ein und bestätigt
+(Device Flow, wie `gh auth login`). mync sieht dabei nie ein Passwort, und in
+der App steckt kein Geheimnis. Das Token liegt nur auf dem Gerät
+(`github.json` im Datenordner, nicht in Sicherungen) und wird bei Ablehnung
+durch GitHub (401) vergessen.
+
+Geladen wird über die API: Datei des Releases suchen, Umleitung auf die
+signierte Download-Adresse auflösen, dort ohne Anmeldung laden (auch die
+Bereiche für Teil-Updates).
+
+**Einmalig einrichten** (GitHub-App, darf nur Releases lesen):
+
+1. GitHub → *Settings → Developer settings → GitHub Apps → New GitHub App*
+   - Name z. B. `mync-updates`, Homepage: die Repository-Adresse
+   - *Webhook*: „Active“ abwählen
+   - *Enable Device Flow* anhaken
+   - *Expire user authorization tokens* **abwählen** (sonst bräuchte das
+     Erneuern ein Client-Secret in der App)
+   - *Repository permissions → Contents: Read-only* (sonst nichts)
+   - *Where can this GitHub App be installed?* „Only on this account“
+2. Nach dem Anlegen: *Install App* → nur das Repository `mync` auswählen.
+3. Die **Client ID** der App (beginnt mit `Iv`) als Repository-Variable
+   `MYNC_GITHUB_CLIENT_ID` hinterlegen (*Settings → Secrets and variables →
+   Actions → Variables*). Sie ist nicht geheim; der Release-Workflow baut sie
+   in die App ein.
+
 ## Android-Signaturschlüssel (einmalig)
 
 Android installiert ein Update nur, wenn es mit demselben Schlüssel signiert

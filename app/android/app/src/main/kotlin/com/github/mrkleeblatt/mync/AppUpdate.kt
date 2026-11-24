@@ -24,6 +24,13 @@ class AppUpdate(private val activity: Activity) : MethodChannel.MethodCallHandle
                     activity.packageManager.getPackageInfo(activity.packageName, 0).versionName,
                 )
                 "abi" -> result.success(Build.SUPPORTED_ABIS.firstOrNull())
+                "openUrl" -> {
+                    activity.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(call.argument<String>("url")!!))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    result.success(null)
+                }
                 "canInstall" -> result.success(
                     Build.VERSION.SDK_INT < 26 || activity.packageManager.canRequestPackageInstalls(),
                 )
