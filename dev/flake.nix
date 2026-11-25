@@ -42,6 +42,9 @@
           buildToolsVersions = [ buildTools ];
           includeNDK = true;
           ndkVersions = [ "28.2.13676358" ];
+          # das Plugin jni baut seinen nativen Teil mit dem CMake des SDK
+          includeCmake = true;
+          cmakeVersions = [ "3.22.1" ];
         }).androidsdk;
       androidHome = "${android}/libexec/android-sdk";
       # jeder Merge auf master ist ein Release
