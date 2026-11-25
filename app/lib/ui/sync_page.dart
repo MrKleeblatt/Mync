@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../sync/sync_service.dart';
 import '../sync/sync_session.dart';
 import '../log.dart';
+import 'menu_sheet.dart';
 import 'scope.dart';
 import 'status_line.dart';
 import 'track_actions.dart';
@@ -154,8 +155,28 @@ class _OverviewState extends State<_Overview> {
                   icon: const Icon(Icons.sync),
                   label: const Text('Abgleichen'),
                 ),
-                PopupMenuButton<String>(
-                  onSelected: (v) async {
+                IconButton(
+                  tooltip: 'Mehr',
+                  icon: const Icon(Icons.more_vert),
+                  onPressed: () async {
+                    final v = await showActionSheet<String>(
+                      context,
+                      title: peer.name,
+                      subtitle: 'Gekoppeltes Gerät',
+                      icon: Icons.smartphone,
+                      items: const [
+                        MenuItem(
+                          'addr',
+                          Icons.lan_outlined,
+                          'Über Adresse abgleichen',
+                        ),
+                        MenuItem(
+                          'remove',
+                          Icons.link_off,
+                          'Kopplung entfernen',
+                        ),
+                      ],
+                    );
                     if (v == 'addr') {
                       final a = await _askAddress('Adresse von ${peer.name}');
                       if (a != null) {
@@ -169,10 +190,6 @@ class _OverviewState extends State<_Overview> {
                       await sync.removePeer(peer);
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'addr', child: Text('Über Adresse')),
-                    PopupMenuItem(value: 'remove', child: Text('Entfernen')),
-                  ],
                 ),
               ],
             ),

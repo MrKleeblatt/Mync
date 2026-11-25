@@ -105,52 +105,41 @@ class TrackTile extends StatelessWidget {
     } else {
       leading = CoverArt(track: track, size: 44);
     }
-    Offset? tapAt;
-    return Listener(
-      onPointerDown: (e) => tapAt = e.position,
-      child: GestureDetector(
-        onSecondaryTapUp: (d) =>
-            showTrackMenu(context, [track], position: d.globalPosition),
-        onLongPressStart: (d) =>
-            showTrackMenu(context, [track], position: d.globalPosition),
-        child: ListTile(
-          selected: selected,
-          leading: leading,
-          title: Text(
-            track.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis),
-          onTap: tapOpensMenu
-              ? () => showTrackMenu(
-                  context,
-                  [track],
-                  position: tapAt,
-                  actions: tapTrackActions,
-                  onPlay: () async => onTap(),
-                )
-              : onTap,
-          trailing:
-              trailing ??
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 8),
-                  Text(
-                    _durationText(context, track),
-                    style: theme.textTheme.bodySmall,
+    return GestureDetector(
+      onSecondaryTapUp: (d) => showTrackMenu(context, [track]),
+      onLongPressStart: (d) => showTrackMenu(context, [track]),
+      child: ListTile(
+        selected: selected,
+        leading: leading,
+        title: Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis),
+        onTap: tapOpensMenu
+            ? () => showTrackMenu(
+                context,
+                [track],
+                actions: tapTrackActions,
+                onPlay: () async => onTap(),
+              )
+            : onTap,
+        trailing:
+            trailing ??
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(width: 8),
+                Text(
+                  _durationText(context, track),
+                  style: theme.textTheme.bodySmall,
+                ),
+                Builder(
+                  builder: (btnCtx) => IconButton(
+                    tooltip: 'Mehr',
+                    icon: const Icon(Icons.more_vert),
+                    onPressed: () => showTrackMenu(btnCtx, [track]),
                   ),
-                  Builder(
-                    builder: (btnCtx) => IconButton(
-                      tooltip: 'Mehr',
-                      icon: const Icon(Icons.more_vert),
-                      onPressed: () => showTrackMenu(btnCtx, [track]),
-                    ),
-                  ),
-                ],
-              ),
-        ),
+                ),
+              ],
+            ),
       ),
     );
   }

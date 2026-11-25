@@ -337,6 +337,7 @@ class PlayerController extends ChangeNotifier {
 
   void _onPlaylist(Playlist pl) {
     if (!_loaded || _opening) return;
+    final skipped = _userSkip; // von Hand weiter: nicht anhalten
     final q = queue;
     if (pl.index == q.index || pl.index < 0 || pl.index >= q.items.length) {
       return;
@@ -357,10 +358,14 @@ class PlayerController extends ChangeNotifier {
         unawaited(_seekWhenLoaded(Duration(milliseconds: want)));
       }
     }
-    if (sleepAfterTrack) {
-      sleepAfterTrack = false;
-      unawaited(player.pause());
-      unawaited(player.seek(Duration.zero));
+    // „Nach diesem Titel anhalten“: der markierte Titel ist zu Ende
+    if (old != null && _stopAfter == (q.id, old)) {
+      _stopAfter = null;
+      if (!skipped) {
+        unawaited(player.pause());
+        unawaited(player.seek(Duration.zero));
+        _debug('Nach „$old“ angehalten');
+      }
     }
     _save();
     notifyListeners();
@@ -1157,7 +1162,22 @@ class PlayerController extends ChangeNotifier {
 
   Timer? _sleepTimer;
   DateTime? sleepAt;
-  bool sleepAfterTrack = false;
+
+  /// „Nach diesem Titel anhalten“: (Warteschlange, Pfad); null = aus.
+  (String, String)? _stopAfter;
+
+  /// Hält nach dem laufenden Titel an?
+  bool get sleepAfterTrack =>
+      _stopAfter != null && _stopAfter == (queue.id, queue.current);
+
+  /// Hält nach [path] (in der aktuellen Warteschlange) an?
+  bool stopsAfter(String path) => _stopAfter == (queue.id, path);
+
+  /// Nach [path] anhalten (null = Markierung entfernen).
+  void setStopAfter(String? path) {
+    _stopAfter = path == null ? null : (queue.id, path);
+    notifyListeners();
+  }
 
   void setSleepTimer(Duration? d) {
     _sleepTimer?.cancel();
@@ -1170,10 +1190,7 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setSleepAfterTrack(bool v) {
-    sleepAfterTrack = v;
-    notifyListeners();
-  }
+  void setSleepAfterTrack(bool v) => setStopAfter(v ? queue.current : null);
 
   Future<void> _fadeOutAndPause() async {
     sleepAt = null;
