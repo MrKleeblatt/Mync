@@ -70,20 +70,30 @@ flutter {
 // legt libmync_core.so als jniLib ab. Voraussetzung: `zig` im PATH.
 val myncCoreDir = file("../../../core")
 val myncJniLibs = layout.buildDirectory.dir("mync_core/jniLibs")
-val myncAbis = mapOf(
-    "arm64-v8a" to "aarch64-linux-android",
-    "armeabi-v7a" to "arm-linux-androideabi",
-    "x86_64" to "x86_64-linux-android",
+// Flutter-Zielplattform → (ABI, Zig-Ziel)
+val myncPlatforms = mapOf(
+    "android-arm64" to ("arm64-v8a" to "aarch64-linux-android"),
+    "android-arm" to ("armeabi-v7a" to "arm-linux-androideabi"),
+    "android-x64" to ("x86_64" to "x86_64-linux-android"),
 )
+// Nur für die ABIs bauen, für die Flutter baut (`--target-platform` kommt als
+// -Ptarget-platform an, `flutter run` setzt es fürs Gerät); ohne Angabe alle.
+// Jede ABI kostet im CI Minuten.
+val myncAbis = ((findProperty("target-platform") as String?)?.split(",") ?: myncPlatforms.keys)
+    .mapNotNull { myncPlatforms[it.trim()] }
+    .toMap()
 val myncMinApi = 24
 
 val buildMyncCore by tasks.registering {
     group = "build"
-    description = "Baut den mync-Kern (Zig) für alle Android-ABIs"
+    description = "Baut den mync-Kern (Zig) für die Android-ABIs des Builds"
     inputs.dir(myncCoreDir.resolve("src"))
     inputs.file(myncCoreDir.resolve("build.zig"))
+    inputs.property("abis", myncAbis.keys.sorted())
     outputs.dir(myncJniLibs)
     doLast {
+        // keine .so eines früheren Builds für andere ABIs mitverpacken
+        myncJniLibs.get().asFile.deleteRecursively()
         val ndk = android.ndkDirectory.absolutePath
         myncAbis.forEach { (abi, triple) ->
             val prefix = layout.buildDirectory.dir("mync_core/$abi").get().asFile
