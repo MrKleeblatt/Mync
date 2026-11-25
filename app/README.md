@@ -27,9 +27,9 @@ Kurz, in der Devshell (`nix develop ./dev` oder direnv, siehe README im
 Wurzelordner):
 
 ```bash
-just keystore            # Passwort erzeugen (Zwischenablage), ~/mync.jks anlegen
-just keystore-secrets    # Secrets in GitHub setzen (vorher `gh auth login`)
-just apk-cert            # Signatur der gebauten APK zeigen
+just generate-cert       # Passwort erzeugen (Zwischenablage), ~/.local/share/mync/mync.jks anlegen
+just upload-cert         # Secrets in GitHub setzen (vorher `gh auth login`)
+just print-cert          # Signatur der gebauten APK zeigen
 ```
 
 Dasselbe von Hand:
