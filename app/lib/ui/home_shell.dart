@@ -45,6 +45,11 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
+  final _libraryKey = GlobalKey<LibraryPageState>();
+  final _queuesKey = GlobalKey<QueuesPageState>();
+
+  /// Handy: Reiter per Wischen nach links/rechts wechseln.
+  final _pages = PageController();
 
   /// War die Bildschirmtastatur zuletzt offen?
   bool _keyboard = false;
@@ -66,11 +71,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (_keyboard && !open) unfocusTextInput();
     _keyboard = open;
   }
-  final _libraryKey = GlobalKey<LibraryPageState>();
-  final _queuesKey = GlobalKey<QueuesPageState>();
-
-  /// Handy: Reiter per Wischen nach links/rechts wechseln.
-  final _pages = PageController();
 
   void _go(int i) {
     setState(() => _index = i);
