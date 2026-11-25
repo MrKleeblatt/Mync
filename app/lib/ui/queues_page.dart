@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../library/track.dart';
 import '../player/player_controller.dart';
 import 'cover_art.dart';
+import 'menu_sheet.dart';
 import 'scope.dart';
 import 'track_actions.dart';
 
@@ -157,19 +158,36 @@ class _Header extends StatelessWidget {
                 onPressed: q.items.length < 2 ? null : player.shuffleQueue,
                 icon: const Icon(Icons.shuffle),
               ),
-              PopupMenuButton<String>(
+              IconButton(
                 tooltip: 'Mehr',
-                onSelected: (v) =>
-                    _queueAction(context, player, player.currentQueueIndex, v),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(
-                    value: 'new',
-                    child: Text('Neue Warteschlange'),
-                  ),
-                  PopupMenuItem(value: 'rename', child: Text('Umbenennen …')),
-                  PopupMenuItem(value: 'clear', child: Text('Leeren')),
-                  PopupMenuItem(value: 'delete', child: Text('Löschen')),
-                ],
+                icon: const Icon(Icons.more_vert),
+                onPressed: () async {
+                  final i = player.currentQueueIndex;
+                  final v = await showActionSheet<String>(
+                    context,
+                    title: '${i + 1}. ${q.name}',
+                    subtitle: '${q.items.length} Titel',
+                    icon: Icons.queue_music,
+                    items: [
+                      const MenuItem('new', Icons.add, 'Neue Warteschlange'),
+                      const MenuItem(
+                        'rename',
+                        Icons.edit_outlined,
+                        'Umbenennen',
+                      ),
+                      const MenuItem('clear', Icons.clear_all, 'Leeren'),
+                      if (player.queues.length > 1)
+                        const MenuItem(
+                          'delete',
+                          Icons.delete_outline,
+                          'Löschen',
+                        ),
+                    ],
+                  );
+                  if (v != null && context.mounted) {
+                    await _queueAction(context, player, i, v);
+                  }
+                },
               ),
             ],
           ),
@@ -214,73 +232,62 @@ Future<void> _queueAction(
 
 /// Alle Warteschlangen: wechseln, umbenennen, löschen, neu.
 Future<void> _chooseQueue(BuildContext context, PlayerController player) =>
-    showDialog<void>(
-      context: context,
+    showMenuSheet<void>(
+      context,
+      title: 'Warteschlangen',
+      subtitle: '${player.queues.length} Warteschlangen',
+      icon: Icons.queue_music,
       builder: (ctx) => ListenableBuilder(
         listenable: player,
-        builder: (ctx, _) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.queue_music),
-              SizedBox(width: 12),
-              Text('Warteschlangen'),
-            ],
-          ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-          content: SizedBox(
-            width: 420,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: player.queues.length,
-              itemBuilder: (ctx, i) {
-                final q = player.queues[i];
-                final current = i == player.currentQueueIndex;
-                return ListTile(
-                  selected: current,
-                  leading: Icon(
-                    current
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                  ),
-                  title: Text(
-                    '${i + 1}. ${q.name}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text('${q.items.length} Titel'),
-                  onTap: () {
-                    player.switchQueue(i);
-                    Navigator.pop(ctx);
-                  },
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: 'Umbenennen',
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => _queueAction(ctx, player, i, 'rename'),
-                      ),
-                      IconButton(
-                        tooltip: 'Löschen',
-                        icon: const Icon(Icons.close),
-                        onPressed: player.queues.length < 2
-                            ? null
-                            : () => _queueAction(ctx, player, i, 'delete'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton.icon(
-              onPressed: () async {
+        builder: (ctx, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < player.queues.length; i++)
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 24, right: 12),
+                selected: i == player.currentQueueIndex,
+                leading: Icon(
+                  i == player.currentQueueIndex
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(
+                  '${i + 1}. ${player.queues[i].name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text('${player.queues[i].items.length} Titel'),
+                onTap: () {
+                  player.switchQueue(i);
+                  Navigator.pop(ctx);
+                },
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Umbenennen',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => _queueAction(ctx, player, i, 'rename'),
+                    ),
+                    IconButton(
+                      tooltip: 'Löschen',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: player.queues.length < 2
+                          ? null
+                          : () => _queueAction(ctx, player, i, 'delete'),
+                    ),
+                  ],
+                ),
+              ),
+            const Divider(indent: 24, endIndent: 24),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              leading: const Icon(Icons.add),
+              title: const Text('Neue Warteschlange'),
+              onTap: () async {
                 await player.newQueue();
                 if (ctx.mounted) Navigator.pop(ctx);
               },
-              icon: const Icon(Icons.add),
-              label: const Text('Neue Warteschlange'),
             ),
           ],
         ),
@@ -467,6 +474,18 @@ class _QueueTile extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (player.stopsAfter(path))
+                  Tooltip(
+                    message: 'Hält nach diesem Titel an',
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Icon(
+                        Icons.pause_circle_outline,
+                        size: 18,
+                        color: c.primary,
+                      ),
+                    ),
+                  ),
                 if (current && player.playing)
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
@@ -491,58 +510,56 @@ class _QueueTile extends StatelessWidget {
   }
 }
 
-/// „⋯“ an einem Titel der Warteschlange.
+/// „⋯“ an einem Titel der Warteschlange (einheitliches Menü).
 Future<void> _tileMenu(
   BuildContext context,
   PlayerController player,
   int index,
   Track? t,
 ) async {
-  final box = context.findRenderObject() as RenderBox;
-  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-  final pos = box.localToGlobal(box.size.center(Offset.zero));
-  PopupMenuItem<Object> item(Object v, IconData icon, String label) =>
-      PopupMenuItem(
-        value: v,
-        child: ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(icon),
-          title: Text(label),
-        ),
-      );
-  final chosen = await showMenu<Object>(
-    context: context,
-    position: RelativeRect.fromRect(
-      pos & const Size(1, 1),
-      Offset.zero & overlay.size,
-    ),
+  final path = player.queue.items[index];
+  final stops = player.stopsAfter(path);
+  final chosen = await showActionSheet<Object>(
+    context,
+    title: t?.title ?? path.split('/').last,
+    subtitle: t?.artist,
+    leading: t == null
+        ? const Icon(Icons.help_outline, size: 28)
+        : CoverArt(track: t, size: 48),
     items: [
-      item(
+      if (index != player.queue.index)
+        const MenuItem('next', Icons.playlist_play, 'Als Nächstes'),
+      MenuItem(
+        'stop',
+        stops ? Icons.play_circle_outline : Icons.pause_circle_outline,
+        stops ? 'Nicht mehr danach anhalten' : 'Nach diesem Titel anhalten',
+        selected: stops,
+      ),
+      const MenuItem(
         'remove',
         Icons.remove_circle_outline,
         'Aus Warteschlange entfernen',
       ),
-      if (index != player.queue.index)
-        item('next', Icons.playlist_play, 'Als Nächstes'),
       if (t != null) ...[
-        const PopupMenuDivider(),
+        null,
         for (final a in const [
           TrackAction.newQueue,
           TrackAction.editTags,
           TrackAction.syncLyrics,
           TrackAction.details,
         ])
-          item(a, a.icon, a.label),
+          MenuItem<Object>(a, a.icon, a.label),
       ],
     ],
   );
   if (!context.mounted) return;
   switch (chosen) {
-    case 'remove':
-      await _removeWithUndo(context, player, [index]);
     case 'next':
       await player.moveAfterCurrent([index]);
+    case 'stop':
+      player.setStopAfter(stops ? null : path);
+    case 'remove':
+      await _removeWithUndo(context, player, [index]);
     case final TrackAction a when t != null:
       await runTrackAction(context, a, [t]);
   }

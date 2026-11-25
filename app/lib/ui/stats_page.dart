@@ -9,8 +9,17 @@ import 'track_actions.dart';
 import 'track_list.dart';
 
 /// Hörstatistik („Diesen Monat am meisten gehört“ …) und Vorschläge.
+///
+/// Am Handy sind die beiden Unterreiter eigene Seiten der Wischreihe der
+/// App ([view] fest, [onSelectView] beim Antippen) – so läuft das Wischen
+/// durch, statt in den Unterreitern festzuhängen.
 class StatsPage extends StatefulWidget {
-  const StatsPage({super.key});
+  const StatsPage({super.key, this.view, this.onSelectView});
+
+  /// Fest gewählter Unterreiter (0 Hörgewohnheiten, 1 Vorschläge); null =
+  /// beide mit eigenem Wischen (PC).
+  final int? view;
+  final ValueChanged<int>? onSelectView;
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -18,7 +27,18 @@ class StatsPage extends StatefulWidget {
 
 class _StatsPageState extends State<StatsPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  late final TabController _tabs = TabController(
+    length: 2,
+    vsync: this,
+    initialIndex: widget.view ?? 0,
+  );
+
+  @override
+  void didUpdateWidget(StatsPage old) {
+    super.didUpdateWidget(old);
+    if (widget.view != null) _tabs.index = widget.view!;
+  }
+
   StatsRange _range = StatsRange.thisMonth;
   List<Suggestion>? _suggestions;
   int _suggestionsFor = -1;
@@ -43,6 +63,12 @@ class _StatsPageState extends State<StatsPage>
           controller: _tabs,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
+          onTap: widget.view == null
+              ? null
+              : (i) {
+                  _tabs.index = widget.view!; // die Seite wechselt außen
+                  widget.onSelectView?.call(i);
+                },
           tabs: const [
             Tab(text: 'Hörgewohnheiten'),
             Tab(text: 'Vorschläge'),
@@ -51,10 +77,14 @@ class _StatsPageState extends State<StatsPage>
         Expanded(
           child: ListenableBuilder(
             listenable: Listenable.merge([context.player, context.library]),
-            builder: (context, _) => TabBarView(
-              controller: _tabs,
-              children: [_statsView(context), _suggestionsView(context)],
-            ),
+            builder: (context, _) => switch (widget.view) {
+              0 => _statsView(context),
+              1 => _suggestionsView(context),
+              _ => TabBarView(
+                controller: _tabs,
+                children: [_statsView(context), _suggestionsView(context)],
+              ),
+            },
           ),
         ),
       ],

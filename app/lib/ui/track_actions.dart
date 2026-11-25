@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../library/track.dart';
+import 'cover_art.dart';
 import 'lrc_editor.dart';
+import 'menu_sheet.dart';
 import 'rename_dialog.dart';
 import 'scope.dart';
 import 'tag_editor.dart';
@@ -46,39 +48,30 @@ const groupActions = [
 /// Menü beim Antippen eines Titels (Ordneransicht): zuerst Abspielen.
 const tapTrackActions = [TrackAction.play, ...singleTrackActions];
 
-/// Zeigt ein Popup-Menü an [position] und führt die gewählte Aktion aus.
+/// Menü für einen oder mehrere Titel (einheitliches Menü, siehe
+/// menu_sheet.dart): Kopf mit Cover, Titel und Künstler bzw. [title]
+/// (z. B. Ordnername) und Anzahl.
 Future<void> showTrackMenu(
   BuildContext context,
   List<Track> tracks, {
-  Offset? position,
   List<TrackAction> actions = singleTrackActions,
   Future<void> Function()? onPlay,
+  String? title,
 }) async {
-  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-  final box = context.findRenderObject() as RenderBox?;
-  final pos =
-      position ??
-      (box == null
-          ? Offset.zero
-          : box.localToGlobal(box.size.topRight(Offset.zero)));
-  final chosen = await showMenu<TrackAction>(
-    context: context,
-    position: RelativeRect.fromRect(
-      pos & const Size(1, 1),
-      Offset.zero & overlay.size,
-    ),
-    items: [
-      for (final a in actions)
-        PopupMenuItem(
-          value: a,
-          child: ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(a.icon),
-            title: Text(a.label),
-          ),
-        ),
-    ],
+  if (tracks.isEmpty) return;
+  final one = tracks.length == 1 && title == null;
+  final chosen = await showActionSheet<TrackAction>(
+    context,
+    title: one ? tracks.first.title : (title ?? '${tracks.length} Titel'),
+    subtitle: one
+        ? tracks.first.artist
+        : title == null
+        ? null
+        : '${tracks.length} Titel',
+    leading: one
+        ? CoverArt(track: tracks.first, size: 48)
+        : const Icon(Icons.folder_outlined, size: 28),
+    items: [for (final a in actions) MenuItem(a, a.icon, a.label)],
   );
   if (chosen == TrackAction.play && onPlay != null) {
     await onPlay();

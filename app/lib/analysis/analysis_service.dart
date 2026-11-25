@@ -40,6 +40,9 @@ class AnalysisService extends ChangeNotifier {
   final _queue = <(String key, String path, int durationMs, bool priority)>[];
   bool _busy = false;
 
+  /// mpv kann hier nicht in eine Datei dekodieren (Android) – keine Analyse.
+  bool _unsupported = false;
+
   /// Version der Ergebnisse (für Widgets, die neu zeichnen sollen).
   int version = 0;
 
@@ -70,6 +73,7 @@ class AnalysisService extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (_unsupported) return;
     if (priority) {
       _queue.insert(0, (key, path, durationMs, true));
     } else {
@@ -89,6 +93,12 @@ class AnalysisService extends ChangeNotifier {
         try {
           await _analyse(r, path, Duration(milliseconds: durationMs));
           await _save(key, r);
+        } on UnsupportedError catch (e) {
+          // auf diesem Gerät nicht möglich: für diese Sitzung abschalten
+          _unsupported = true;
+          _queue.clear();
+          _results.remove(key);
+          logInfo('Analyse nicht verfügbar: ${e.message}');
         } catch (e) {
           logWarning('Analyse fehlgeschlagen ($path): $e');
         }

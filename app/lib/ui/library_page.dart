@@ -235,8 +235,8 @@ class _SearchResults extends StatelessWidget {
                 onSecondaryTapUp: (d) => showTrackMenu(
                   context,
                   lib.tracksBelow(f),
-                  position: d.globalPosition,
                   actions: groupActions,
+                  title: f.split('/').last,
                 ),
                 child: ListTile(
                   leading: const Icon(Icons.folder),
@@ -357,8 +357,8 @@ class FolderViewState extends State<FolderView>
             onSecondaryTapUp: (d) => showTrackMenu(
               context,
               lib.tracksBelow(_join(name)),
-              position: d.globalPosition,
               actions: groupActions,
+              title: name,
             ),
             child: ListTile(
               leading: const Icon(Icons.folder),
@@ -372,6 +372,7 @@ class FolderViewState extends State<FolderView>
                     c,
                     lib.tracksBelow(_join(name)),
                     actions: groupActions,
+                    title: name,
                   ),
                 ),
               ),
