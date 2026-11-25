@@ -49,25 +49,120 @@ class SeekButton extends StatelessWidget {
 }
 
 /// Öffnet den großen Wiedergabebildschirm (von unten eingeschoben).
-void openNowPlaying(BuildContext context) {
+void openNowPlaying(BuildContext context) => _pushNowPlaying(context);
+
+_NowPlayingRoute _pushNowPlaying(BuildContext context) {
+  // Sonst landet der Fokus beim Schließen wieder im Suchfeld und die
+  // Tastatur geht von selbst auf.
+  unfocusTextInput();
   final s = MyncScope.of(context);
-  Navigator.of(context).push(
-    PageRouteBuilder<void>(
-      pageBuilder: (_, _, _) => MyncScope(
-        settings: s.settings,
-        library: s.library,
-        player: s.player,
-        child: const NowPlayingPage(),
-      ),
-      transitionsBuilder: (_, anim, _, child) => SlideTransition(
-        position: Tween(
-          begin: const Offset(0, 1),
-          end: Offset.zero,
-        ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(anim),
-        child: child,
-      ),
+  final route = _NowPlayingRoute(
+    (_) => MyncScope(
+      settings: s.settings,
+      library: s.library,
+      player: s.player,
+      child: const NowPlayingPage(),
     ),
   );
+  Navigator.of(context).push(route);
+  return route;
+}
+
+/// Nimmt einem Textfeld den Fokus (Cursor weg, Tastatur zu).
+void unfocusTextInput() {
+  final f = FocusManager.instance.primaryFocus;
+  if (f?.context?.findAncestorWidgetOfExactType<EditableText>() != null ||
+      f?.context?.widget is EditableText) {
+    f!.unfocus();
+  }
+}
+
+/// Route des Wiedergabebildschirms; lässt sich mit dem Finger hochziehen
+/// (aus der Wiedergabeleiste) und wieder herunterwischen.
+class _NowPlayingRoute extends PageRoute<void> {
+  _NowPlayingRoute(this.builder);
+  final WidgetBuilder builder;
+
+  @override
+  Color? get barrierColor => null;
+  @override
+  String? get barrierLabel => null;
+  @override
+  bool get maintainState => true;
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 300);
+
+  AnimationController get sheet => controller!;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => builder(context);
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    // Beim Ziehen folgt die Seite genau dem Finger (ohne Kurve).
+    final dragging = navigator?.userGestureInProgress ?? false;
+    return SlideTransition(
+      position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(
+        dragging
+            ? animation
+            : CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Eine laufende Wischgeste, die den Wiedergabebildschirm auf- bzw. zuzieht.
+class _SheetDrag {
+  _SheetDrag(this.route, this.height) : nav = route.navigator! {
+    nav.didStartUserGesture();
+  }
+  final _NowPlayingRoute route;
+  final NavigatorState nav;
+  final double height;
+  AnimationController get _c => route.sheet;
+
+  /// [dy]: Fingerbewegung nach unten in Pixeln (nach oben negativ).
+  void update(double dy) => _c.value -= dy / height;
+
+  /// [vy]: Geschwindigkeit beim Loslassen (Pixel/s, nach unten positiv).
+  void end(double vy) {
+    final open = vy.abs() >= 700 ? vy < 0 : _c.value > 0.5;
+    if (open) {
+      final ms = (300 * (1 - _c.value)).round().clamp(1, 300);
+      _c.animateTo(
+        1,
+        duration: Duration(milliseconds: ms),
+        curve: Curves.easeOut,
+      );
+    } else if (route.isCurrent) {
+      nav.pop();
+    } else if (route.isActive) {
+      nav.removeRoute(route);
+    }
+    if (_c.isAnimating) {
+      late final AnimationStatusListener l;
+      l = (status) {
+        if (status == AnimationStatus.completed ||
+            status == AnimationStatus.dismissed) {
+          _c.removeStatusListener(l);
+          nav.didStopUserGesture();
+        }
+      };
+      _c.addStatusListener(l);
+    } else {
+      nav.didStopUserGesture();
+    }
+  }
 }
 
 /// Wiedergabeleiste für Unterseiten (Album, Künstler, Playlist).
@@ -81,13 +176,51 @@ class PageMiniPlayer extends StatelessWidget {
   );
 }
 
-/// Schmale Wiedergabeleiste am unteren Rand.
-class MiniPlayer extends StatelessWidget {
+/// Schmale Wiedergabeleiste am unteren Rand. Antippen oder Hochziehen
+/// öffnet den Wiedergabebildschirm.
+class MiniPlayer extends StatefulWidget {
   const MiniPlayer({super.key, required this.onOpen});
   final VoidCallback onOpen;
 
   @override
-  Widget build(BuildContext context) {
+  State<MiniPlayer> createState() => _MiniPlayerState();
+}
+
+class _MiniPlayerState extends State<MiniPlayer> {
+  _SheetDrag? _drag;
+
+  void _dragStart(DragStartDetails _) {
+    if (context.player.currentTrack == null) return;
+    final route = _pushNowPlaying(context);
+    final d = _SheetDrag(route, MediaQuery.sizeOf(context).height);
+    // Die Route fährt sonst von selbst hoch; stattdessen folgt sie dem Finger.
+    route.sheet.value = 0;
+    _drag = d;
+  }
+
+  void _dragUpdate(DragUpdateDetails e) => _drag?.update(e.delta.dy);
+
+  void _dragEnd(DragEndDetails e) {
+    _drag?.end(e.velocity.pixelsPerSecond.dy);
+    _drag = null;
+  }
+
+  void _dragCancel() {
+    _drag?.end(1000); // abgebrochen: wieder zu
+    _drag = null;
+  }
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onVerticalDragStart: _dragStart,
+    onVerticalDragUpdate: _dragUpdate,
+    onVerticalDragEnd: _dragEnd,
+    onVerticalDragCancel: _dragCancel,
+    child: _buildBar(context),
+  );
+
+  Widget _buildBar(BuildContext context) {
+    final onOpen = widget.onOpen;
     final player = context.player;
     final theme = Theme.of(context);
     return ListenableBuilder(
@@ -503,6 +636,36 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
   /// Was anstelle des Covers gezeigt wird.
   _Panel _panel = _Panel.cover;
 
+  /// Herunterwischen zum Schließen.
+  _SheetDrag? _drag;
+
+  void _dragBy(double dy) {
+    if (_drag == null) {
+      final route = ModalRoute.of(context);
+      if (route is! _NowPlayingRoute || !route.isCurrent) return;
+      _drag = _SheetDrag(route, MediaQuery.sizeOf(context).height);
+    }
+    _drag!.update(dy);
+  }
+
+  void _dragEnd(double vy) {
+    _drag?.end(vy);
+    _drag = null;
+  }
+
+  /// Ist der Inhalt scrollbar, zieht Überscrollen am oberen Rand die Seite.
+  bool _onScroll(ScrollNotification n) {
+    if (n.depth != 0) return false;
+    if (n is OverscrollNotification &&
+        n.dragDetails != null &&
+        n.overscroll < 0) {
+      _dragBy(-n.overscroll);
+    } else if (n is ScrollEndNotification && _drag != null) {
+      _dragEnd(n.dragDetails?.velocity.pixelsPerSecond.dy ?? 0);
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = context.player;
@@ -718,34 +881,46 @@ class _NowPlayingPageState extends State<NowPlayingPage> {
           },
           child: Focus(
             autofocus: true,
-            child: Scaffold(
-              appBar: AppBar(
-                leading: IconButton(
-                  tooltip: 'Schließen${keyHint('Esc')}',
-                  icon: const Icon(Icons.expand_more),
-                  onPressed: () => Navigator.pop(context),
+            child: GestureDetector(
+              onVerticalDragUpdate: (e) => _dragBy(e.delta.dy),
+              onVerticalDragEnd: (e) => _dragEnd(e.velocity.pixelsPerSecond.dy),
+              onVerticalDragCancel: () => _dragEnd(-1000),
+              child: Scaffold(
+                appBar: AppBar(
+                  leading: IconButton(
+                    tooltip: 'Schließen${keyHint('Esc')}',
+                    icon: const Icon(Icons.expand_more),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  title: Text(
+                    player.queue.name,
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  centerTitle: true,
                 ),
-                title: Text(
-                  player.queue.name,
-                  style: theme.textTheme.titleSmall,
-                ),
-                centerTitle: true,
-              ),
-              body: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: wide
-                      ? Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            art,
-                            const SizedBox(width: 48),
-                            SizedBox(width: 460, child: controls),
-                          ],
-                        )
-                      : Column(
-                          children: [art, const SizedBox(height: 24), controls],
-                        ),
+                body: Center(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _onScroll,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: wide
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                art,
+                                const SizedBox(width: 48),
+                                SizedBox(width: 460, child: controls),
+                              ],
+                            )
+                          : Column(
+                              children: [
+                                art,
+                                const SizedBox(height: 24),
+                                controls,
+                              ],
+                            ),
+                    ),
+                  ),
                 ),
               ),
             ),
