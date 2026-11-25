@@ -3,7 +3,7 @@ name: Prüfen und bauen
 # Jeder Pull Request nach master (Voraussetzung für den Merge, siehe
 # docs/updates.md): Jeder Merge wird ein Release, deshalb muss die Version in
 # app/pubspec.yaml höher sein als der letzte Tag. Danach Kern und App testen,
-# für Linux und Android bauen und die mitgelieferte Nix-Flake prüfen.
+# für Linux und Android (Debug-APK) bauen und die mitgelieferte Nix-Flake prüfen.
 on:
   pull_request:
     branches: [master]
@@ -54,7 +54,8 @@ jobs:
         working-directory: app
         run: flutter build linux --release
 
-      - uses: actions/cache@v5
+      # nur lesen; gespeichert wird im Release (siehe .github/actions/setup)
+      - uses: actions/cache/restore@v5
         with:
           path: .appimage-tools
           key: appimage-tools-${{ hashFiles('tools/release/make_appimage.sh') }}
@@ -88,10 +89,11 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           android: "true"
-      # Gradle baut den Zig-Kern für alle ABIs mit; signiert wird hier nur
-      # mit dem Debug-Schlüssel (der feste Schlüssel ist dem Release vorbehalten)
+      # Gradle baut den Zig-Kern für arm64 mit. Debug statt Release: ohne
+      # Dart-AOT und R8 gut 1–2 min schneller; Fehler, die nur der Release-Build
+      # zeigt, fallen erst im Workflow „Release“ auf.
       - name: APK bauen
         working-directory: app
         run: |
           ../tools/release/retry.sh flutter pub get
-          ../tools/release/retry.sh flutter build apk --release --split-per-abi --target-platform android-arm64
+          ../tools/release/retry.sh flutter build apk --debug --split-per-abi --target-platform android-arm64

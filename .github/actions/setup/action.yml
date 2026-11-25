@@ -6,10 +6,18 @@ inputs:
     description: Java 21 für den Android-Build einrichten
     default: "false"
 
+# Caches werden hier nur wiederhergestellt. Gespeichert werden sie allein vom
+# Release auf master (Action save-caches): Pull Requests lesen die Einträge
+# von master mit, und es entstehen keine Kopien je Pull Request, die den
+# 10-GB-Speicher füllen und dabei die von master verdrängen.
+
 runs:
   using: composite
   steps:
-    - name: Linux-Pakete
+    # nur für die Linux-App; der Android-Build bringt alles mit (Zig, NDK,
+    # CMake aus dem SDK) und spart so gut 40 s
+    - if: inputs.android != 'true'
+      name: Linux-Pakete
       shell: bash
       run: |
         sudo apt-get update
@@ -24,28 +32,43 @@ runs:
         ln -sf "$(python3 -c 'import ziglang,os;print(os.path.dirname(ziglang.__file__))')/zig" "$HOME/bin/zig"
         echo "$HOME/bin" >> "$GITHUB_PATH"
 
-    # Zig-Caches: vor allem SQLite (vendor/) und compiler_rt/libc je Ziel, die
-    # sich selten ändern. Der Schlüssel hängt deshalb nicht an src/ – sonst
-    # entstünde bei jedem Commit ein neuer, immer größerer Eintrag. Getrennt
-    # je Job, weil Linux und Android für verschiedene Ziele bauen.
-    - uses: actions/cache@v5
+    # Zig-Caches: SQLite (vendor/), compiler_rt/libc je Ziel und der Kern
+    # selbst. Der Schlüssel hängt an ganz core/: Ändert ein Commit nur die App,
+    # kommt der Kern fertig aus dem Cache. Sonst wird der letzte Stand derselben
+    # build.zig/vendor-Generation geholt und nur der Zig-Code neu übersetzt.
+    # Getrennt je Job, weil Linux und Android für verschiedene Ziele bauen.
+    - id: zig
+      uses: actions/cache/restore@v5
       with:
         path: |
           ~/.cache/zig
           core/.zig-cache
-        key: zig-0.17.1-${{ github.job }}-${{ hashFiles('core/build.zig', 'core/build.zig.zon', 'core/vendor/**') }}
-        restore-keys: zig-0.17.1-${{ github.job }}-
+        key: zig-0.17.1-${{ github.job }}-${{ hashFiles('core/build.zig', 'core/build.zig.zon', 'core/vendor/**') }}-${{ hashFiles('core/**') }}
+        restore-keys: zig-0.17.1-${{ github.job }}-${{ hashFiles('core/build.zig', 'core/build.zig.zon', 'core/vendor/**') }}-
+    # Der Zig-Cache wächst mit jedem Stand von core/ um dessen Übersetzung.
+    # Ist er zu groß, neu anfangen: Dieser Lauf übersetzt SQLite neu (gut
+    # 2 min), und das Release speichert danach wieder einen kleinen Stand.
+    - if: steps.zig.outputs.cache-matched-key != ''
+      name: Zig-Cache klein halten
+      shell: bash
+      run: |
+        size=$(du -scm ~/.cache/zig core/.zig-cache 2>/dev/null | tail -1 | cut -f1)
+        echo "Zig-Cache: $size MB"
+        if [ "$size" -gt 400 ]; then
+          echo "Größer als 400 MB – ohne Cache neu anfangen"
+          rm -rf ~/.cache/zig core/.zig-cache
+        fi
 
     # Getrennt für Linux und Android: Flutter lädt die Engine-Dateien der
-    # Zielplattform erst beim Bauen nach, und gespeichert wird nur, wenn der
-    # Schlüssel fehlte – mit einem gemeinsamen Schlüssel fehlten dem Android-
-    # Job seine Dateien jedes Mal.
-    - uses: actions/cache@v5
+    # Zielplattform erst beim Bauen nach.
+    - id: flutter
+      uses: actions/cache/restore@v5
       with:
         path: ${{ runner.temp }}/flutter
         key: flutter-3.47.9-${{ inputs.android == 'true' && 'android' || 'linux' }}
 
-    - uses: actions/cache@v5
+    - id: pub
+      uses: actions/cache/restore@v5
       with:
         path: ~/.pub-cache
         key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
@@ -89,10 +112,40 @@ runs:
     # Gradle-Abhängigkeiten zwischenspeichern: schneller und unabhängiger von
     # kurzen Störungen der Maven-/Plugin-Server
     - if: inputs.android == 'true'
-      uses: actions/cache@v5
+      id: gradle
+      uses: actions/cache/restore@v5
       with:
         path: |
           ~/.gradle/caches
           ~/.gradle/wrapper
         key: gradle-${{ runner.os }}-${{ hashFiles('app/android/**/*.gradle*', 'app/android/gradle/wrapper/gradle-wrapper.properties', 'app/pubspec.lock') }}
         restore-keys: gradle-${{ runner.os }}-
+
+    # Das NDK (flutter.ndkVersion) fehlt im Runner-Image; ohne Cache lädt und
+    # entpackt Gradle es bei jedem Lauf (~25 s). Mit einem neuen Flutter, das
+    # ein anderes NDK will, die Version hier und in save-caches nachziehen.
+    - if: inputs.android == 'true'
+      id: ndk
+      uses: actions/cache/restore@v5
+      with:
+        path: /usr/local/lib/android/sdk/ndk/28.2.13676358
+        key: ndk-28.2.13676358
+
+    # Für save-caches: die Schlüssel der Caches, die es noch nicht gibt
+    # (leer = Treffer, nichts zu speichern)
+    - name: Fehlende Caches merken
+      shell: bash
+      env:
+        ZIG: ${{ steps.zig.outputs.cache-hit != 'true' && steps.zig.outputs.cache-primary-key || '' }}
+        FLUTTER: ${{ steps.flutter.outputs.cache-hit != 'true' && steps.flutter.outputs.cache-primary-key || '' }}
+        PUB: ${{ steps.pub.outputs.cache-hit != 'true' && steps.pub.outputs.cache-primary-key || '' }}
+        GRADLE: ${{ steps.gradle.outputs.cache-hit != 'true' && steps.gradle.outputs.cache-primary-key || '' }}
+        NDK: ${{ steps.ndk.outputs.cache-hit != 'true' && steps.ndk.outputs.cache-primary-key || '' }}
+      run: |
+        {
+          echo "MYNC_CACHE_ZIG=$ZIG"
+          echo "MYNC_CACHE_FLUTTER=$FLUTTER"
+          echo "MYNC_CACHE_PUB=$PUB"
+          echo "MYNC_CACHE_GRADLE=$GRADLE"
+          echo "MYNC_CACHE_NDK=$NDK"
+        } >> "$GITHUB_ENV"
