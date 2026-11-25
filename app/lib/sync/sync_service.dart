@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../log.dart';
 import 'channel.dart';
+import 'discovery.dart';
 import 'sync_session.dart';
 import 'sync_store.dart';
 import '../core/music_fs.dart';
@@ -64,6 +65,10 @@ class SyncService extends ChangeNotifier {
 
   Pairing? pairing;
   SyncSession? session;
+
+  /// Id des Geräts, mit dem gerade ein Abgleich aufgebaut wird (Suche und
+  /// Verbindung, bevor es eine [session] gibt).
+  String? connectingTo;
   String? message;
 
   List<Peer> get peers =>
@@ -95,7 +100,7 @@ class SyncService extends ChangeNotifier {
         if (ev != RawSocketEvent.read) return;
         final d = _discovery?.receive();
         if (d == null ||
-            utf8.decode(d.data, allowMalformed: true) != 'MYNC?1') {
+            utf8.decode(d.data, allowMalformed: true) != discoveryQuery) {
           return;
         }
         final reply = jsonEncode({
@@ -121,48 +126,51 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sucht Geräte im lokalen Netz (UDP-Broadcast).
-  Future<List<Discovered>> discover({
-    Duration wait = const Duration(milliseconds: 1500),
-  }) async {
-    final found = <String, Discovered>{};
-    final s = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
-    s.broadcastEnabled = true;
-    s.listen((ev) {
-      if (ev != RawSocketEvent.read) return;
-      final d = s.receive();
-      if (d == null) return;
-      try {
-        final j = jsonDecode(utf8.decode(d.data)) as Map<String, dynamic>;
-        if (j['mync'] != 1 || j['id'] == store.identity.id) return;
-        found[j['id'] as String] = Discovered(
-          j['id'] as String,
-          j['name'] as String,
-          d.address.address,
-          j['port'] as int,
-          pairing: j['pairing'] == true,
-        );
-      } catch (_) {}
-    });
-    final msg = utf8.encode('MYNC?1');
-    for (final target in ['255.255.255.255', '127.0.0.1']) {
-      try {
-        s.send(msg, InternetAddress(target), discoveryPort);
-      } catch (_) {}
-    }
-    await Future<void>.delayed(wait);
-    s.close();
-    // bekannte Adressen aktualisieren
-    for (final d in found.values) {
-      final p = store.peers[d.id];
-      if (p != null) {
+  /// Sucht Geräte im lokalen Netz (siehe [queryNetwork]) und meldet jedes,
+  /// sobald es antwortet. Bekannte Geräte bekommen dabei ihre aktuelle
+  /// Adresse. [onSubnets] meldet die durchsuchten Netze.
+  Stream<Discovered> discoverStream({
+    Duration timeout = const Duration(seconds: 4),
+    void Function(List<String> subnets)? onSubnets,
+  }) async* {
+    final seen = <String>{};
+    await for (final r in queryNetwork(
+      port: discoveryPort,
+      hints: {for (final p in store.peers.values) ?p.host},
+      timeout: timeout,
+      onSubnets: onSubnets,
+    )) {
+      final j = r.data;
+      if (j['mync'] != 1 || j['id'] is! String || j['port'] is! int) continue;
+      final id = j['id'] as String;
+      if (id == store.identity.id || !seen.add(id)) continue;
+      final d = Discovered(
+        id,
+        j['name'] as String? ?? 'mync',
+        r.host,
+        j['port'] as int,
+        pairing: j['pairing'] == true,
+      );
+      final p = store.peers[id];
+      if (p != null && (p.host != d.host || p.port != d.port)) {
         p.host = d.host;
         p.port = d.port;
+        unawaited(store.savePeers());
       }
+      yield d;
     }
-    if (found.isNotEmpty) await store.savePeers();
-    return found.values.toList();
   }
+
+  /// Wie [discoverStream], liefert aber alle Funde auf einmal.
+  Future<List<Discovered>> discover({
+    Duration timeout = const Duration(seconds: 4),
+  }) => discoverStream(timeout: timeout).toList();
+
+  /// Sucht im Netz nur nach [peer] und hört auf, sobald es antwortet.
+  Future<Discovered?> _find(Peer peer) =>
+      discoverStream(timeout: const Duration(seconds: 3))
+          .cast<Discovered?>()
+          .firstWhere((d) => d!.id == peer.id, orElse: () => null);
 
   Future<void> _onConnection(Socket socket) async {
     try {
@@ -208,6 +216,26 @@ class SyncService extends ChangeNotifier {
 
   void stopPairing() {
     pairingUntil = null;
+    notifyListeners();
+  }
+
+  /// Der Ablauf „Gerät koppeln“ ist offen: Dieses Gerät ist für die
+  /// Kopplung sichtbar, während es selbst nach anderen sucht – so ist egal,
+  /// auf welchem der beiden Geräte man das andere antippt.
+  bool pairingMode = false;
+
+  void startPairingMode() {
+    message = null;
+    pairing = null;
+    pairingMode = true;
+    allowPairing(duration: const Duration(minutes: 5));
+  }
+
+  void endPairingMode() {
+    confirmPairing(false); // falls noch ein Code auf Bestätigung wartet
+    pairingMode = false;
+    pairingUntil = null;
+    pairing = null;
     notifyListeners();
   }
 
@@ -290,10 +318,24 @@ class SyncService extends ChangeNotifier {
     String? hostOverride,
     int? portOverride,
   }) async {
+    if (connectingTo != null) return null;
     message = null;
-    if (hostOverride == null) {
-      await discover(wait: const Duration(milliseconds: 800));
+    connectingTo = peer.id;
+    notifyListeners();
+    try {
+      return await _syncWith(peer, hostOverride, portOverride);
+    } finally {
+      connectingTo = null;
+      notifyListeners();
     }
+  }
+
+  Future<SyncSession?> _syncWith(
+    Peer peer,
+    String? hostOverride,
+    int? portOverride,
+  ) async {
+    if (hostOverride == null) await _find(peer);
     final h = hostOverride ?? peer.host;
     final pt = portOverride ?? peer.port ?? defaultPort;
     if (h == null) {

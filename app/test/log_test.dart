@@ -42,4 +42,53 @@ void main() {
     expect(seen.last.text, isNot(contains('kaputt')));
     expect(appLog.text, contains('kaputt im Detail'));
   });
+
+  group('Konsole', () {
+    LogEntry entry(LogLevel l, String m) =>
+        LogEntry(DateTime(2026, 11, 25, 16, 55, 25, 81), l, m);
+
+    test(
+      'Terminal: Uhrzeit, Art, Folgezeilen eingerückt; Fehler auf stderr',
+      () {
+        final out = <String>[], err = <String>[];
+        final c = ConsoleLog(
+          out: out.add,
+          err: err.add,
+          journal: false,
+          color: false,
+        );
+        c.write(entry(LogLevel.info, 'Bibliothek geladen: 0 Titel'));
+        c.write(entry(LogLevel.warning, 'Musikordner fehlt'));
+        c.write(
+          entry(LogLevel.error, 'Update fehlgeschlagen\nSocketException'),
+        );
+        expect(out, [
+          '16:55:25.081 INFO   Bibliothek geladen: 0 Titel',
+          '16:55:25.081 WARN   Musikordner fehlt',
+        ]);
+        expect(err, [
+          '16:55:25.081 FEHLER Update fehlgeschlagen\n'
+              '                    │ SocketException',
+        ]);
+      },
+    );
+
+    test('journald: Priorität je Zeile, ohne Uhrzeit', () {
+      final out = <String>[], err = <String>[];
+      final c = ConsoleLog(out: out.add, err: err.add, journal: true);
+      c.write(entry(LogLevel.network, 'GET x → 200'));
+      c.write(entry(LogLevel.warning, 'w'));
+      c.write(entry(LogLevel.error, 'kaputt\n#0 main'));
+      expect(out, ['<6>NETZ   GET x → 200', '<4>WARN   w']);
+      expect(err, ['<3>FEHLER kaputt\n<3>       │ #0 main']);
+    });
+
+    test('Logbuch gibt jeden Eintrag aus', () {
+      final out = <String>[];
+      final log = AppLog()
+        ..console = ConsoleLog(out: out.add, err: out.add, journal: true);
+      log.add(LogLevel.info, 'a');
+      expect(out, ['<6>INFO   a']);
+    });
+  });
 }
