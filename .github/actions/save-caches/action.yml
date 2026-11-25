@@ -1,0 +1,41 @@
+name: Caches speichern
+description: Speichert die Caches aus der Action setup, die es noch nicht gibt (nur im Release auf master)
+
+# Pfade wie in .github/actions/setup/action.yml; die Schlüssel hat setup in
+# MYNC_CACHE_* hinterlegt.
+runs:
+  using: composite
+  steps:
+    - if: env.MYNC_CACHE_ZIG != ''
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          ~/.cache/zig
+          core/.zig-cache
+        key: ${{ env.MYNC_CACHE_ZIG }}
+
+    - if: env.MYNC_CACHE_FLUTTER != ''
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ runner.temp }}/flutter
+        key: ${{ env.MYNC_CACHE_FLUTTER }}
+
+    - if: env.MYNC_CACHE_PUB != ''
+      uses: actions/cache/save@v5
+      with:
+        path: ~/.pub-cache
+        key: ${{ env.MYNC_CACHE_PUB }}
+
+    - if: env.MYNC_CACHE_GRADLE != ''
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ env.MYNC_CACHE_GRADLE }}
+
+    - if: env.MYNC_CACHE_NDK != ''
+      uses: actions/cache/save@v5
+      with:
+        path: /usr/local/lib/android/sdk/ndk/28.2.13676358
+        key: ${{ env.MYNC_CACHE_NDK }}

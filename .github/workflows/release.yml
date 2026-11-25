@@ -126,6 +126,13 @@ jobs:
         with:
           name: linux
           path: dist/*
+      # CLI für die Bausteinliste der APK im Job „Release veröffentlichen“
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mync-cli
+          path: core/zig-out/bin/mync
+
+      - uses: ./.github/actions/save-caches
 
   android:
     name: Android (APK)
@@ -167,27 +174,12 @@ jobs:
             "$GITHUB_WORKSPACE/dist/mync-$TAG-android-arm64.apk"
           rm -f "$RUNNER_TEMP/release.jks"
 
-      # Bausteinliste für Teil-Updates der App (wie Kassenbon): die App lädt
-      # nur die Bausteine, die ihrer installierten APK fehlen
-      - name: Bausteinliste der APK
-        env:
-          MYNC_UPDATE_KEY: ${{ secrets.MYNC_UPDATE_KEY }}
-        run: |
-          (cd core && zig build -Doptimize=ReleaseSafe)
-          sign=()
-          if [ -n "$MYNC_UPDATE_KEY" ]; then
-            printf '%s' "$MYNC_UPDATE_KEY" > "$RUNNER_TEMP/key"
-            sign=(--sign-key "$RUNNER_TEMP/key")
-          fi
-          python3 tools/release/make_apk_chunks.py "dist/mync-$TAG-android-arm64.apk" \
-            --version "${TAG#v}" --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
-            --mync core/zig-out/bin/mync "${sign[@]}"
-          rm -f "$RUNNER_TEMP/key"
-
       - uses: actions/upload-artifact@v6
         with:
           name: android
           path: dist/*
+
+      - uses: ./.github/actions/save-caches
 
   release:
     name: Release veröffentlichen
@@ -206,9 +198,27 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Prüfsummen
+      # Bausteinliste für Teil-Updates der App (wie Kassenbon): die App lädt
+      # nur die Bausteine, die ihrer installierten APK fehlen. Hier statt im
+      # Android-Job, der sonst den Kern noch einmal für Linux bauen müsste.
+      - name: Bausteinliste der APK
+        env:
+          MYNC_UPDATE_KEY: ${{ secrets.MYNC_UPDATE_KEY }}
         run: |
           mv dist/notes.md notes.md
+          mv dist/mync "$RUNNER_TEMP/mync"
+          chmod +x "$RUNNER_TEMP/mync" # Artefakte verlieren das Ausführungsrecht
+          sign=()
+          if [ -n "$MYNC_UPDATE_KEY" ]; then
+            printf '%s' "$MYNC_UPDATE_KEY" > "$RUNNER_TEMP/key"
+            sign=(--sign-key "$RUNNER_TEMP/key")
+          fi
+          python3 tools/release/make_apk_chunks.py "dist/mync-$TAG-android-arm64.apk" \
+            --version "${TAG#v}" --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
+            --mync "$RUNNER_TEMP/mync" "${sign[@]}"
+          rm -f "$RUNNER_TEMP/key"
+      - name: Prüfsummen
+        run: |
           (cd dist && sha256sum * > SHA256SUMS)
           cat dist/SHA256SUMS
       - name: Tag setzen und Release anlegen
