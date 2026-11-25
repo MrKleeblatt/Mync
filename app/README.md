@@ -23,6 +23,17 @@ ist wie die installierte Version. `android/app/build.gradle.kts` signiert mit
 einem festen Schlüssel, sobald `KEYSTORE_FILE` gesetzt ist – sonst mit dem
 wechselnden Debug-Schlüssel.
 
+Kurz, in der Devshell (`nix develop ./dev` oder direnv, siehe README im
+Wurzelordner):
+
+```bash
+just keystore            # Passwort erzeugen (Zwischenablage), ~/mync.jks anlegen
+just keystore-secrets    # Secrets in GitHub setzen (vorher `gh auth login`)
+just apk-cert            # Signatur der gebauten APK zeigen
+```
+
+Dasselbe von Hand:
+
 ### 1. Schlüssel erzeugen (NixOS, ohne installiertes `keytool`)
 
 `keytool` gehört zum JDK; die Nix-Shell stellt es nur für diesen Befehl
