@@ -35,6 +35,7 @@ class PcmDecoder {
       final native = p.platform as NativePlayer;
       for (final (k, v) in [
         ('vid', 'no'),
+        ('volume', '0'), // bis feststeht, dass in die Datei geschrieben wird
         ('audio-display', 'no'),
         ('replaygain', 'no'),
         ('ao', 'pcm'),
@@ -50,7 +51,25 @@ class PcmDecoder {
       }
       final done = p.stream.completed.firstWhere((c) => c);
       final failed = p.stream.error.first;
-      await p.open(Media(MusicFs.mediaUri(path), start: start, end: end));
+      await p.open(
+        Media(MusicFs.mediaUri(path), start: start, end: end),
+        play: false,
+      );
+      // Ohne Dateiausgabe (libmpv unter Android) würde mpv den Titel hörbar
+      // abspielen – zusätzlich zur eigentlichen Wiedergabe. Daher erst
+      // prüfen, welche Ausgabe mpv tatsächlich gewählt hat.
+      var ao = '';
+      for (var i = 0; i < 40 && ao.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        ao = await native.getProperty('current-ao');
+      }
+      if (ao != 'pcm') {
+        throw UnsupportedError(
+          'mpv ohne Dateiausgabe (ao=${ao.isEmpty ? '?' : ao})',
+        );
+      }
+      await native.setProperty('volume', '100');
+      await p.play();
       await Future.any([done, failed.then((e) => throw StateError(e))])
           .timeout(timeout);
     } finally {
