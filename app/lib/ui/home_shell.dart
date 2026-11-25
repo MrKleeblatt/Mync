@@ -66,8 +66,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   List<Widget> _swipePages() => [
     _page(0),
     _page(1),
-    StatsPage(view: 0, onSelectView: (v) => _goPage(_statsPage + v)),
-    StatsPage(view: 1, onSelectView: (v) => _goPage(_statsPage + v)),
+    StatsPage(
+      view: 0,
+      pages: _pages,
+      firstPage: _statsPage,
+      onSelectView: (v) => _goPage(_statsPage + v),
+    ),
+    StatsPage(
+      view: 1,
+      pages: _pages,
+      firstPage: _statsPage,
+      onSelectView: (v) => _goPage(_statsPage + v),
+    ),
     _page(3),
     _page(4),
   ];
