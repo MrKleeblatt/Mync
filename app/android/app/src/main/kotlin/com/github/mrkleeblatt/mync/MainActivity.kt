@@ -8,10 +8,13 @@ import android.os.Bundle
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.net.Inet4Address
+import java.net.NetworkInterface
 
 /**
  * Kanal „mync/fs“ (MusicFs.kt): Zugriff nur auf die vom Nutzer
  * freigegebenen Musikordner. Kanal „mync/app“ (AppUpdate.kt): Updates.
+ * Kanal „mync/net“: eigene IPv4-Adressen mit Netzgröße für die Gerätesuche.
  *
  * Erbt von AudioServiceActivity (audio_service), damit Activity und
  * Wiedergabedienst dieselbe Flutter-Engine nutzen.
@@ -46,6 +49,27 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler(handler)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/app")
             .setMethodCallHandler(AppUpdate(this))
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/net")
+            .setMethodCallHandler { call, result ->
+                if (call.method != "ipv4") return@setMethodCallHandler result.notImplemented()
+                try {
+                    // mit Netzgröße und auch für die Hotspot-Schnittstelle,
+                    // die dart:io nicht immer liefert
+                    val list = mutableListOf<String>()
+                    for (nif in NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()) {
+                        if (!nif.isUp || nif.isLoopback) continue
+                        for (ia in nif.interfaceAddresses) {
+                            val a = ia.address
+                            if (a is Inet4Address) {
+                                list.add("${a.hostAddress}/${ia.networkPrefixLength}%${nif.name}")
+                            }
+                        }
+                    }
+                    result.success(list)
+                } catch (e: Exception) {
+                    result.error("net", e.toString(), null)
+                }
+            }
         if (volume == null) {
             volume = SystemVolume(
                 this,
