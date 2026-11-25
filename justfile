@@ -35,6 +35,7 @@ generate-cert file="~/.local/share/mync/mync.jks":
     fi
     KEYSTORE_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 || true)
     export KEYSTORE_PASSWORD
+    mkdir -p "$(dirname "$file")"
     keytool -genkeypair -keystore "$file" -alias mync -keyalg RSA -keysize 2048 -validity 10000 \
         -dname "CN=mync" -storepass:env KEYSTORE_PASSWORD
     printf %s "$KEYSTORE_PASSWORD" | xclip -selection clipboard
@@ -42,7 +43,7 @@ generate-cert file="~/.local/share/mync/mync.jks":
     echo "dann mit \`just upload-cert\` in GitHub hinterlegen."
 
 [group("Android")]
-upload-cert file="~/mync.jks":
+upload-cert file="~/.local/share/mync/mync.jks":
     #!/usr/bin/env bash
     set -euo pipefail
     file={{ file }}
