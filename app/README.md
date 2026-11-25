@@ -23,7 +23,7 @@ ist wie die installierte Version. `android/app/build.gradle.kts` signiert mit
 einem festen Schlüssel, sobald `KEYSTORE_FILE` gesetzt ist – sonst mit dem
 wechselnden Debug-Schlüssel.
 
-Kurz, in der Devshell (`nix develop ./dev` oder direnv, siehe README im
+In der Devshell (`nix develop ./dev` oder direnv, siehe README im
 Wurzelordner):
 
 ```bash
@@ -32,69 +32,15 @@ just upload-cert         # Secrets in GitHub setzen (vorher `gh auth login`)
 just print-cert          # Signatur der gebauten APK zeigen
 ```
 
-Dasselbe von Hand:
-
-### 1. Schlüssel erzeugen (NixOS, ohne installiertes `keytool`)
-
-`keytool` gehört zum JDK; die Nix-Shell stellt es nur für diesen Befehl
-bereit. Zuerst ein zufälliges Passwort erzeugen (32 Zeichen, nur Buchstaben
-und Ziffern – braucht nichts außer der Shell) und sofort im Passwortmanager
-speichern:
+Lokal signiert bauen (optional):
 
 ```bash
-export KEYSTORE_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)
-printf %s "$KEYSTORE_PASSWORD" | xclip -selection clipboard
-```
-
-Das Passwort liegt jetzt in der Zwischenablage (X11; unter Wayland
-`wl-copy` statt `xclip -selection clipboard`) und lässt sich direkt in den
-Passwortmanager einfügen. Danach die Zwischenablage leeren, z. B. mit
-`printf '' | xclip -selection clipboard`.
-
-Dann den Keystore **außerhalb** des Repositorys anlegen; `keytool` liest das
-Passwort aus der Variablen, statt nachzufragen:
-
-```bash
-cd ~
-nix shell nixpkgs#jdk -c keytool -genkeypair -keystore mync.jks -alias mync \
-  -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=mync" \
-  -storepass:env KEYSTORE_PASSWORD
-```
-
-Ohne Flakes geht dasselbe mit `nix-shell -p jdk --run 'keytool …'`.
-Keystore- und Schlüssel-Passwort sind dabei gleich.
-
-### 2. In GitHub hinterlegen
-
-Der Workflow „Release“ liest den Schlüssel aus Repository-Secrets (in
-derselben Shell wie oben, damit `KEYSTORE_PASSWORD` noch gesetzt ist):
-
-```bash
-cd ~/Projects/mync
-base64 -w0 ~/mync.jks | gh secret set KEYSTORE_BASE64
-printf %s "$KEYSTORE_PASSWORD" | gh secret set KEYSTORE_PASSWORD
-gh secret set KEY_ALIAS --body mync
-```
-
-`KEY_PASSWORD` nur setzen, wenn es vom Keystore-Passwort abweicht. Ohne `gh`:
-GitHub → *Settings → Secrets and variables → Actions → New repository secret*.
-
-### 3. Lokal signiert bauen (optional)
-
-```bash
-export KEYSTORE_FILE=~/mync.jks KEYSTORE_PASSWORD='…' KEY_ALIAS=mync
-flutter build apk --split-per-abi
-```
-
-Prüfen, womit eine APK signiert ist:
-
-```bash
-nix shell nixpkgs#apksigner -c apksigner verify --print-certs build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+KEYSTORE_FILE=~/.local/share/mync/mync.jks KEYSTORE_PASSWORD='…' KEY_ALIAS=mync just build-apk
 ```
 
 ### Wichtig
 
-- `mync.jks` und das Passwort sicher aufbewahren (z. B. Passwortmanager) und
+- Den Keystore und das Passwort sicher aufbewahren (z. B. Passwortmanager) und
   **nie** ins Repository legen. Geht der Schlüssel verloren, muss die App vor
   dem nächsten Update deinstalliert werden.
 - Eine bisher mit dem Debug-Schlüssel signierte Installation einmal
