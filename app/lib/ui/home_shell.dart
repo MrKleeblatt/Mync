@@ -48,8 +48,29 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   final _libraryKey = GlobalKey<LibraryPageState>();
   final _queuesKey = GlobalKey<QueuesPageState>();
 
-  /// Handy: Reiter per Wischen nach links/rechts wechseln.
+  /// Handy: Reiter per Wischen nach links/rechts wechseln. Die Statistik
+  /// hat zwei Seiten (Hörgewohnheiten, Vorschläge), damit das Wischen
+  /// durchläuft: Seite → Reiter unten.
   final _pages = PageController();
+  static const _statsPage = 2;
+
+  static int _destOf(int page) => page <= _statsPage
+      ? page
+      : page == _statsPage + 1
+      ? _statsPage
+      : page - 1;
+
+  static int _pageOf(int dest) => dest <= _statsPage ? dest : dest + 1;
+
+  /// Seiten der Wischreihe (Handy).
+  List<Widget> _swipePages() => [
+    _page(0),
+    _page(1),
+    StatsPage(view: 0, onSelectView: (v) => _goPage(_statsPage + v)),
+    StatsPage(view: 1, onSelectView: (v) => _goPage(_statsPage + v)),
+    _page(3),
+    _page(4),
+  ];
 
   /// War die Bildschirmtastatur zuletzt offen?
   bool _keyboard = false;
@@ -72,11 +93,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     _keyboard = open;
   }
 
-  void _go(int i) {
-    setState(() => _index = i);
-    if (_pages.hasClients && (_pages.page?.round() ?? i) != i) {
+  void _go(int i) => _goPage(_pageOf(i));
+
+  void _goPage(int page) {
+    setState(() => _index = _destOf(page));
+    if (_pages.hasClients && (_pages.page?.round() ?? page) != page) {
       _pages.animateToPage(
-        i,
+        page,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
       );
@@ -133,8 +156,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     if (!wide) {
       // z. B. Fenster schmaler gezogen: Seite zum gewählten Reiter
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_pages.hasClients && _pages.page?.round() != _index) {
-          _pages.jumpToPage(_index);
+        if (_pages.hasClients && _destOf(_pages.page?.round() ?? 0) != _index) {
+          _pages.jumpToPage(_pageOf(_index));
         }
       });
     }
@@ -146,10 +169,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 .copyWith(dragDevices: PointerDeviceKind.values.toSet()),
             child: PageView(
               controller: _pages,
-              onPageChanged: (i) => setState(() => _index = i),
-              children: [
-                for (var i = 0; i < _dests.length; i++) _KeepAlive(_page(i)),
-              ],
+              onPageChanged: (p) => setState(() => _index = _destOf(p)),
+              children: [for (final p in _swipePages()) _KeepAlive(p)],
             ),
           );
     if (sidePanel) {
