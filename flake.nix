@@ -5,7 +5,7 @@
   # das prüft tools/release/release_check.py in jedem Pull Request.
   #
   #   nix run github:MrKleeblatt/mync                  # neueste Version
-  #   nix profile install github:MrKleeblatt/mync/v0.8.4
+  #   nix profile install github:MrKleeblatt/mync/v0.8.5
   #
   # In einer NixOS- oder Home-Manager-Konfiguration als Paket:
   #   inputs.mync.url = "github:MrKleeblatt/mync";
@@ -15,7 +15,7 @@
   #   inputs.mync.inputs.release.inputs.nixpkgs.follows = "nixpkgs";
   description = "mync – Musikplayer mit Handy-Sync";
 
-  inputs.release.url = "https://github.com/MrKleeblatt/mync/releases/download/v0.8.4/mync-linux-x86_64.tar.gz";
+  inputs.release.url = "https://github.com/MrKleeblatt/mync/releases/download/v0.8.5/mync-linux-x86_64.tar.gz";
 
   outputs = { self, release }:
     let
