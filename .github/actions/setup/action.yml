@@ -24,10 +24,32 @@ runs:
         ln -sf "$(python3 -c 'import ziglang,os;print(os.path.dirname(ziglang.__file__))')/zig" "$HOME/bin/zig"
         echo "$HOME/bin" >> "$GITHUB_PATH"
 
+    # Zig-Caches: vor allem SQLite (vendor/) und compiler_rt/libc je Ziel, die
+    # sich selten ändern. Der Schlüssel hängt deshalb nicht an src/ – sonst
+    # entstünde bei jedem Commit ein neuer, immer größerer Eintrag. Getrennt
+    # je Job, weil Linux und Android für verschiedene Ziele bauen.
+    - uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/zig
+          core/.zig-cache
+        key: zig-0.17.1-${{ github.job }}-${{ hashFiles('core/build.zig', 'core/build.zig.zon', 'core/vendor/**') }}
+        restore-keys: zig-0.17.1-${{ github.job }}-
+
+    # Getrennt für Linux und Android: Flutter lädt die Engine-Dateien der
+    # Zielplattform erst beim Bauen nach, und gespeichert wird nur, wenn der
+    # Schlüssel fehlte – mit einem gemeinsamen Schlüssel fehlten dem Android-
+    # Job seine Dateien jedes Mal.
     - uses: actions/cache@v5
       with:
         path: ${{ runner.temp }}/flutter
-        key: flutter-3.47.9-linux
+        key: flutter-3.47.9-${{ inputs.android == 'true' && 'android' || 'linux' }}
+
+    - uses: actions/cache@v5
+      with:
+        path: ~/.pub-cache
+        key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
+        restore-keys: pub-${{ runner.os }}-
 
     # Flutter direkt von Google (wie bei Kassenbon), keine fremde Action
     - name: Flutter 3.47.9

@@ -21,3 +21,6 @@ result-*
 /.appimage-tools/
 /appimage/
 __pycache__/
+
+# direnv
+.direnv/

@@ -47,15 +47,14 @@ eine `.zsync`-Datei bei, geladen werden nur die geänderten Teile.
 nix run github:MrKleeblatt/mync
 ```
 
-Dauerhaft installieren (mit Eintrag im Anwendungsmenü), auf Wunsch eine
-bestimmte Version (`github:MrKleeblatt/mync/v0.6.0`):
+Dauerhaft installieren (mit Eintrag im Anwendungsmenü):
 
 ```bash
 nix profile install github:MrKleeblatt/mync
 ```
 
-Die Flake im Repository liefert das fertig gebaute Programm aus dem Release
-ihrer Version; nixpkgs ist dort in der `flake.lock` festgelegt und beim
+Die Flake im Repository liefert das fertig gebaute Programm aus dem neuesten
+Release; nixpkgs ist dort in der `flake.lock` festgelegt und beim
 Release geprüft.
 
 ### NixOS und Home Manager
@@ -161,6 +160,14 @@ mync/
 - ✅ Sync mit dem Handy: Kopplung, verschlüsselter Kanal, Inbox, Anwenden (M1, Teile von M2)
 
 ## Entwickeln
+
+Die Werkzeuge (Zig 0.17.1 und Flutter 3.47 aus nixpkgs-unstable, GTK, libmpv,
+gh, just, keytool, apksigner, …) liefert die Devshell in `dev/flake.nix` nach
+dem Muster von project-flake: `nix develop ./dev` oder mit direnv
+`direnv allow`. Android-SDK und NDK sind nicht dabei. Wurde die Linux-App
+vorher außerhalb der Devshell gebaut, erst `app/build/linux` löschen (alter
+CMake-Cache). Sie setzt auch Git-Hooks, die Commits auf und Pushes
+nach `master` verhindern. Häufige Befehle stehen im `justfile` (`just`).
 
 ```bash
 # Voraussetzungen: Zig 0.17.1, Flutter; für Android zusätzlich das NDK

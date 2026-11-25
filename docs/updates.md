@@ -51,8 +51,8 @@ Wie bei Kassenbon ist **jeder Merge nach `master` ein Release**:
 
 1. Entwickelt wird auf einem eigenen Branch (z. B. `dev/<thema>`).
 2. Im Branch die Version in `app/pubspec.yaml` erhöhen (z. B.
-   `version: 0.7.0+7`) und die Adresse in `flake.nix` (`inputs.release.url`)
-   auf dasselbe Release setzen – die Versionsprüfung lehnt Abweichungen ab.
+   `version: 0.7.0+7`). Sonst steht die Version nirgends – `flake.nix`
+   verweist immer auf das neueste Release.
 3. Pull Request nach `master` öffnen. Der Workflow **„Prüfen und bauen“**
    (`.github/workflows/ci.yml`) läuft automatisch:
    - **Version prüfen** (`tools/release/release_check.py`): Den Tag
@@ -102,8 +102,9 @@ deren unveränderte Dateien (bis zur Umstellung nach
 - **Im Release:** Der Linux-Tarball enthält `flake.nix` (aus
   `packaging/nix/flake.nix`, Version eingesetzt) und `flake.lock`
   (nixpkgs festgelegt); der Workflow prüft beides mit `nix flake check`.
-- **Im Repository:** `flake.nix` bindet das Release ihrer Version ein
-  (`nix run github:MrKleeblatt/mync`, Tags = Versionen) und bietet das
+- **Im Repository:** `flake.nix` bindet das neueste Release ein
+  (`releases/latest/download/…`, `nix run github:MrKleeblatt/mync`; ältere
+  Versionen lassen sich darüber nicht installieren) und bietet das
   Paket (`packages`) und `overlays.default` – bewusst kein NixOS-Modul. Vor dem Release gibt es
   dessen Tarball noch nicht – PR- und Release-Workflow prüfen die Flake
   deshalb mit `--override-input release path:stage`.

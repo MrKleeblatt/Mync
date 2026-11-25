@@ -4,8 +4,6 @@
 Jeder Merge nach master wird ein Release. Deshalb muss jeder Pull Request
 die Version in app/pubspec.yaml erhöhen: Es darf den Tag v<version> noch
 nicht geben, und die Version muss höher sein als der höchste Tag v*.
-Außerdem muss die Flake im Repository (flake.nix) auf genau dieses Release
-verweisen.
 
   release_check.py            prüfen (Exit-Code 1 bei Fehler)
   release_check.py --tag      prüfen und den Tag ausgeben, z. B. v0.6.0
@@ -48,23 +46,9 @@ def tags():
     return sorted(out)
 
 
-def flake_release_tag():
-    """Release, auf das die Flake im Repository verweist (inputs.release.url)."""
-    path = os.path.join(ROOT, "flake.nix")
-    if not os.path.exists(path):
-        return None
-    with open(path, encoding="utf-8") as f:
-        m = re.search(r"/releases/download/(v[0-9.]+)/", f.read())
-    return m.group(1) if m else None
-
-
 def check():
     version = app_version()
     tag = "v" + version
-    flake_tag = flake_release_tag()
-    if flake_tag is not None and flake_tag != tag:
-        sys.exit(f"flake.nix verweist auf {flake_tag}, app/pubspec.yaml hat {version} – "
-                 f"bitte die Adresse in flake.nix (inputs.release.url) anpassen.")
     existing = tags()
     if any(t == tag for _, t in existing):
         sys.exit(f"Den Tag {tag} gibt es schon – bitte die Version in app/pubspec.yaml erhöhen.")
