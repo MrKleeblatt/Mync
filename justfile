@@ -33,9 +33,16 @@ generate-cert file="~/.local/share/mync/mync.jks":
         echo "$file gibt es schon – nicht überschreiben, sonst lassen sich keine Updates mehr installieren." >&2
         exit 1
     fi
+    dir=$(dirname "$file")
+    if [ ! -d "$dir" ]; then
+        read -r -p "$dir gibt es noch nicht. Anlegen? [j/N] " answer
+        case "$answer" in
+            [jJyY]*) mkdir -p "$dir" ;;
+            *) echo "Abgebrochen." >&2; exit 1 ;;
+        esac
+    fi
     KEYSTORE_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 || true)
     export KEYSTORE_PASSWORD
-    mkdir -p "$(dirname "$file")"
     keytool -genkeypair -keystore "$file" -alias mync -keyalg RSA -keysize 2048 -validity 10000 \
         -dname "CN=mync" -storepass:env KEYSTORE_PASSWORD
     printf %s "$KEYSTORE_PASSWORD" | xclip -selection clipboard
