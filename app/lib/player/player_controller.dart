@@ -194,6 +194,7 @@ class PlayerController extends ChangeNotifier {
     _subs.addAll([
       player.stream.playing.listen((v) {
         playing = v;
+        if (v) barClosed = false; // läuft wieder: Leiste zurück
         _session?.resetAnchor();
         _trackSession();
         notifyListeners();
@@ -483,6 +484,21 @@ class PlayerController extends ChangeNotifier {
     queue.replace(paths, start: start);
     await _openQueue(play: true);
     _save();
+  }
+
+  /// Wiedergabeleiste unten geschlossen (weggewischt): pausiert, Leiste
+  /// verborgen, bis wieder etwas abgespielt wird.
+  bool barClosed = false;
+
+  /// Zählt das Schließen (Schlüssel der Leiste, damit sie neu erscheint).
+  int barClosings = 0;
+
+  Future<void> closeBar() async {
+    barClosed = true;
+    barClosings++;
+    notifyListeners();
+    if (playing) await player.pause();
+    _debug('Wiedergabeleiste geschlossen');
   }
 
   Future<void> playPause() async {

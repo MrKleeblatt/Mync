@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../log.dart';
 import 'channel.dart';
 import 'discovery.dart';
+import 'mdns.dart';
 import 'sync_session.dart';
 import 'sync_store.dart';
 import '../core/music_fs.dart';
@@ -43,7 +44,9 @@ class SyncService extends ChangeNotifier {
     required this.host,
     required this.deviceName,
     this.port = defaultPort,
-  }) : store = SyncStore(dataDir);
+    Mdns? mdns,
+  }) : store = SyncStore(dataDir),
+       _mdns = mdns ?? Mdns.platform();
 
   static const defaultPort = 47788;
   static const discoveryPort = 47789;
@@ -53,6 +56,7 @@ class SyncService extends ChangeNotifier {
   final String deviceName;
   final int port;
 
+  final Mdns _mdns;
   ServerSocket? _server;
   RawDatagramSocket? _discovery;
   int? get listeningPort => _server?.port;
@@ -115,7 +119,26 @@ class SyncService extends ChangeNotifier {
     } catch (_) {
       // Port belegt (zweite Instanz) – gefunden werden geht dann nur per Adresse
     }
+    unawaited(_advertise());
     notifyListeners();
+  }
+
+  /// Per mDNS bekannt machen: Kennung, Name und bis wann gekoppelt werden
+  /// darf (TXT), Port (SRV). Erneut bei jeder Änderung der Kopplung.
+  Future<void> _advertise() async {
+    final s = _server;
+    if (s == null) return;
+    final until = pairingAllowed ? pairingUntil!.millisecondsSinceEpoch : 0;
+    await _mdns.advertise(
+      instance: 'mync-${store.identity.id}',
+      port: s.port,
+      txt: {
+        'mync': '1',
+        'id': store.identity.id,
+        'name': store.identity.name,
+        'pair': '${until ~/ 1000}',
+      },
+    );
   }
 
   Future<void> stopServer() async {
@@ -123,6 +146,7 @@ class SyncService extends ChangeNotifier {
     _server = null;
     _discovery?.close();
     _discovery = null;
+    unawaited(_mdns.stopAdvertising());
     notifyListeners();
   }
 
@@ -132,14 +156,19 @@ class SyncService extends ChangeNotifier {
   Stream<Discovered> discoverStream({
     Duration timeout = const Duration(seconds: 4),
     void Function(List<String> subnets)? onSubnets,
+    void Function(List<String> own)? onAddresses,
   }) async* {
     final seen = <String>{};
-    await for (final r in queryNetwork(
-      port: discoveryPort,
-      hints: {for (final p in store.peers.values) ?p.host},
-      timeout: timeout,
-      onSubnets: onSubnets,
-    )) {
+    await for (final r in _merge([
+      queryNetwork(
+        port: discoveryPort,
+        hints: {for (final p in store.peers.values) ?p.host},
+        timeout: timeout,
+        onSubnets: onSubnets,
+        onAddresses: onAddresses,
+      ),
+      _mdns.browse(timeout: timeout).map(_fromMdns),
+    ])) {
       final j = r.data;
       if (j['mync'] != 1 || j['id'] is! String || j['port'] is! int) continue;
       final id = j['id'] as String;
@@ -159,6 +188,45 @@ class SyncService extends ChangeNotifier {
       }
       yield d;
     }
+  }
+
+  /// mDNS-Fund wie eine Antwort auf dem Erkennungsport darstellen.
+  static DiscoveryReply _fromMdns(MdnsFound f) {
+    final pair = int.tryParse(f.txt['pair'] ?? '') ?? 0;
+    return (
+      host: f.host,
+      data: {
+        'mync': int.tryParse(f.txt['mync'] ?? ''),
+        'id': f.txt['id'],
+        'name': f.txt['name'],
+        'port': f.port,
+        'pairing': pair * 1000 > DateTime.now().millisecondsSinceEpoch,
+      },
+    );
+  }
+
+  /// Führt mehrere Ströme zusammen; endet, wenn alle geendet haben.
+  static Stream<T> _merge<T>(List<Stream<T>> streams) {
+    final out = StreamController<T>();
+    final subs = <StreamSubscription<T>>[];
+    var open = streams.length;
+    for (final s in streams) {
+      subs.add(
+        s.listen(
+          out.add,
+          onError: (Object e) {}, // ein Weg fällt aus, der andere sucht weiter
+          onDone: () {
+            if (--open == 0) out.close();
+          },
+        ),
+      );
+    }
+    out.onCancel = () async {
+      for (final s in subs) {
+        await s.cancel();
+      }
+    };
+    return out.stream;
   }
 
   /// Wie [discoverStream], liefert aber alle Funde auf einmal.
@@ -210,12 +278,14 @@ class SyncService extends ChangeNotifier {
   /// Kopplung für 2 Minuten erlauben (das andere Gerät sucht und verbindet sich).
   void allowPairing({Duration duration = const Duration(minutes: 2)}) {
     pairingUntil = DateTime.now().add(duration);
+    unawaited(_advertise());
     notifyListeners();
     Timer(duration, notifyListeners);
   }
 
   void stopPairing() {
     pairingUntil = null;
+    unawaited(_advertise());
     notifyListeners();
   }
 
@@ -235,6 +305,7 @@ class SyncService extends ChangeNotifier {
     confirmPairing(false); // falls noch ein Code auf Bestätigung wartet
     pairingMode = false;
     pairingUntil = null;
+    unawaited(_advertise());
     pairing = null;
     notifyListeners();
   }
@@ -284,6 +355,7 @@ class SyncService extends ChangeNotifier {
       p.status = 'Gekoppelt ✓';
       logNetwork('Gekoppelt mit ${p.peerName} (${p.channel.peerId})');
       pairingUntil = null;
+      unawaited(_advertise());
     } catch (e, st) {
       p.result = false;
       logError('Kopplung mit ${p.peerName} fehlgeschlagen', e, st);
@@ -307,6 +379,7 @@ class SyncService extends ChangeNotifier {
   Future<void> renameDevice(String name) async {
     store.identity.name = name;
     await store.saveIdentity();
+    unawaited(_advertise());
     notifyListeners();
   }
 

@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mync/core/mync_core.dart';
+import 'package:mync/sync/mdns.dart';
 import 'package:mync/sync/sync_service.dart';
 import 'package:mync/sync/sync_session.dart';
 
@@ -78,12 +79,14 @@ void main() {
       host: pcHost,
       deviceName: 'PC',
       port: 0,
+      mdns: DartMdns(port: 45353), // nicht das mDNS des Systems
     );
     phone = SyncService(
       dataDir: '${tmp.path}/handy/data',
       host: phoneHost,
       deviceName: 'Handy',
       port: 0,
+      mdns: DartMdns(port: 45353), // nicht das mDNS des Systems
     );
     await pc.init();
     await phone.init();

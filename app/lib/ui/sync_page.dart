@@ -364,6 +364,7 @@ class _PairGuideState extends State<_PairGuide> {
 
   final _found = <String, Discovered>{};
   List<String>? _subnets;
+  List<String> _own = const [];
   bool _searching = false;
   bool _connecting = false;
   Timer? _again;
@@ -392,6 +393,9 @@ class _PairGuideState extends State<_PairGuide> {
         .discoverStream(
           onSubnets: (n) {
             if (mounted) setState(() => _subnets = n);
+          },
+          onAddresses: (a) {
+            if (mounted) setState(() => _own = a);
           },
         )
         .listen(
@@ -477,7 +481,10 @@ class _PairGuideState extends State<_PairGuide> {
                 ? 'Suche …'
                 : nets.isEmpty
                 ? 'Kein WLAN oder Hotspot gefunden'
-                : 'Durchsuche ${nets.join(', ')}',
+                : [
+                    if (_own.isNotEmpty) 'Dieses Gerät: ${_own.join(', ')}',
+                    'Durchsuche ${nets.join(', ')}',
+                  ].join('\n'),
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: c.onSurfaceVariant,

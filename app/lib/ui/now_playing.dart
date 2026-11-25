@@ -177,7 +177,7 @@ class PageMiniPlayer extends StatelessWidget {
 }
 
 /// Schmale Wiedergabeleiste am unteren Rand. Antippen oder Hochziehen
-/// öffnet den Wiedergabebildschirm.
+/// öffnet den Wiedergabebildschirm, seitlich Wegwischen schließt sie.
 class MiniPlayer extends StatefulWidget {
   const MiniPlayer({super.key, required this.onOpen});
   final VoidCallback onOpen;
@@ -211,13 +211,30 @@ class _MiniPlayerState extends State<MiniPlayer> {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onVerticalDragStart: _dragStart,
-    onVerticalDragUpdate: _dragUpdate,
-    onVerticalDragEnd: _dragEnd,
-    onVerticalDragCancel: _dragCancel,
-    child: _buildBar(context),
-  );
+  Widget build(BuildContext context) {
+    final player = context.player;
+    return ListenableBuilder(
+      listenable: player,
+      builder: (context, _) {
+        if (player.barClosed) return const SizedBox.shrink();
+        // seitlich wegwischen schließt die Leiste (wie die Benachrichtigung)
+        return Dismissible(
+          key: ValueKey('mini-${player.barClosings}'),
+          direction: player.currentTrack == null
+              ? DismissDirection.none
+              : DismissDirection.horizontal,
+          onDismissed: (_) => player.closeBar(),
+          child: GestureDetector(
+            onVerticalDragStart: _dragStart,
+            onVerticalDragUpdate: _dragUpdate,
+            onVerticalDragEnd: _dragEnd,
+            onVerticalDragCancel: _dragCancel,
+            child: _buildBar(context),
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildBar(BuildContext context) {
     final onOpen = widget.onOpen;
