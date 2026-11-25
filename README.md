@@ -47,15 +47,14 @@ eine `.zsync`-Datei bei, geladen werden nur die geänderten Teile.
 nix run github:MrKleeblatt/mync
 ```
 
-Dauerhaft installieren (mit Eintrag im Anwendungsmenü), auf Wunsch eine
-bestimmte Version (`github:MrKleeblatt/mync/v0.6.0`):
+Dauerhaft installieren (mit Eintrag im Anwendungsmenü):
 
 ```bash
 nix profile install github:MrKleeblatt/mync
 ```
 
-Die Flake im Repository liefert das fertig gebaute Programm aus dem Release
-ihrer Version; nixpkgs ist dort in der `flake.lock` festgelegt und beim
+Die Flake im Repository liefert das fertig gebaute Programm aus dem neuesten
+Release; nixpkgs ist dort in der `flake.lock` festgelegt und beim
 Release geprüft.
 
 ### NixOS und Home Manager
