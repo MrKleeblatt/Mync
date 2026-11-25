@@ -1,6 +1,10 @@
 package com.github.mrkleeblatt.mync
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -18,6 +22,20 @@ class MainActivity : AudioServiceActivity() {
     companion object {
         /** Einmal je Prozess (die Engine wird mit dem Wiedergabedienst geteilt). */
         private var volume: SystemVolume? = null
+        private var media: MediaHelper? = null
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Android 13+: ohne diese Erlaubnis zeigt Android (je nach Gerät, z. B.
+        // Samsung) keine Wiedergabe-Benachrichtigung – dann fehlt mync in der
+        // Medienausgabe und auf dem Sperrbildschirm. Musicolet fragt ebenso.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7301)
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -33,6 +51,10 @@ class MainActivity : AudioServiceActivity() {
                 this,
                 MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/volume"),
             ).apply { start() }
+        }
+        if (media == null) {
+            val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/media")
+            media = MediaHelper(this, ch).also { ch.setMethodCallHandler(it) }
         }
     }
 

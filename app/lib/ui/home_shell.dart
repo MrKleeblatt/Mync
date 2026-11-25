@@ -43,13 +43,34 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _index = 0;
   final _libraryKey = GlobalKey<LibraryPageState>();
   final _queuesKey = GlobalKey<QueuesPageState>();
 
   /// Handy: Reiter per Wischen nach links/rechts wechseln.
   final _pages = PageController();
+
+  /// War die Bildschirmtastatur zuletzt offen?
+  bool _keyboard = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Tastatur zugeklappt (z. B. per Zurück-Taste): Cursor aus dem Textfeld
+  /// nehmen, sonst springt die Tastatur später (etwa nach dem Schließen des
+  /// Wiedergabebildschirms) von selbst wieder auf.
+  @override
+  void didChangeMetrics() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    if (views.isEmpty) return;
+    final open = views.first.viewInsets.bottom > 0;
+    if (_keyboard && !open) unfocusTextInput();
+    _keyboard = open;
+  }
 
   void _go(int i) {
     setState(() => _index = i);
@@ -77,6 +98,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pages.dispose();
     super.dispose();
   }

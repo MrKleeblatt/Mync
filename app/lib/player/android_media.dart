@@ -21,6 +21,12 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
   DateTime _lastAt = DateTime(0);
   StreamSubscription<Duration>? _posSub;
 
+  /// Kanal „mync/media“ (MediaHelper.kt): Audiofokus und Toasts.
+  static const _media = MethodChannel('mync/media');
+
+  /// Wegen eines Anrufs o. Ä. angehalten: danach von selbst weiter.
+  bool _pausedByFocus = false;
+
   static Future<AndroidMedia?> start(PlayerController player) async {
     logInfo('Mediensitzung: starte …');
     // AudioService.init wartet auf die Verbindung zum Wiedergabedienst und
@@ -56,6 +62,7 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
   }
 
   void _attach() {
+    _media.setMethodCallHandler(_onMedia);
     player.addListener(_sync);
     // Sprünge (Spulen, Kapitel) erkennen und weitergeben; den normalen
     // Fortschritt rechnet Android selbst aus Position + Zeit hoch.
@@ -99,6 +106,10 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
   void _publishState() {
     if (player.playing != _lastPlaying) {
       logInfo('Mediensitzung: ${player.playing ? 'spielt' : 'pausiert'}');
+      if (player.playing) {
+        _pausedByFocus = false;
+        unawaited(_requestFocus());
+      }
     }
     _lastPlaying = player.playing;
     _lastPos = player.position;
@@ -128,6 +139,40 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
         speed: player.speed,
       ),
     );
+  }
+
+  // ─── Audiofokus (wie Musicolet) ───────────────────────────────────────
+
+  /// Beim Abspielen den Audiofokus holen: Erst dann gilt mync für Android
+  /// als die spielende Medien-App, und andere Apps verstummen.
+  Future<void> _requestFocus() async {
+    try {
+      final ok = await _media.invokeMethod<bool>('requestFocus');
+      if (ok != true) logWarning('Audiofokus nicht erhalten');
+    } catch (e, st) {
+      logError('Audiofokus anfordern fehlgeschlagen', e, st);
+    }
+  }
+
+  Future<dynamic> _onMedia(MethodCall call) async {
+    if (call.method != 'focus') return;
+    final what = call.arguments as String;
+    logInfo('Audiofokus: $what');
+    switch (what) {
+      case 'loss': // andere App spielt jetzt: anhalten
+        if (player.playing) await player.playPause();
+      case 'lossTransient': // z. B. Anruf: anhalten, danach weiter
+        if (player.playing) {
+          await player.playPause();
+          _pausedByFocus = true;
+        }
+      case 'gain':
+        if (_pausedByFocus && !player.playing) {
+          _pausedByFocus = false;
+          await player.playPause();
+        }
+      // 'duck': Android senkt die Lautstärke selbst ab
+    }
   }
 
   // ─── Medienbrowser (Karte „Wiedergabe fortsetzen“) ────────────────────
@@ -237,7 +282,21 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
 void listenSystemVolume(PlayerController player) {
   const MethodChannel('mync/volume').setMethodCallHandler((call) async {
     if (call.method == 'musicVolume') {
+      final wasPlaying = player.playing;
       await player.onSystemVolume((call.arguments as num).toInt());
+      // wie Musicolet: kurz sagen, warum die Musik aufhört
+      if (wasPlaying && !player.playing) {
+        unawaited(_toast('Pause, weil der Ton stummgeschaltet ist'));
+      }
     }
   });
+}
+
+/// Kurzer Hinweis als Toast (erscheint auch, wenn mync im Hintergrund ist).
+Future<void> _toast(String text) async {
+  try {
+    await const MethodChannel('mync/media').invokeMethod('toast', text);
+  } catch (e, st) {
+    logError('Hinweis „$text“ nicht gezeigt', e, st);
+  }
 }
