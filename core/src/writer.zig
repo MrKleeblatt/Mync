@@ -1172,7 +1172,8 @@ fn writeWav(gpa: Allocator, io: Io, dir: Io.Dir, path: []const u8, fields: []con
 
 const testing = std.testing;
 
-fn field(name: []const u8, v: []const u8) Field {
+// comptime: sonst zeigt `values` auf ein Array im Stack dieser Funktion
+fn field(comptime name: []const u8, comptime v: []const u8) Field {
     return .{ .name = name, .values = &.{v} };
 }
 
@@ -1206,7 +1207,7 @@ fn checkRoundtrip(name: []const u8, extra_lyrics: bool) !void {
         const line = "Zeile\n";
         const long = try a.alloc(u8, line.len * 2000);
         for (0..2000) |i| @memcpy(long[i * line.len ..][0..line.len], line);
-        try fields.append(a, field("lyrics", long));
+        try fields.append(a, .{ .name = "lyrics", .values = try a.dupe([]const u8, &.{long}) });
     }
     try writeFile(a, testing.io, tmp.dir, name, fields.items, .keep);
 

@@ -56,28 +56,40 @@ nix profile install github:MrKleeblatt/mync
 
 Die Flake im Repository liefert das fertig gebaute Programm aus dem Release
 ihrer Version; nixpkgs ist dort in der `flake.lock` festgelegt und beim
-Release geprüft. Für NixOS gibt es `nixosModules.default` und
-`overlays.default`:
+Release geprüft.
+
+### NixOS und Home Manager
+
+mync ist ein ganz normales Paket. Eingang in der `flake.nix` der eigenen
+Konfiguration:
 
 ```nix
-{
-  inputs.mync.url = "github:MrKleeblatt/mync";
-  # optional eigenes nixpkgs: inputs.mync.inputs.release.inputs.nixpkgs.follows = "nixpkgs";
-  outputs = { nixpkgs, mync, ... }: {
-    nixosConfigurations.rechner = nixpkgs.lib.nixosSystem {
-      modules = [ mync.nixosModules.default ./configuration.nix ];
-    };
-  };
+inputs.mync = {
+  url = "github:MrKleeblatt/mync";
+  # optional eigenes nixpkgs statt des im Release festgelegten:
+  inputs.release.inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+`mync` per `extraSpecialArgs` (Home Manager) bzw. `specialArgs` (NixOS)
+durchreichen und wie jedes andere Programm eintragen:
+
+```nix
+{ pkgs, mync, ... }: {
+  home.packages = [ mync.packages.${pkgs.stdenv.hostPlatform.system}.default ];
+  # bzw. environment.systemPackages = [ … ];
 }
 ```
 
-**Updates:** mync meldet neue Versionen selbst („mync 0.7.0 ist verfügbar“)
-und zeigt den Befehl dazu (`nix profile upgrade --refresh mync`, bei NixOS
-`nix flake update mync` und neu bauen). Selbst installieren kann die
-Nix-Variante nicht – das macht Nix.
+Oder über das Overlay: `nixpkgs.overlays = [ mync.overlays.default ];`, dann
+heißt das Paket `pkgs.mync`.
 
-Grafik: Auf NixOS braucht es `hardware.graphics.enable = true;` (setzt das
-Modul), auf anderen Distributionen startet man Nix-Grafikprogramme über
+**Updates:** mync meldet neue Versionen selbst („mync 0.7.0 ist verfügbar“)
+und zeigt den Befehl dazu (`nix profile upgrade --refresh mync`, in einer
+Flake-Konfiguration `nix flake update mync` und neu bauen). Selbst
+installieren kann die Nix-Variante nicht – das macht Nix.
+
+Außerhalb von NixOS startet man Nix-Grafikprogramme über
 [nixGL](https://github.com/nix-community/nixGL). Auch ohne Repository geht
 es direkt aus dem Release-Tarball:
 `nix run https://github.com/MrKleeblatt/mync/releases/latest/download/mync-linux-x86_64.tar.gz`.
@@ -86,7 +98,7 @@ es direkt aus dem Release-Tarball:
 
 ```bash
 # Build-Abhängigkeiten: Zig 0.17.1 (extra/zig oder AUR) und Flutter (AUR: flutter-bin)
-git clone -b docs/konzept https://github.com/mrkleeblatt/mync.git
+git clone https://github.com/MrKleeblatt/mync.git
 cd mync/packaging/arch
 makepkg -si
 ```

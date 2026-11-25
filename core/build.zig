@@ -1,7 +1,10 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
+    // Ohne -Dtarget nicht für den Prozessor des Build-Rechners bauen
+    // (native): Der Release-Runner hat AVX2/BMI2/SHA-NI, ältere Rechner nicht
+    // und stürzten mit SIGILL ab.
+    const target = b.standardTargetOptions(.{ .default_target = .{ .cpu_model = .baseline } });
     const optimize = b.standardOptimizeOption(.{});
 
     const sqlite_flags = [_][]const u8{

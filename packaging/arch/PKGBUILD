@@ -15,9 +15,7 @@ depends=('gtk3' 'mpv' 'mimalloc')
 makedepends=('git' 'zig' 'flutter' 'clang' 'cmake' 'ninja' 'pkgconf')
 provides=('mync')
 conflicts=('mync')
-# Der Code liegt derzeit auf dem Branch docs/konzept; nach dem Zusammenführen
-# „#branch=docs/konzept“ entfernen.
-source=('mync::git+https://github.com/mrkleeblatt/mync.git#branch=docs/konzept')
+source=('mync::git+https://github.com/mrkleeblatt/mync.git')
 sha256sums=('SKIP')
 
 pkgver() {
