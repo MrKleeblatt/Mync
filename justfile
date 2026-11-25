@@ -1,38 +1,30 @@
-# die Werkzeuge kommen aus der Devshell (`nix develop ./dev` oder direnv)
-
 [private]
 default:
     @just --list
 
-# Kern bauen
 [group("Entwicklung")]
-core:
+build-core:
     cd core && zig build
 
-# Kern testen, dann die FFI-Tests der App gegen den gebauten Kern
 [group("Entwicklung")]
 test:
     cd core && zig build test && zig build
     cd app && LD_LIBRARY_PATH=../core/zig-out/lib flutter test
 
-# App unter Linux starten (CMake baut den Zig-Kern mit; libmpv nötig)
 [group("Entwicklung")]
 run *args:
     cd app && flutter run -d linux {{ args }}
 
-# APKs bauen; signiert mit festem Schlüssel, wenn KEYSTORE_FILE gesetzt ist (siehe app/README.md)
 [group("Android")]
-apk:
+build-apk:
     cd app && flutter build apk --split-per-abi
 
-# womit eine APK signiert ist
 [group("Android")]
-apk-cert apk="app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk":
+print-cert apk="app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk":
     apksigner verify --print-certs {{ apk }}
 
-# Signaturschlüssel anlegen (einmalig): Passwort erzeugen und in die Zwischenablage, Keystore anlegen
 [group("Android")]
-keystore file="~/mync.jks":
+generate-cert file="~/.local/share/mync/mync.jks":
     #!/usr/bin/env bash
     set -euo pipefail
     file={{ file }}
@@ -41,17 +33,24 @@ keystore file="~/mync.jks":
         echo "$file gibt es schon – nicht überschreiben, sonst lassen sich keine Updates mehr installieren." >&2
         exit 1
     fi
+    dir=$(dirname "$file")
+    if [ ! -d "$dir" ]; then
+        read -r -p "$dir gibt es noch nicht. Anlegen? [j/N] " answer
+        case "$answer" in
+            [jJyY]*) mkdir -p "$dir" ;;
+            *) echo "Abgebrochen." >&2; exit 1 ;;
+        esac
+    fi
     KEYSTORE_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 || true)
     export KEYSTORE_PASSWORD
     keytool -genkeypair -keystore "$file" -alias mync -keyalg RSA -keysize 2048 -validity 10000 \
         -dname "CN=mync" -storepass:env KEYSTORE_PASSWORD
     printf %s "$KEYSTORE_PASSWORD" | xclip -selection clipboard
     echo "$file angelegt. Das Passwort liegt in der Zwischenablage: im Passwortmanager speichern,"
-    echo "dann mit \`just keystore-secrets\` in GitHub hinterlegen."
+    echo "dann mit \`just upload-cert\` in GitHub hinterlegen."
 
-# Keystore als Secrets für den Workflow „Release“ hinterlegen (vorher `gh auth login`); fragt das Passwort ab
 [group("Android")]
-keystore-secrets file="~/mync.jks":
+upload-cert file="~/.local/share/mync/mync.jks":
     #!/usr/bin/env bash
     set -euo pipefail
     file={{ file }}
