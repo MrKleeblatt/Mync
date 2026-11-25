@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../log.dart';
 
-enum _Filter { all, network, problems }
+enum _Filter { all, info, network, problems }
 
 void openLogPage(BuildContext context) =>
     Navigator.of(context)
@@ -25,6 +25,7 @@ class _LogPageState extends State<LogPage> {
 
   bool _shown(LogEntry e) => switch (_filter) {
     _Filter.all => true,
+    _Filter.info => e.level == LogLevel.info,
     _Filter.network => e.level == LogLevel.network,
     _Filter.problems =>
       e.level == LogLevel.warning || e.level == LogLevel.error,
@@ -80,6 +81,11 @@ class _LogPageState extends State<LogPage> {
                             icon: Icon(Icons.list),
                           ),
                           const ButtonSegment(
+                            value: _Filter.info,
+                            label: Text('Info'),
+                            icon: Icon(Icons.info_outline),
+                          ),
+                          const ButtonSegment(
                             value: _Filter.network,
                             label: Text('Netz'),
                             icon: Icon(Icons.swap_vert),
@@ -87,7 +93,7 @@ class _LogPageState extends State<LogPage> {
                           ButtonSegment(
                             value: _Filter.problems,
                             label: Text('${widget.log.problems}'),
-                            icon: const Icon(Icons.error_outline),
+                            icon: const Icon(Icons.warning_amber_outlined),
                           ),
                         ],
                         selected: {_filter},
