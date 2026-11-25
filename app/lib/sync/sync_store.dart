@@ -112,10 +112,14 @@ class SyncStore {
     } else {
       identity = DeviceIdentity(
         id: id['id'] as String,
-        name: id['name'] as String,
+        // früher fester Platzhalter: durch den echten Gerätenamen ersetzen
+        name: id['name'] == 'Android-Handy'
+            ? defaultName
+            : id['name'] as String,
         secret: unhex(id['secret'] as String),
         public: unhex(id['public'] as String),
       );
+      if (id['name'] != identity.name) await saveIdentity();
     }
     peers.clear();
     for (final p in (await _read('peers.json') as List? ?? const [])) {

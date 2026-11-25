@@ -45,6 +45,19 @@ Future<List<String>> localIpv4Addresses() async {
   ];
 }
 
+/// Name dieses Geräts: unter Android der Gerätename aus den Einstellungen
+/// (z. B. „Galaxy S23 von Max“), sonst der Rechnername.
+Future<String> localDeviceName() async {
+  if (Platform.isAndroid) {
+    try {
+      final n = await _net.invokeMethod<String>('deviceName');
+      if (n != null && n.trim().isNotEmpty) return n.trim();
+    } catch (_) {}
+    return 'Android-Handy';
+  }
+  return Platform.localHostname;
+}
+
 bool isPrivateIpv4(String ip) {
   final p = ip.split('.').map(int.tryParse).toList();
   if (p.length != 4 || p.contains(null)) return false;
@@ -121,6 +134,7 @@ Stream<DiscoveryReply> queryNetwork({
   Duration timeout = const Duration(seconds: 4),
   Future<List<String>> Function() addresses = localIpv4Addresses,
   void Function(List<String> subnets)? onSubnets,
+  void Function(List<String> own)? onAddresses,
 }) {
   final out = StreamController<DiscoveryReply>();
   RawDatagramSocket? socket;
@@ -151,6 +165,7 @@ Stream<DiscoveryReply> queryNetwork({
       end = Timer(timeout, stop);
       final own = await addresses();
       onSubnets?.call({for (final c in own) scanNetLabel(c)}.toList());
+      onAddresses?.call([for (final c in own) c.split('/').first]);
       final targets = <String>{
         '255.255.255.255',
         for (final c in own) broadcastOf(c),

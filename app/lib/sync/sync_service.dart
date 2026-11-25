@@ -132,6 +132,7 @@ class SyncService extends ChangeNotifier {
   Stream<Discovered> discoverStream({
     Duration timeout = const Duration(seconds: 4),
     void Function(List<String> subnets)? onSubnets,
+    void Function(List<String> own)? onAddresses,
   }) async* {
     final seen = <String>{};
     await for (final r in queryNetwork(
@@ -139,6 +140,7 @@ class SyncService extends ChangeNotifier {
       hints: {for (final p in store.peers.values) ?p.host},
       timeout: timeout,
       onSubnets: onSubnets,
+      onAddresses: onAddresses,
     )) {
       final j = r.data;
       if (j['mync'] != 1 || j['id'] is! String || j['port'] is! int) continue;

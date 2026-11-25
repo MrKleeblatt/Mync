@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -51,6 +52,9 @@ class MainActivity : AudioServiceActivity() {
             .setMethodCallHandler(AppUpdate(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/net")
             .setMethodCallHandler { call, result ->
+                if (call.method == "deviceName") {
+                    return@setMethodCallHandler result.success(deviceName())
+                }
                 if (call.method != "ipv4") return@setMethodCallHandler result.notImplemented()
                 try {
                     // mit Netzgröße und auch für die Hotspot-Schnittstelle,
@@ -87,5 +91,27 @@ class MainActivity : AudioServiceActivity() {
         if (fs?.onActivityResult(requestCode, resultCode, data) == true) return
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    /** Gerätename wie in den Einstellungen („Über das Telefon“), sonst Modell. */
+    private fun deviceName(): String {
+        val cr = contentResolver
+        val names = listOf(
+            {
+                if (Build.VERSION.SDK_INT >= 25) {
+                    Settings.Global.getString(cr, Settings.Global.DEVICE_NAME)
+                } else null
+            },
+            { Settings.Secure.getString(cr, "bluetooth_name") },
+            { Settings.System.getString(cr, "device_name") },
+        )
+        for (n in names) {
+            val v = try { n() } catch (e: Exception) { null }
+            if (!v.isNullOrBlank()) return v.trim()
+        }
+        val model = Build.MODEL ?: "Android"
+        val maker = Build.MANUFACTURER ?: ""
+        return if (model.startsWith(maker, ignoreCase = true)) model
+        else "${maker.replaceFirstChar { it.uppercase() }} $model".trim()
     }
 }

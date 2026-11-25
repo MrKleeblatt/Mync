@@ -16,6 +16,7 @@ import 'ui/home_shell.dart';
 import 'ui/app_theme.dart';
 import 'ui/compact_window.dart';
 import 'ui/scope.dart';
+import 'sync/discovery.dart';
 import 'sync/library_sync_host.dart';
 import 'sync/sync_service.dart';
 import 'ui/sync_page.dart';
@@ -48,7 +49,7 @@ Future<void> main() async {
   final sync = SyncService(
     dataDir: settings.dataDir,
     host: LibrarySyncHost(library, settings),
-    deviceName: Platform.isAndroid ? 'Android-Handy' : Platform.localHostname,
+    deviceName: await localDeviceName(),
   );
   SyncScope.service = sync;
   await sync.init();
