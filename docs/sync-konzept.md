@@ -173,7 +173,11 @@ Byte-Gleichheit.
 > ChaCha20-Poly1305 mit Zähler-Nonces und Schlüsselbestätigung. Kopplung:
 > 6-stelliger Code aus beiden Schlüsseln und Zufallswerten, mit Commitment,
 > damit ein Angreifer im Netz den Code nicht passend erzeugen kann.
-> Geräte finden sich per UDP-Broadcast (Port 47789). Anfragen: `manifest`,
+> Geräte finden sich auf zwei Wegen gleichzeitig: per mDNS/DNS-SD
+> (`_mync._tcp.local`, TXT: `id`, `name`, `pair` = Kopplung erlaubt bis,
+> Unix-Sekunden; Android über NsdManager, sonst eigene Umsetzung in
+> `mdns.dart` neben Avahi auf Port 5353) und per UDP-Anfrage auf Port 47789
+> an Broadcast und jede Adresse im eigenen Netz (bis /22). Anfragen: `manifest`,
 > `tags`, `file` (in Blöcken). Code: `app/lib/sync/`, Krypto im Zig-Kern.
 
 - **Verbindung:** HTTPS (TLS mit selbstsignierten Zertifikaten) im lokalen Netz.

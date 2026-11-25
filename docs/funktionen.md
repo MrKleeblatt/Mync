@@ -97,7 +97,8 @@ mync läuft auf PC und Handy; abgeglichen wird der Hauptmusikordner.
 4. **Fertig:** Der gemeinsame Stand wird gespeichert – nicht Angenommenes
    erscheint beim nächsten Mal wieder.
 
-Verbindung: TCP im Heimnetz (Port 47788, Suche per UDP 47789),
+Verbindung: TCP im Heimnetz (Port 47788; Suche per mDNS `_mync._tcp` und
+UDP 47789 – in der Firewall des Rechners freigeben),
 Ende-zu-Ende verschlüsselt (X25519 + ChaCha20-Poly1305); fremde Geräte ohne
 Kopplung werden abgelehnt.
 

@@ -27,6 +27,7 @@ class MainActivity : AudioServiceActivity() {
         /** Einmal je Prozess (die Engine wird mit dem Wiedergabedienst geteilt). */
         private var volume: SystemVolume? = null
         private var media: MediaHelper? = null
+        private var mdns: Mdns? = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,6 +80,10 @@ class MainActivity : AudioServiceActivity() {
                 this,
                 MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/volume"),
             ).apply { start() }
+        }
+        if (mdns == null) {
+            val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/mdns")
+            mdns = Mdns(applicationContext, ch).also { ch.setMethodCallHandler(it) }
         }
         if (media == null) {
             val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mync/media")
