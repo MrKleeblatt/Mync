@@ -14,12 +14,24 @@ import 'track_list.dart';
 /// App ([view] fest, [onSelectView] beim Antippen) – so läuft das Wischen
 /// durch, statt in den Unterreitern festzuhängen.
 class StatsPage extends StatefulWidget {
-  const StatsPage({super.key, this.view, this.onSelectView});
+  const StatsPage({
+    super.key,
+    this.view,
+    this.onSelectView,
+    this.pages,
+    this.firstPage = 0,
+  });
 
   /// Fest gewählter Unterreiter (0 Hörgewohnheiten, 1 Vorschläge); null =
   /// beide mit eigenem Wischen (PC).
   final int? view;
   final ValueChanged<int>? onSelectView;
+
+  /// Seiten der App und Index der ersten Statistik-Seite: Beim Wischen
+  /// zwischen den beiden Unterreitern bleibt der Kopf (Überschrift,
+  /// Reiter) stehen, nur der Inhalt gleitet.
+  final PageController? pages;
+  final int firstPage;
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -34,9 +46,40 @@ class _StatsPageState extends State<StatsPage>
   );
 
   @override
+  void initState() {
+    super.initState();
+    widget.pages?.addListener(_onPages);
+  }
+
+  @override
   void didUpdateWidget(StatsPage old) {
     super.didUpdateWidget(old);
+    if (old.pages != widget.pages) {
+      old.pages?.removeListener(_onPages);
+      widget.pages?.addListener(_onPages);
+    }
     if (widget.view != null) _tabs.index = widget.view!;
+  }
+
+  /// Stand der App-Seiten relativ zur ersten Statistik-Seite
+  /// (0 = Hörgewohnheiten, 1 = Vorschläge, dazwischen beim Wischen).
+  double get _local {
+    final c = widget.pages;
+    if (c == null || c.positions.length != 1) return (widget.view ?? 0) * 1.0;
+    final pos = c.position;
+    if (!pos.hasContentDimensions || !pos.hasPixels) {
+      return (widget.view ?? 0) * 1.0;
+    }
+    return (c.page ?? 0) - widget.firstPage;
+  }
+
+  void _onPages() {
+    if (!mounted || _tabs.indexIsChanging) return;
+    final v = widget.view ?? 0;
+    // Markierung unter den Reitern folgt dem Wischen
+    final off = v == 0 ? _local.clamp(0.0, 1.0) : (_local - 1).clamp(-1.0, 0.0);
+    if (_tabs.offset != off) _tabs.offset = off;
+    setState(() {});
   }
 
   StatsRange _range = StatsRange.thisMonth;
@@ -45,6 +88,7 @@ class _StatsPageState extends State<StatsPage>
 
   @override
   void dispose() {
+    widget.pages?.removeListener(_onPages);
     _tabs.dispose();
     super.dispose();
   }
@@ -52,8 +96,9 @@ class _StatsPageState extends State<StatsPage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
+    final header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -61,8 +106,6 @@ class _StatsPageState extends State<StatsPage>
         ),
         TabBar(
           controller: _tabs,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
           onTap: widget.view == null
               ? null
               : (i) {
@@ -74,20 +117,49 @@ class _StatsPageState extends State<StatsPage>
             Tab(text: 'Vorschläge'),
           ],
         ),
-        Expanded(
-          child: ListenableBuilder(
-            listenable: Listenable.merge([context.player, context.library]),
-            builder: (context, _) => switch (widget.view) {
-              0 => _statsView(context),
-              1 => _suggestionsView(context),
-              _ => TabBarView(
-                controller: _tabs,
-                children: [_statsView(context), _suggestionsView(context)],
-              ),
-            },
-          ),
-        ),
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, box) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _pinned(header, box.maxWidth),
+          Expanded(
+            child: ListenableBuilder(
+              listenable: Listenable.merge([context.player, context.library]),
+              builder: (context, _) => switch (widget.view) {
+                0 => _statsView(context),
+                1 => _suggestionsView(context),
+                _ => TabBarView(
+                  controller: _tabs,
+                  children: [_statsView(context), _suggestionsView(context)],
+                ),
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Kopf beim Wischen zwischen den Unterreitern an Ort und Stelle halten:
+  /// Die Seite „Hörgewohnheiten“ zeigt ihn während des Wechsels, um den
+  /// Weg der Seite verschoben; „Vorschläge“ erst, wenn sie ganz da ist.
+  Widget _pinned(Widget header, double width) {
+    if (widget.pages == null || widget.view == null) return header;
+    final l = _local;
+    final first = widget.view == 0;
+    final dx = first ? l.clamp(0.0, 1.0) : (l - 1).clamp(-1.0, 0.0);
+    final visible = first ? l < 0.999 : l >= 0.999;
+    return IgnorePointer(
+      ignoring: !visible,
+      child: Opacity(
+        opacity: visible ? 1 : 0,
+        child: Transform.translate(
+          offset: Offset(dx * width, 0),
+          child: header,
+        ),
+      ),
     );
   }
 
