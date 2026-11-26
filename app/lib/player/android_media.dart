@@ -109,6 +109,8 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
       if (player.playing) {
         _pausedByFocus = false;
         unawaited(_requestFocus());
+        // kurz danach nachsehen, ob Android die Wiedergabe anzeigt
+        Timer(const Duration(seconds: 3), () => unawaited(diagnose()));
       }
     }
     _lastPlaying = player.playing;
@@ -139,6 +141,64 @@ class AndroidMedia extends BaseAudioHandler with SeekHandler {
         speed: player.speed,
       ),
     );
+  }
+
+  // ─── Diagnose, Akku ───────────────────────────────────────────────────
+
+  String? _lastDiagnosis;
+
+  /// Schreibt ins Logbuch, ob Android die Wiedergabe als solche führt
+  /// (Benachrichtigung, Vordergrunddienst) und was dagegen spricht – nur
+  /// wenn sich etwas geändert hat.
+  Future<void> diagnose() async {
+    try {
+      final d = Map<String, dynamic>.from(
+        await _media.invokeMethod<Map>('diagnose') ?? const {},
+      );
+      final problems = [
+        if (d['notifications'] == false) 'Benachrichtigungen aus',
+        if (d['channel'] == 0) 'Kanal „Wiedergabe“ aus',
+        if (d['service'] == false) 'Wiedergabedienst läuft nicht',
+        if (d['service'] == true && d['foreground'] == false)
+          'Dienst nicht im Vordergrund',
+        if (d['mediaNotifications'] == 0) 'keine Medien-Benachrichtigung',
+        if (d['batteryOptimized'] == true) 'Akku-Optimierung an',
+        if (d['backgroundRestricted'] == true) 'Hintergrund eingeschränkt',
+      ];
+      final text =
+          'Mediensitzung geprüft (${d['device']}, Android-API ${d['sdk']}): '
+          '${problems.isEmpty ? 'alles in Ordnung' : problems.join(', ')}';
+      if (text == _lastDiagnosis) return;
+      _lastDiagnosis = text;
+      if (problems.isEmpty) {
+        logInfo(text);
+      } else {
+        logWarning('$text – Rohdaten: $d');
+      }
+    } catch (e, st) {
+      logError('Mediensitzung prüfen fehlgeschlagen', e, st);
+    }
+  }
+
+  /// Bittet Android, mync nicht wegen Akku-Optimierung zu beenden; true,
+  /// wenn das schon so ist.
+  static Future<bool> ignoreBatteryOptimizations() async {
+    try {
+      return await _media.invokeMethod<bool>('ignoreBatteryOptimizations') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Ist mync von der Akku-Optimierung ausgenommen?
+  static Future<bool> batteryUnrestricted() async {
+    try {
+      final d = await _media.invokeMethod<Map>('diagnose');
+      return d?['batteryOptimized'] == false;
+    } catch (_) {
+      return true;
+    }
   }
 
   // ─── Audiofokus (wie Musicolet) ───────────────────────────────────────

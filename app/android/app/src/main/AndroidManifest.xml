@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Ausnahme von der Akku-Optimierung erfragen (sonst beendet z. B.
+         Samsung mync im Hintergrund) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Updates: neue APK installieren (mync kommt nicht aus dem Play Store) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application

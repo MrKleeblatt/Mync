@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'dart:io';
 
+import '../player/android_media.dart';
 import '../backup/backup.dart';
 import '../core/music_fs.dart';
 import '../log.dart';
@@ -184,6 +185,7 @@ class SettingsPage extends StatelessWidget {
               ],
             ),
           ),
+          if (Platform.isAndroid) const _BackgroundTile(),
           const _Section('Darstellung'),
           SwitchListTile(
             secondary: const Icon(Icons.graphic_eq),
@@ -218,6 +220,66 @@ class SettingsPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Android: mync von der Akku-Optimierung ausnehmen, damit es im
+/// Hintergrund nicht beendet wird (z. B. Samsung).
+class _BackgroundTile extends StatefulWidget {
+  const _BackgroundTile();
+
+  @override
+  State<_BackgroundTile> createState() => _BackgroundTileState();
+}
+
+class _BackgroundTileState extends State<_BackgroundTile>
+    with WidgetsBindingObserver {
+  bool? _free;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _check();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // zurück aus den Systemeinstellungen: neu nachsehen
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.resumed) _check();
+  }
+
+  Future<void> _check() async {
+    final f = await AndroidMedia.batteryUnrestricted();
+    if (mounted) setState(() => _free = f);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: Icon(
+      _free == false ? Icons.battery_alert_outlined : Icons.battery_full,
+      color: _free == false ? Theme.of(context).colorScheme.error : null,
+    ),
+    title: const Text('Im Hintergrund weiterspielen'),
+    subtitle: Text(
+      _free == null
+          ? '…'
+          : _free!
+          ? 'Akku-Optimierung aus'
+          : 'Akku-Optimierung an – Android kann mync beenden',
+    ),
+    onTap: _free == false
+        ? () async {
+            await AndroidMedia.ignoreBatteryOptimizations();
+            await _check();
+          }
+        : null,
+  );
 }
 
 class _Section extends StatelessWidget {
