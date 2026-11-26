@@ -49,8 +49,6 @@ class PcmDecoder {
       ]) {
         await native.setProperty(k, v);
       }
-      final done = p.stream.completed.firstWhere((c) => c);
-      final failed = p.stream.error.first;
       await p.open(
         Media(MusicFs.mediaUri(path), start: start, end: end),
         play: false,
@@ -68,6 +66,12 @@ class PcmDecoder {
           'mpv ohne Dateiausgabe (ao=${ao.isEmpty ? '?' : ao})',
         );
       }
+      // erst jetzt auf Ende/Fehler warten: Endet der Strom vorher (Player
+      // geschlossen), gäbe es sonst einen nicht abgefangenen Fehler
+      final done = p.stream.completed.firstWhere((c) => c);
+      final failed = p.stream.error.first;
+      done.ignore();
+      failed.ignore();
       await native.setProperty('volume', '100');
       await p.play();
       await Future.any([done, failed.then((e) => throw StateError(e))])
