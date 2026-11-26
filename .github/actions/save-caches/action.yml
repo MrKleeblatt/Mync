@@ -6,6 +6,12 @@ description: Speichert die Caches aus der Action setup, die es noch nicht gibt (
 runs:
   using: composite
   steps:
+    - if: env.MYNC_CACHE_APT != ''
+      uses: actions/cache/save@v5
+      with:
+        path: ~/apt-debs
+        key: ${{ env.MYNC_CACHE_APT }}
+
     - if: env.MYNC_CACHE_ZIG != ''
       uses: actions/cache/save@v5
       with:
