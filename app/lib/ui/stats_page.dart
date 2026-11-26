@@ -254,6 +254,7 @@ class _StatsPageState extends State<StatsPage>
               onTap: () => player.playTracks(
                 topTracks.map((t) => t.path).toList(),
                 start: i,
+                name: 'Meistgehört',
               ),
             ),
         const SizedBox(height: 24),
@@ -343,7 +344,10 @@ class _StatsPageState extends State<StatsPage>
             FilledButton.icon(
               onPressed: tracks.isEmpty
                   ? null
-                  : () => player.playTracks(tracks.map((t) => t.path).toList()),
+                  : () => player.playTracks(
+                      tracks.map((t) => t.path).toList(),
+                      name: 'Vorschläge',
+                    ),
               icon: const Icon(Icons.play_arrow),
               label: const Text('Abspielen'),
             ),
@@ -376,8 +380,11 @@ class _StatsPageState extends State<StatsPage>
             track: list[i].track,
             selected: list[i].track.path == player.currentPath,
             subtitle: '${list[i].track.artist} · ${list[i].reason}',
-            onTap: () =>
-                player.playTracks(tracks.map((t) => t.path).toList(), start: i),
+            onTap: () => player.playTracks(
+              tracks.map((t) => t.path).toList(),
+              start: i,
+              name: 'Vorschläge',
+            ),
           ),
       ],
     );

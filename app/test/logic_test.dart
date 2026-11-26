@@ -128,4 +128,18 @@ void main() {
     // doppelte Pfade
     expect(apply(['a', 'x', 'b', 'x'], 0, [3]), ['a', 'x', 'x', 'b']);
   });
+
+  test('Warteschlange heißt wie der gemeinsame Ordner', () {
+    expect(PlayerController.folderNameOf(['Rock/a.mp3', 'Rock/b.mp3']), 'Rock');
+    expect(
+      PlayerController.folderNameOf([
+        'Hörbücher/Buch/1.opus',
+        'Hörbücher/Buch/CD2/2.opus',
+      ]),
+      'Buch',
+    );
+    expect(PlayerController.folderNameOf(['Rock/Live/x.mp3']), 'Live');
+    expect(PlayerController.folderNameOf(['Rock/a.mp3', 'Jazz/b.mp3']), isNull);
+    expect(PlayerController.folderNameOf(['a.mp3']), isNull);
+  });
 }
