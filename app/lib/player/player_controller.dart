@@ -478,12 +478,72 @@ class PlayerController extends ChangeNotifier {
   // ─── Wiedergabe ────────────────────────────────────────────────────────
 
   /// Spielt [paths] in der aktuellen Warteschlange ab [start] (ersetzt ihren Inhalt).
-  Future<void> playTracks(List<String> paths, {int start = 0}) async {
+  /// Spielt [paths] ab [start] – in einer eigenen Warteschlange, damit keine
+  /// bestehende überschrieben wird: Gibt es schon eine mit genau diesen
+  /// Titeln, geht es dort weiter; ist die laufende leer, wird sie genutzt;
+  /// sonst entsteht eine neue, benannt nach dem Ordner ([name] oder der
+  /// gemeinsame Ordner der Titel).
+  Future<void> playTracks(
+    List<String> paths, {
+    int start = 0,
+    String? name,
+  }) async {
     if (paths.isEmpty) return;
     _markUserSkip();
+    if (_loaded) queue.positionMs = position.inMilliseconds;
+    final same = queues.indexWhere((q) => listEquals(q.items, paths));
+    if (same >= 0) {
+      _current = same;
+    } else if (queue.isEmpty) {
+      queue.name = _uniqueQueueName(name ?? folderNameOf(paths), except: queue);
+    } else {
+      queues.add(
+        PlayQueue(
+          id: _newId(),
+          name: _uniqueQueueName(name ?? folderNameOf(paths)),
+        ),
+      );
+      _current = queues.length - 1;
+    }
     queue.replace(paths, start: start);
+    _loaded = false;
     await _openQueue(play: true);
     _save();
+    notifyListeners();
+  }
+
+  /// Name des gemeinsamen Ordners von [paths] („Rock“ für „Rock/a.mp3“,
+  /// „Rock/b.mp3“), null ohne gemeinsamen Ordner.
+  static String? folderNameOf(List<String> paths) {
+    List<String> dir(String p) {
+      final parts = p.split('/');
+      return parts.sublist(0, parts.length - 1);
+    }
+
+    var common = dir(paths.first);
+    for (final p in paths.skip(1)) {
+      final d = dir(p);
+      var i = 0;
+      while (i < common.length && i < d.length && common[i] == d[i]) {
+        i++;
+      }
+      common = common.sublist(0, i);
+      if (common.isEmpty) break;
+    }
+    return common.isEmpty ? null : common.last;
+  }
+
+  /// [base] oder, wenn schon vergeben, „[base] (2)“ usw.; ohne [base] die
+  /// nächste „Warteschlange N“.
+  String _uniqueQueueName(String? base, {PlayQueue? except}) {
+    if (base == null || base.isEmpty) return _nextQueueName();
+    bool taken(String n) => queues.any((q) => q != except && q.name == n);
+    if (!taken(base)) return base;
+    var n = 2;
+    while (taken('$base ($n)')) {
+      n++;
+    }
+    return '$base ($n)';
   }
 
   /// Wiedergabeleiste unten geschlossen (weggewischt): pausiert, Leiste
